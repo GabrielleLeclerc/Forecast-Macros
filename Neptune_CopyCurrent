@@ -103,7 +103,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 8 + 2 * MAX_BOX + 8) ' +1 for OutOfCityTotal
+    ReDim hdr(1 To 8 + 2 * MAX_BOX + 9) ' +1 more for Pending
     hdr(1) = "Demand City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "GateBy": hdr(7) = "LocalCorePass": hdr(8) = "Reason"
     k = 8
@@ -115,9 +115,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "FromP1"
     k = k + 1: hdr(k) = "P2 City"
     k = k + 1: hdr(k) = "FromP2"
-    k = k + 1: hdr(k) = "BoxesShipped"        ' Total boxes shipped across all FCs (Local + P1 + P2)
+    k = k + 1: hdr(k) = "BoxesShipped"        ' Total number of boxes shipped across all FCs (Local + P1 + P2)
+    k = k + 1: hdr(k) = "Pending"             ' Unfulfilled orders (SalesTotal - Boxes Shipped)
     k = k + 1: hdr(k) = "OutOfCityTotal"     ' *** Total boxes going OUT of this city (origin=this city)
-    k = k + 1: hdr(k) = "Pending"             ' Unfulfilled orders (SalesTotal - BoxesShipped)
     wsDbg.Cells(1, 1).Resize(1, UBound(hdr)).Value = hdr
 
     Dim dbgRow As Long: dbgRow = 2
@@ -284,7 +284,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                 ' ---- Stash row for later write (after we know OutOfCityTotal) ----
                 Dim rowArr() As Variant, idx As Long
-                ReDim rowArr(1 To 8 + 2 * MAX_BOX + 8)
+                ReDim rowArr(1 To 8 + 2 * MAX_BOX + 9)
                 rowArr(1) = demandCity: rowArr(2) = colorRaw
                 rowArr(3) = wkStart:    rowArr(4) = wkEnd
                 rowArr(5) = ColN2L(c):  rowArr(6) = UCase$(GATE_BY)
@@ -305,8 +305,12 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = fromP1
                 idx = idx + 1: rowArr(idx) = p2Name
                 idx = idx + 1: rowArr(idx) = fromP2
-                idx = idx + 1: rowArr(idx) = fromLocal + fromP1 + fromP2 ' BoxesShipped
-                idx = idx + 1: rowArr(idx) = 0#                           ' OutOfCityTotal (filled later)
+                Dim boxesShipped As Double, pending As Double
+                boxesShipped = fromLocal + fromP1 + fromP2
+                pending = salesTotal - boxesShipped
+                idx = idx + 1: rowArr(idx) = boxesShipped   ' BoxesShipped
+                idx = idx + 1: rowArr(idx) = pending        ' Pending
+                idx = idx + 1: rowArr(idx) = 0#             ' OutOfCityTotal (filled later; stays LAST)
                 ' Save normalized color key with the row
                 rowCache.Add Array(rowArr, colorKey)
 
