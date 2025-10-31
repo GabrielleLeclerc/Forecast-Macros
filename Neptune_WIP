@@ -91,6 +91,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     ' Load last run's carryover (keyed by City|Color) and make a run-time rolling map
     Dim carryPrev As Object
     Set carryPrev = LoadCarryMap(wb)
+    ' Hide the carry sheet every run
+    ThisWorkbook.Worksheets(CARRY_SHEET).Visible = xlSheetHidden
     
     Dim carryRun As Object
     Set carryRun = CreateObject("Scripting.Dictionary")
@@ -124,8 +126,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = 8
     For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "Raw B" & iCol: Next iCol
     For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "EligLocal B" & iCol: Next iCol
-    k = k + 1: hdr(k) = "SalesTotal_New"
-    k = k + 1: hdr(k) = "Pending_LastWeek"
+    k = k + 1: hdr(k) = "NewSalesTotal"
+    k = k + 1: hdr(k) = "Backlog"
     k = k + 1: hdr(k) = "TotalToShip"
     
     k = k + 1: hdr(k) = "FromLocal_Backlog"
@@ -143,7 +145,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "FromP2_Total"
 
     k = k + 1: hdr(k) = "BoxesShipped"
-    k = k + 1: hdr(k) = "Pending_ThisWeek"
+    k = k + 1: hdr(k) = "Unfulfilled"
     k = k + 1: hdr(k) = "OutOfCityTotal"
 
     Dim COL_COUNT As Long
@@ -563,7 +565,7 @@ NextSheet:
 
     ' --- Persist the rolled carry map (City|Color -> latest pending) ---
     SaveCarryMap wb, carryRun
-
+    ThisWorkbook.Worksheets(CARRY_SHEET).Visible = xlSheetHidden
 
     ' Format
     With wsDbg
