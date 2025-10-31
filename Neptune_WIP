@@ -118,7 +118,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 8 + 2 * MAX_BOX + 11) ' 8 fixed + 24 raw/elig + 11 tail = 43 cols
+    ReDim hdr(1 To 8 + 2 * MAX_BOX + 20) ' 8 fixed + 24 raw/elig + 11 tail = 43 cols
     hdr(1) = "Demand City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "GateBy": hdr(7) = "LocalCorePass": hdr(8) = "Reason"
     k = 8
@@ -127,11 +127,21 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "SalesTotal_New"
     k = k + 1: hdr(k) = "Pending_LastWeek"
     k = k + 1: hdr(k) = "TotalToShip"
-    k = k + 1: hdr(k) = "FromLocal"
+    
+    k = k + 1: hdr(k) = "FromLocal_Backlog"
+    k = k + 1: hdr(k) = "FromLocal_NewSales"
+    k = k + 1: hdr(k) = "FromLocal_Total"
+
     k = k + 1: hdr(k) = "P1 City"
-    k = k + 1: hdr(k) = "FromP1"
+    k = k + 1: hdr(k) = "FromP1_Backlog"
+    k = k + 1: hdr(k) = "FromP1_NewSales"
+    k = k + 1: hdr(k) = "FromP1_Total"
+
     k = k + 1: hdr(k) = "P2 City"
-    k = k + 1: hdr(k) = "FromP2"
+    k = k + 1: hdr(k) = "FromP2_Backlog"
+    k = k + 1: hdr(k) = "FromP2_NewSales"
+    k = k + 1: hdr(k) = "FromP2_Total"
+
     k = k + 1: hdr(k) = "BoxesShipped"
     k = k + 1: hdr(k) = "Pending_ThisWeek"
     k = k + 1: hdr(k) = "OutOfCityTotal"
@@ -221,8 +231,27 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 ReDim eligLocal(1 To MAX_BOX)
                 ReDim allowedLocal(1 To MAX_BOX)
                 Dim b As Long, rr As Long, v As Double
-                Dim fromLocal As Double, fromP1 As Double, fromP2 As Double
-                fromLocal = 0#: fromP1 = 0#: fromP2 = 0#
+                Dim fromLocal_Total As Double, fromP1_Total As Double, fromP2_Total As Double
+                fromLocal_Total = 0#: fromP1_Total = 0#: fromP2_Total = 0#
+
+                Dim fromLocal_Backlog As Double, fromP1_Backlog As Double, fromP2_Backlog As Double
+                Dim fromLocal_NewSales As Double, fromP1_NewSales As Double, fromP2_NewSales As Double
+                fromLocal_Backlog = 0#: fromP1_Backlog = 0#: fromP2_Backlog = 0#
+                fromLocal_NewSales = 0#: fromP1_NewSales = 0#: fromP2_NewSales = 0#
+
+
+                ' PATCH: planning flags/arrays for partners + origin week dates
+                Dim canP1 As Boolean, canP2 As Boolean
+                canP1 = False: canP2 = False
+                
+                Dim allowedP1() As Boolean, allowedP2() As Boolean
+                Dim p1Pass As Boolean, p2Pass As Boolean
+                Dim rz1 As String, rz2 As String
+                
+                Dim p1WkStart As Date, p1WkEnd As Date
+                Dim p2WkStart As Date, p2WkEnd As Date
+                p1WkStart = wkStart: p1WkEnd = wkEnd   ' defaults if we can’t read partner headings
+                p2WkStart = wkStart: p2WkEnd = wkEnd
 
                 Dim boxesShipped As Double
 
@@ -253,70 +282,58 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 AllowedBoxesForDC_Single wsDC, gateTbl, colorKey, c, CoreGroup(), corePass, reason, allowedLocal
 
                 ' ---- Cover locally first ----
+                'PATCH: mark local-eligible boxes, but do NOT ship yet
                 For b = 1 To MAX_BOX
                     If raw(b) > 0 And allowedLocal(b) Then
                         eligLocal(b) = raw(b)
-                        fromLocal = fromLocal + raw(b)
-                        ' ORIGIN = demand city (shipping to itself)
-                        UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, raw(b)
                     End If
                 Next b
 
+
                 ' ---- Cover remaining with partners in order; first eligible wins ----
+                ' PATCH: precompute partner eligibility (no shipping yet)
                 If hasPartners Then
                     Dim p1Start As Long, p1End As Long, p1Col As Long, off1 As Long
                     Dim p2Start As Long, p2End As Long, p2Col As Long, off2 As Long
-
-                    ' Partner 1
-                    Dim allowedP1() As Boolean, p1Pass As Boolean, rz1 As String
-                    Dim hasP1 As Boolean: hasP1 = False
+                
+                    ' Partner 1 (if present)
                     If Not partners(pLB) Is Nothing Then
                         GetFixedSpan partners(pLB).Name, p1Start, p1End
                         off1 = c - cStart: p1Col = p1Start + off1
                         If p1Col >= p1Start And p1Col <= p1End Then
                             ReDim allowedP1(1 To MAX_BOX)
                             AllowedBoxesForDC_Single partners(pLB), partnerGate(pLB), colorKey, p1Col, CoreGroup(), p1Pass, rz1, allowedP1
-                            hasP1 = True
                             If p1Pass Then
-                                For b = 1 To MAX_BOX
-                                    If raw(b) > 0 And Not allowedLocal(b) And allowedP1(b) Then
-                                        fromP1 = fromP1 + raw(b)
-                                        ' ORIGIN = partner1 shipping to demand city
-                                        UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB).Name), demandCity, colorKey, wkStart, wkEnd, raw(b)
-                                    End If
-                                Next b
+                                canP1 = True
+                                ' use ORIGIN (partner) headers for OutOfCityTotal key
+                                If IsDate(partners(pLB).Cells(2, p1Col).Value) Then p1WkStart = CDate(partners(pLB).Cells(2, p1Col).Value)
+                                If IsDate(partners(pLB).Cells(4, p1Col).Value) Then p1WkEnd   = CDate(partners(pLB).Cells(4, p1Col).Value)
                             End If
                         End If
                     End If
-
-                    ' Partner 2
+                
+                    ' Partner 2 (if present)
                     If pUB >= pLB + 1 Then
                         If Not partners(pLB + 1) Is Nothing Then
-                            Dim allowedP2() As Boolean, p2Pass As Boolean, rz2 As String
                             GetFixedSpan partners(pLB + 1).Name, p2Start, p2End
                             off2 = c - cStart: p2Col = p2Start + off2
                             If p2Col >= p2Start And p2Col <= p2End Then
                                 ReDim allowedP2(1 To MAX_BOX)
                                 AllowedBoxesForDC_Single partners(pLB + 1), partnerGate(pLB + 1), colorKey, p2Col, CoreGroup(), p2Pass, rz2, allowedP2
                                 If p2Pass Then
-                                    For b = 1 To MAX_BOX
-                                        Dim coveredByP1 As Boolean: coveredByP1 = False
-                                        If hasP1 And p1Pass Then coveredByP1 = allowedP1(b)
-                                        If raw(b) > 0 And Not allowedLocal(b) And Not coveredByP1 And allowedP2(b) Then
-                                            fromP2 = fromP2 + raw(b)
-                                            ' ORIGIN = partner2 shipping to demand city
-                                            UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB + 1).Name), demandCity, colorKey, wkStart, wkEnd, raw(b)
-                                        End If
-                                    Next b
+                                    canP2 = True
+                                    If IsDate(partners(pLB + 1).Cells(2, p2Col).Value) Then p2WkStart = CDate(partners(pLB + 1).Cells(2, p2Col).Value)
+                                    If IsDate(partners(pLB + 1).Cells(4, p2Col).Value) Then p2WkEnd   = CDate(partners(pLB + 1).Cells(4, p2Col).Value)
                                 End If
                             End If
                         End If
                     End If
                 End If
 
+
                 ' ---- Stash row for later write (after we know OutOfCityTotal) ----
                 Dim rowArr() As Variant, idx As Long
-                ReDim rowArr(1 To 8 + 2 * MAX_BOX + 11)
+                ReDim rowArr(1 To 8 + 2 * MAX_BOX + 20)
                 
                 rowArr(1) = demandCity
                 rowArr(2) = colorRaw
@@ -355,21 +372,113 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim totalToShip As Double
                 totalToShip = salesTotalNew + backlog
 
-                ' let Local also cover last week's pending (if Local gate passed)
-                If corePass Then
-                    ' Optional cap to avoid overshipping beyond totalToShip
-                    Dim localCanAdd As Double
-                    localCanAdd = totalToShip - (fromLocal + fromP1 + fromP2)
-                    If localCanAdd < 0 Then localCanAdd = 0
-                    ' Add either the whole backlog, or only what's still needed to reach totalToShip
-                    fromLocal = fromLocal + Application.WorksheetFunction.Min(backlog, localCanAdd)
+                ''' PATCH: ===== BLOCK A — Backlog (all-or-nothing) =====
+                Dim planL_b As Double, planP1_b As Double, planP2_b As Double
+                planL_b = 0#: planP1_b = 0#: planP2_b = 0#
+                
+                Dim needB As Double
+                needB = backlog
+                
+                If needB > 0 And corePass Then
+                    planL_b = needB: needB = 0#
+                End If
+                If needB > 0 And canP1 Then
+                    planP1_b = needB: needB = 0#
+                End If
+                If needB > 0 And canP2 Then
+                    planP2_b = needB: needB = 0#
                 End If
                 
+                Dim backlogSucceeded As Boolean
+                backlogSucceeded = (backlog = 0#) Or (needB <= 0#)
+                
+                If backlogSucceeded Then
+                    ' Commit backlog shipments + OutOfCity attribution
+                    If planL_b > 0 Then
+                        fromLocal_Backlog = planL_b
+                        UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, planL_b
+                    End If
+                    If planP1_b > 0 Then
+                        fromP1_Backlog = planP1_b
+                        UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB).Name), demandCity, colorKey, p1WkStart, p1WkEnd, planP1_b
+                    End If
+                    If planP2_b > 0 Then
+                        fromP2_Backlog = planP2_b
+                        UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB + 1).Name), demandCity, colorKey, p2WkStart, p2WkEnd, planP2_b
+                    End If
+                Else
+                    ' Couldn’t cover all backlog -> no shipments at all this week; skip new sales too
+                    fromLocal_Backlog = 0#: fromP1_Backlog = 0#: fromP2_Backlog = 0#
+                    fromLocal_NewSales = 0#: fromP1_NewSales = 0#: fromP2_NewSales = 0#
+                End If
+                
+                ''' PATCH: ===== BLOCK B — New sales (all-or-nothing across all box types) =====
+                If backlogSucceeded Then
+                    Dim okAll As Boolean: okAll = True
+                    Dim planL_s As Double, planP1_s As Double, planP2_s As Double
+                    planL_s = 0#: planP1_s = 0#: planP2_s = 0#
+                
+                    ' 1) Feasibility check: every box with demand must be routable (Local -> P1 -> P2)
+                    For b = 1 To MAX_BOX
+                        v = raw(b)
+                        If v > 0 Then
+                            If allowedLocal(b) Then
+                                ' ok
+                            ElseIf canP1 And Not IsEmpty(allowedP1) And allowedP1(b) Then
+                                ' ok
+                            ElseIf canP2 And Not IsEmpty(allowedP2) And allowedP2(b) Then
+                                ' ok
+                            Else
+                                okAll = False
+                                Exit For
+                            End If
+                        End If
+                    Next b
+                
+                    ' 2) Commit if feasible; also attribute OutOfCity by origin week
+                    If okAll Then
+                        For b = 1 To MAX_BOX
+                            v = raw(b)
+                            If v > 0 Then
+                                If allowedLocal(b) Then
+                                    planL_s = planL_s + v
+                                    UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, v
+                                ElseIf canP1 And Not IsEmpty(allowedP1) And allowedP1(b) Then
+                                    planP1_s = planP1_s + v
+                                    UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB).Name), demandCity, colorKey, p1WkStart, p1WkEnd, v
+                                ElseIf canP2 And Not IsEmpty(allowedP2) And allowedP2(b) Then
+                                    planP2_s = planP2_s + v
+                                    UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB + 1).Name), demandCity, colorKey, p2WkStart, p2WkEnd, v
+                                End If
+                            End If
+                        Next b
+                
+                        fromLocal_NewSales = planL_s
+                        fromP1_NewSales    = planP1_s
+                        fromP2_NewSales    = planP2_s
+                    Else
+                        ' Not fully routable -> ship none of the new sales
+                        fromLocal_NewSales = 0#
+                        fromP1_NewSales    = 0#
+                        fromP2_NewSales    = 0#
+                    End If
+                End If
+                
+                ' Totals per origin (used later when writing the row)
+                fromLocal_Total = fromLocal_Backlog + fromLocal_NewSales
+                fromP1_Total    = fromP1_Backlog    + fromP1_NewSales
+                fromP2_Total    = fromP2_Backlog    + fromP2_NewSales
+
                 idx = idx + 1: rowArr(idx) = backlog
                 idx = idx + 1: rowArr(idx) = totalToShip
 
+                ' Write in the same order as header
+                ' Local (backlog/new/total)
+                idx = idx + 1: rowArr(idx) = fromLocal_Backlog
+                idx = idx + 1: rowArr(idx) = fromLocal_NewSales
+                idx = idx + 1: rowArr(idx) = fromLocal_Total
                 
-                ' FromLocal, P1 City, FromP1, P2 City, FromP2
+                ' P1 name + numbers
                 Dim p1Name As String, p2Name As String
                 p1Name = "": p2Name = ""
                 If hasPartners Then
@@ -377,13 +486,31 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     If pUB >= pLB + 1 Then If Not partners(pLB + 1) Is Nothing Then p2Name = SheetCityName(partners(pLB + 1).Name)
                 End If
                 
-                idx = idx + 1: rowArr(idx) = fromLocal
                 idx = idx + 1: rowArr(idx) = p1Name
-                idx = idx + 1: rowArr(idx) = fromP1
+                idx = idx + 1: rowArr(idx) = fromP1_Backlog
+                idx = idx + 1: rowArr(idx) = fromP1_NewSales
+                idx = idx + 1: rowArr(idx) = fromP1_Total
+                
+                ' P2 name + numbers
                 idx = idx + 1: rowArr(idx) = p2Name
-                idx = idx + 1: rowArr(idx) = fromP2
-     
-                boxesShipped = fromLocal + fromP1 + fromP2
+                idx = idx + 1: rowArr(idx) = fromP2_Backlog
+                idx = idx + 1: rowArr(idx) = fromP2_NewSales
+                idx = idx + 1: rowArr(idx) = fromP2_Total
+                
+                ' BoxesShipped & Pending
+                boxesShipped = fromLocal_Total + fromP1_Total + fromP2_Total
+                Dim pendingThisWeek As Double
+                pendingThisWeek = totalToShip - boxesShipped
+                If pendingThisWeek < 0 Then pendingThisWeek = 0#
+                
+                carryRun(carryKey) = pendingThisWeek
+                
+                idx = idx + 1: rowArr(idx) = boxesShipped
+                idx = idx + 1: rowArr(idx) = pendingThisWeek
+                
+                ' OutOfCityTotal placeholder (filled later)
+                idx = idx + 1: rowArr(idx) = 0#
+
                 
                 ' BoxesShipped, Pending_ThisWeek
                 Dim pendingThisWeek As Double
