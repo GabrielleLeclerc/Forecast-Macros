@@ -44,7 +44,7 @@ Private Function PartnersFor(ByVal sheetName As String) As Variant
     Select Case sheetName
         Case "Neptune-Montreal":  PartnersFor = VBA.Array("Neptune-Toronto", "Neptune-Vancouver")
         Case "Neptune-Toronto":   PartnersFor = VBA.Array("Neptune-Montreal", "Neptune-Vancouver")
-        Case "Neptune-Vancouver": PartnersFor = VBA.Array("Neptune-Montreal", "Neptune-Toronto")
+        Case "Neptune-Vancouver": PartnersFor = VBA.Array("Neptune-Toronto", "Neptune-Montreal")  ' <-- order swapped
         Case "Neptune-Ironlink":  PartnersFor = VBA.Array("Neptune-Moreno")
         Case "Neptune-Moreno":    PartnersFor = VBA.Array("Neptune-Ironlink")
         Case Else:                PartnersFor = VBA.Array()
@@ -68,12 +68,13 @@ Private Sub OriginPartnerDisplay(ByVal originCity As String, ByRef p1Disp As Str
     Select Case originCity
         Case "Montreal":  p1Disp = "Toronto":  p2Disp = "Vancouver"
         Case "Toronto":   p1Disp = "Montreal": p2Disp = "Vancouver"
-        Case "Vancouver": p1Disp = "Montreal": p2Disp = "Toronto"
+        Case "Vancouver": p1Disp = "Toronto":  p2Disp = "Montreal"  ' <-- order swapped
         Case "Ironlink":  p1Disp = "Moreno":   p2Disp = ""
         Case "Moreno":    p1Disp = "Ironlink": p2Disp = ""
         Case Else:        p1Disp = "":         p2Disp = ""
     End Select
 End Sub
+
 '============================================================
 
 
