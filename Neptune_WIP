@@ -87,12 +87,18 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     Dim wb As Workbook: Set wb = ThisWorkbook
 
-    ' Load last run's carryover and prep a dictionary to save this run's carryover
+    ' Load last run's carryover (keyed by City|Color) and make a run-time rolling map
     Dim carryPrev As Object
     Set carryPrev = LoadCarryMap(wb)
     
-    Dim carryNext As Object
-    Set carryNext = CreateObject("Scripting.Dictionary")
+    Dim carryRun As Object
+    Set carryRun = CreateObject("Scripting.Dictionary")
+    
+    ' Seed carryRun with whatever was saved last week
+    Dim kKey As Variant
+    For Each kKey In carryPrev.Keys
+        carryRun(kKey) = carryPrev(kKey)
+    Next kKey
 
     ' ===== Speed up =====
     Dim prevCalc As XlCalculation, prevScr As Boolean, prevEvt As Boolean
@@ -111,27 +117,26 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 8 + 2 * MAX_BOX + 13) ' +1 SalesTotal_New +3 carryover cols
+    ReDim hdr(1 To 8 + 2 * MAX_BOX + 11) ' 8 fixed + 24 raw/elig + 11 tail = 43 cols
     hdr(1) = "Demand City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "GateBy": hdr(7) = "LocalCorePass": hdr(8) = "Reason"
     k = 8
     For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "Raw B" & iCol: Next iCol
     For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "EligLocal B" & iCol: Next iCol
-    k = k + 1: hdr(k) = "SalesTotal"
     k = k + 1: hdr(k) = "SalesTotal_New"
+    k = k + 1: hdr(k) = "Pending_LastWeek"
+    k = k + 1: hdr(k) = "TotalToShip"
     k = k + 1: hdr(k) = "FromLocal"
     k = k + 1: hdr(k) = "P1 City"
     k = k + 1: hdr(k) = "FromP1"
     k = k + 1: hdr(k) = "P2 City"
     k = k + 1: hdr(k) = "FromP2"
     k = k + 1: hdr(k) = "BoxesShipped"
-    k = k + 1: hdr(k) = "Pending"               ' (= SalesTotal_New - BoxesShipped)
-    k = k + 1: hdr(k) = "Pending_LastWeek"        ' NEW (from last run)
-    k = k + 1: hdr(k) = "TotalToShip"           ' NEW (= SalesTotal_New + Pending_Before)
-    k = k + 1: hdr(k) = "Pending_ThisWeek"         ' NEW (= Max(0, TotalToShip - BoxesShipped))
+    k = k + 1: hdr(k) = "Pending_ThisWeek"
     k = k + 1: hdr(k) = "OutOfCityTotal"
-
+    
     wsDbg.Cells(1, 1).Resize(1, UBound(hdr)).Value = hdr
+
 
     Dim dbgRow As Long: dbgRow = 2
 
@@ -214,9 +219,11 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 ReDim raw(1 To MAX_BOX)
                 ReDim eligLocal(1 To MAX_BOX)
                 ReDim allowedLocal(1 To MAX_BOX)
-                Dim b As Long, rr As Long, v As Double, salesTotal As Double
+                Dim b As Long, rr As Long, v As Double
                 Dim fromLocal As Double, fromP1 As Double, fromP2 As Double
                 fromLocal = 0#: fromP1 = 0#: fromP2 = 0#
+
+                Dim boxesShipped As Double
 
                 ' ---- Raw demand (qty values) ----
                 Dim salesTotalNew As Double
@@ -228,8 +235,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         v = ValD(wsDC.Cells(rr, c).Value)
                         If v > 0 Then raw(b) = v
                     End If
-                    ' Original SalesTotal (whatever it was pulling) stays as-is:
-                    salesTotal = salesTotal + raw(b)
+                    
                 Next b
                 
                 ' SalesTotal_New = simple row-only sum of Raw B1..B12
@@ -239,7 +245,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     rawSum = rawSum + raw(b)
                 Next b
                 salesTotalNew = rawSum
-                If salesTotal <= 0 Then GoTo NextColor
+                If salesTotalNew <= 0 Then GoTo NextColor
 
                 ' ---- Local gating ----
                 Dim corePass As Boolean, reason As String
@@ -307,68 +313,85 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     End If
                 End If
 
+                boxesShipped = fromLocal + fromP1 + fromP2
+
                 ' ---- Stash row for later write (after we know OutOfCityTotal) ----
                 Dim rowArr() As Variant, idx As Long
-                ReDim rowArr(1 To 8 + 2 * MAX_BOX + 13) ' +1 SalesTotal_New +3 carryover cols
-                rowArr(1) = demandCity: rowArr(2) = colorRaw
-                rowArr(3) = wkStart:    rowArr(4) = wkEnd
-                rowArr(5) = ColN2L(c):  rowArr(6) = UCase$(GATE_BY)
-                rowArr(7) = corePass:   rowArr(8) = reason
+                ReDim rowArr(1 To 8 + 2 * MAX_BOX + 11)
+                
+                rowArr(1) = demandCity
+                rowArr(2) = colorRaw
+                rowArr(3) = wkStart
+                rowArr(4) = wkEnd
+                rowArr(5) = ColN2L(c)
+                rowArr(6) = UCase$(GATE_BY)
+                rowArr(7) = corePass
+                rowArr(8) = reason
+                
                 idx = 8
                 Dim bb As Long
-                For bb = 1 To MAX_BOX: idx = idx + 1: rowArr(idx) = raw(bb):       Next bb
-                For bb = 1 To MAX_BOX: idx = idx + 1: rowArr(idx) = eligLocal(bb): Next bb
-                idx = idx + 1: rowArr(idx) = salesTotal
+                ' Raw B1..B12
+                For bb = 1 To MAX_BOX
+                    idx = idx + 1: rowArr(idx) = raw(bb)
+                Next bb
+                ' EligLocal B1..B12
+                For bb = 1 To MAX_BOX
+                    idx = idx + 1: rowArr(idx) = eligLocal(bb)
+                Next bb
+                
+                ' SalesTotal_New
                 idx = idx + 1: rowArr(idx) = salesTotalNew
+                
+                ' Carryover: Backlog, TotalToShip   (week-agnostic carry key)
+                Dim carryKey As String
+                carryKey = MakeCarryKey(demandCity, colorKey)
+                
+                Dim backlog As Double
+                If carryRun.Exists(carryKey) Then
+                    backlog = CDbl(carryRun(carryKey))
+                Else
+                    backlog = 0#
+                End If
+                
+                Dim totalToShip As Double
+                totalToShip = salesTotalNew + backlog
+                
+                idx = idx + 1: rowArr(idx) = backlog
+                idx = idx + 1: rowArr(idx) = totalToShip
+
+                
+                ' FromLocal, P1 City, FromP1, P2 City, FromP2
                 Dim p1Name As String, p2Name As String
                 p1Name = "": p2Name = ""
                 If hasPartners Then
                     If Not partners(pLB) Is Nothing Then p1Name = SheetCityName(partners(pLB).Name)
                     If pUB >= pLB + 1 Then If Not partners(pLB + 1) Is Nothing Then p2Name = SheetCityName(partners(pLB + 1).Name)
                 End If
+                
                 idx = idx + 1: rowArr(idx) = fromLocal
                 idx = idx + 1: rowArr(idx) = p1Name
                 idx = idx + 1: rowArr(idx) = fromP1
                 idx = idx + 1: rowArr(idx) = p2Name
                 idx = idx + 1: rowArr(idx) = fromP2
-
-                Dim boxesShipped As Double, pending As Double
-                boxesShipped = fromLocal + fromP1 + fromP2
                 
-                ' Keep your current Pending column as SalesTotal_New - BoxesShipped
-                pending = salesTotalNew - boxesShipped
-                If pending < 0 Then pending = 0
-                
-                ' === Carryover fields ===
-                Dim thisKey As String
-                thisKey = MakeKey(demandCity, colorKey, wkStart, wkEnd)
-                
-                Dim pendingLastWeek As Double
-                If carryPrev.Exists(thisKey) Then
-                    pendingLastWeek = CDbl(carryPrev(thisKey))
-                Else
-                    pendingLastWeek = 0#
-                End If
-                
-                Dim totalToShip As Double
-                totalToShip = salesTotalNew + pendingLastWeek
-                
+                ' BoxesShipped, Pending_ThisWeek
                 Dim pendingThisWeek As Double
                 pendingThisWeek = totalToShip - boxesShipped
                 If pendingThisWeek < 0 Then pendingThisWeek = 0#
                 
-                carryNext(thisKey) = pendingThisWeek
+                ' Roll forward for the next week (same City+Color)
+                carryRun(carryKey) = pendingThisWeek
                 
-                idx = idx + 1: rowArr(idx) = boxesShipped       ' BoxesShipped
-                idx = idx + 1: rowArr(idx) = pending            ' Pending (SalesTotal_New - BoxesShipped)
-                idx = idx + 1: rowArr(idx) = pendingLastWeek    ' NEW Pending_LastWeek
-                idx = idx + 1: rowArr(idx) = totalToShip        ' NEW TotalToShip
-                idx = idx + 1: rowArr(idx) = pendingThisWeek    ' NEW Pending_ThisWeek
-                idx = idx + 1: rowArr(idx) = 0#                 ' OutOfCityTotal (filled later; stays LAST)
+                idx = idx + 1: rowArr(idx) = boxesShipped
+                idx = idx + 1: rowArr(idx) = pendingThisWeek
 
+                
+                ' OutOfCityTotal placeholder (filled later)
+                idx = idx + 1: rowArr(idx) = 0#
                 
                 ' Save normalized color key with the row
                 rowCache.Add Array(rowArr, colorKey)
+
 
 NextColor:
             Next clr
@@ -395,8 +418,9 @@ NextSheet:
         dbgRow = dbgRow + 1
     Next it
 
-    ' --- Persist this run’s carryover for next week ---
-    SaveCarryMap wb, carryNext
+    ' --- Persist the rolled carry map (City|Color -> latest pending) ---
+    SaveCarryMap wb, carryRun
+
 
     ' Format
     With wsDbg
@@ -404,7 +428,7 @@ NextSheet:
         If dbgRow > 2 Then .Range("C2:D" & dbgRow - 1).NumberFormat = "yyyy-mm-dd"
     End With
 
-    MsgBox "Done. Added Pending_LastWeek, TotalToShip, Pending_ThisWeek; carryover saved.", vbInformation
+    MsgBox "Done. New Pending logic.", vbInformation
 
 cleanup:
     Application.Calculation = prevCalc
@@ -431,15 +455,19 @@ Private Function LoadCarryMap(wb As Workbook) As Object
     Set d = CreateObject("Scripting.Dictionary")
     lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
     If lastRow >= 2 Then
-        Dim r As Long, k As String, v As Double
+        Dim r As Long, k As String, v As Double, nk As String
         For r = 2 To lastRow
             k = CStr(ws.Cells(r, "A").Value)
             v = ValD(ws.Cells(r, "B").Value)
-            If Len(k) > 0 Then d(k) = v
+            If Len(k) > 0 Then
+                nk = NormalizeCarryKey(k)          ' <-- collapse City|Color|wkStart|wkEnd -> City|Color
+                d(nk) = v
+            End If
         Next r
     End If
     Set LoadCarryMap = d
 End Function
+
 
 Private Sub SaveCarryMap(wb As Workbook, ByVal carry As Object)
     Dim ws As Worksheet
@@ -489,6 +517,22 @@ End Sub
 Private Function MakeKey(ByVal city As String, ByVal colorKey As String, ByVal wkStart As Date, ByVal wkEnd As Date) As String
     MakeKey = UCase$(Trim$(city)) & "|" & UCase$(Trim$(colorKey)) & "|" & _
               Format$(wkStart, "yyyy-mm-dd") & "|" & Format$(wkEnd, "yyyy-mm-dd")
+End Function
+
+Private Function MakeCarryKey(ByVal city As String, ByVal colorKey As String) As String
+    MakeCarryKey = UCase$(Trim$(city)) & "|" & UCase$(Trim$(colorKey))
+End Function
+
+' Back-compat: if an old carry sheet row still has a 4-part key (with dates),
+' collapse it to the first 2 parts: City|Color
+Private Function NormalizeCarryKey(ByVal k As String) As String
+    Dim parts() As String
+    parts = Split(k, "|")
+    If UBound(parts) >= 1 Then
+        NormalizeCarryKey = UCase$(Trim$(parts(0))) & "|" & UCase$(Trim$(parts(1)))
+    Else
+        NormalizeCarryKey = UCase$(Trim$(k))
+    End If
 End Function
 
 Private Function FindKeyIndex(ByRef keys() As String, ByVal cnt As Long, ByVal key As String) As Long
