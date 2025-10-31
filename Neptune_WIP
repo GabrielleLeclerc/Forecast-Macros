@@ -213,27 +213,26 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 For b = 1 To MAX_BOX
                     rr = RowForInTable(salesTbl, colorKey, b)
                     If rr > 0 Then
-                    ' Existing behavior: use the cell as-is (likely cumulative)
-                    v = ValD(wsDC.Cells(rr, c).Value)
-                If v > 0 Then raw(b) = v
+                        ' Existing behavior: use the cell as-is (this is what feeds the original SalesTotal)
+                        v = ValD(wsDC.Cells(rr, c).Value)
+                        If v > 0 Then raw(b) = v
 
-                ' New behavior: weekly (non-cumulative) delta
-                Dim vNow As Double, vPrev As Double, weekQty As Double
-                vNow = v
-                If c > cStart Then
-                    vPrev = ValD(wsDC.Cells(rr, c - 1).Value)
-                Else
-                    vPrev = 0#
+                        ' New behavior: weekly (non-cumulative) delta for SalesTotal_New
+                        Dim vPrev As Double, weekQty As Double
+                        If c > cStart Then
+                            vPrev = ValD(wsDC.Cells(rr, c - 1).Value)
+                    Else
+                        vPrev = 0#
+                    End If
+                    weekQty = v - vPrev
+                    If weekQty > 0 Then
+                        salesTotalNew = salesTotalNew + weekQty
+                    End If
                 End If
-                weekQty = vNow - vPrev
-                If weekQty > 0 Then
-                    salesTotalNew = salesTotalNew + weekQty
-                End If
-            End If
 
-            ' Keep original cumulative SalesTotal logic
-            salesTotal = salesTotal + raw(b)
-        Next b
+                    ' Keep original SalesTotal logic untouched
+                    salesTotal = salesTotal + raw(b)
+                Next b
                 If salesTotal <= 0 Then GoTo NextColor
 
                 ' ---- Local gating ----
@@ -366,7 +365,7 @@ NextSheet:
         If dbgRow > 2 Then .Range("C2:D" & dbgRow - 1).NumberFormat = "yyyy-mm-dd"
     End With
 
-    MsgBox "Done. SalesTotal_New is on each row.", vbInformation
+    MsgBox "Done. SalesTotal_New(1) is on each row.", vbInformation
 
 cleanup:
     Application.Calculation = prevCalc
