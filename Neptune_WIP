@@ -103,13 +103,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 8 + 2 * MAX_BOX + 9) ' +1 more for Pending
+    ReDim hdr(1 To 8 + 2 * MAX_BOX + 10) ' +1 more for SalesTotal_New
     hdr(1) = "Demand City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "GateBy": hdr(7) = "LocalCorePass": hdr(8) = "Reason"
     k = 8
     For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "Raw B" & iCol: Next iCol
     For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "EligLocal B" & iCol: Next iCol
     k = k + 1: hdr(k) = "SalesTotal"
+    k = k + 1: hdr(k) = "SalesTotal_New"
     k = k + 1: hdr(k) = "FromLocal"
     k = k + 1: hdr(k) = "P1 City"
     k = k + 1: hdr(k) = "FromP1"
@@ -206,14 +207,33 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 fromLocal = 0#: fromP1 = 0#: fromP2 = 0#
 
                 ' ---- Raw demand (qty values) ----
+                Dim salesTotalNew As Double
+                salesTotalNew = 0#
+
                 For b = 1 To MAX_BOX
                     rr = RowForInTable(salesTbl, colorKey, b)
                     If rr > 0 Then
-                        v = ValD(wsDC.Cells(rr, c).Value)
-                        If v > 0 Then raw(b) = v
-                    End If
-                    salesTotal = salesTotal + raw(b)
-                Next b
+                    ' Existing behavior: use the cell as-is (likely cumulative)
+                    v = ValD(wsDC.Cells(rr, c).Value)
+                If v > 0 Then raw(b) = v
+
+                ' New behavior: weekly (non-cumulative) delta
+                Dim vNow As Double, vPrev As Double, weekQty As Double
+                vNow = v
+                If c > cStart Then
+                    vPrev = ValD(wsDC.Cells(rr, c - 1).Value)
+                Else
+                    vPrev = 0#
+                End If
+                weekQty = vNow - vPrev
+                If weekQty > 0 Then
+                    salesTotalNew = salesTotalNew + weekQty
+                End If
+            End If
+
+            ' Keep original cumulative SalesTotal logic
+            salesTotal = salesTotal + raw(b)
+        Next b
                 If salesTotal <= 0 Then GoTo NextColor
 
                 ' ---- Local gating ----
@@ -284,7 +304,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                 ' ---- Stash row for later write (after we know OutOfCityTotal) ----
                 Dim rowArr() As Variant, idx As Long
-                ReDim rowArr(1 To 8 + 2 * MAX_BOX + 9)
+                ReDim rowArr(1 To 8 + 2 * MAX_BOX + 10) ' +1 for SalesTotal_New
                 rowArr(1) = demandCity: rowArr(2) = colorRaw
                 rowArr(3) = wkStart:    rowArr(4) = wkEnd
                 rowArr(5) = ColN2L(c):  rowArr(6) = UCase$(GATE_BY)
@@ -294,6 +314,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 For bb = 1 To MAX_BOX: idx = idx + 1: rowArr(idx) = raw(bb):       Next bb
                 For bb = 1 To MAX_BOX: idx = idx + 1: rowArr(idx) = eligLocal(bb): Next bb
                 idx = idx + 1: rowArr(idx) = salesTotal
+                idx = idx + 1: rowArr(idx) = salesTotalNew
                 Dim p1Name As String, p2Name As String
                 p1Name = "": p2Name = ""
                 If hasPartners Then
@@ -345,7 +366,7 @@ NextSheet:
         If dbgRow > 2 Then .Range("C2:D" & dbgRow - 1).NumberFormat = "yyyy-mm-dd"
     End With
 
-    MsgBox "Done. Pending is on each row.", vbInformation
+    MsgBox "Done. SalesTotal_New is on each row.", vbInformation
 
 cleanup:
     Application.Calculation = prevCalc
