@@ -117,7 +117,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "P2 City"
     k = k + 1: hdr(k) = "FromP2"
     k = k + 1: hdr(k) = "BoxesShipped"        ' Total number of boxes shipped across all FCs (Local + P1 + P2)
-    k = k + 1: hdr(k) = "Pending"             ' Unfulfilled orders (SalesTotal - Boxes Shipped)
+    k = k + 1: hdr(k) = "Pending"             ' Unfulfilled orders (SalesTotal_New - Boxes Shipped)
     k = k + 1: hdr(k) = "OutOfCityTotal"     ' *** Total boxes going OUT of this city (origin=this city)
     wsDbg.Cells(1, 1).Resize(1, UBound(hdr)).Value = hdr
 
@@ -321,7 +321,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = fromP2
                 Dim boxesShipped As Double, pending As Double
                 boxesShipped = fromLocal + fromP1 + fromP2
-                pending = salesTotal - boxesShipped
+                pending = salesTotalNew - boxesShipped
+                If pending < 0 Then pending = 0 'No negative pending orders
                 idx = idx + 1: rowArr(idx) = boxesShipped   ' BoxesShipped
                 idx = idx + 1: rowArr(idx) = pending        ' Pending
                 idx = idx + 1: rowArr(idx) = 0#             ' OutOfCityTotal (filled later; stays LAST)
@@ -359,7 +360,7 @@ NextSheet:
         If dbgRow > 2 Then .Range("C2:D" & dbgRow - 1).NumberFormat = "yyyy-mm-dd"
     End With
 
-    MsgBox "Done. SalesTotal_New is the row-only sum of Raw B1..B12.", vbInformation
+    MsgBox "Done. Pending now uses SalesTotal_New - BoxesShipped.", vbInformation
 
 cleanup:
     Application.Calculation = prevCalc
