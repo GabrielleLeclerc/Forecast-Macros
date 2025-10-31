@@ -571,7 +571,7 @@ NextSheet:
         If dbgRow > 2 Then .Range("C2:D" & dbgRow - 1).NumberFormat = "yyyy-mm-dd"
     End With
 
-    MsgBox "Done. New Pending logic.", vbInformation
+    MsgBox "Done. New 2-step allocation logic implemented to ship backlog first.", vbInformation
 
 cleanup:
     Application.Calculation = prevCalc
