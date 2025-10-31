@@ -313,8 +313,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     End If
                 End If
 
-                boxesShipped = fromLocal + fromP1 + fromP2
-
                 ' ---- Stash row for later write (after we know OutOfCityTotal) ----
                 Dim rowArr() As Variant, idx As Long
                 ReDim rowArr(1 To 8 + 2 * MAX_BOX + 11)
@@ -355,6 +353,16 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 
                 Dim totalToShip As Double
                 totalToShip = salesTotalNew + backlog
+
+                ' let Local also cover last week's pending (if Local gate passed)
+                If corePass Then
+                    ' Optional cap to avoid overshipping beyond totalToShip
+                    Dim localCanAdd As Double
+                    localCanAdd = totalToShip - (fromLocal + fromP1 + fromP2)
+                    If localCanAdd < 0 Then localCanAdd = 0
+                    ' Add either the whole backlog, or only what's still needed to reach totalToShip
+                    fromLocal = fromLocal + Application.WorksheetFunction.Min(backlog, localCanAdd)
+                End If
                 
                 idx = idx + 1: rowArr(idx) = backlog
                 idx = idx + 1: rowArr(idx) = totalToShip
@@ -373,11 +381,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = fromP1
                 idx = idx + 1: rowArr(idx) = p2Name
                 idx = idx + 1: rowArr(idx) = fromP2
+     
+                boxesShipped = fromLocal + fromP1 + fromP2
                 
                 ' BoxesShipped, Pending_ThisWeek
                 Dim pendingThisWeek As Double
                 pendingThisWeek = totalToShip - boxesShipped
                 If pendingThisWeek < 0 Then pendingThisWeek = 0#
+                
                 
                 ' Roll forward for the next week (same City+Color)
                 carryRun(carryKey) = pendingThisWeek
