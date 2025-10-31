@@ -510,23 +510,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 
                 ' OutOfCityTotal placeholder (filled later)
                 idx = idx + 1: rowArr(idx) = 0#
-
-                
-                ' BoxesShipped, Pending_ThisWeek
-                Dim pendingThisWeek As Double
-                pendingThisWeek = totalToShip - boxesShipped
-                If pendingThisWeek < 0 Then pendingThisWeek = 0#
-                
-                
-                ' Roll forward for the next week (same City+Color)
-                carryRun(carryKey) = pendingThisWeek
-                
-                idx = idx + 1: rowArr(idx) = boxesShipped
-                idx = idx + 1: rowArr(idx) = pendingThisWeek
-
-                
-                ' OutOfCityTotal placeholder (filled later)
-                idx = idx + 1: rowArr(idx) = 0#
                 
                 ' Save normalized color key with the row
                 rowCache.Add Array(rowArr, colorKey)
