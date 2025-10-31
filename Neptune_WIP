@@ -415,57 +415,75 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     fromLocal_NewSales = 0#: fromP1_NewSales = 0#: fromP2_NewSales = 0#
                 End If
                 
-                ''' PATCH: ===== BLOCK B — New sales (all-or-nothing across all box types) =====
+                ''' PATCH: ===== BLOCK B — New sales (single-origin, all-or-nothing) =====
+                fromLocal_NewSales = 0#: fromP1_NewSales = 0#: fromP2_NewSales = 0#
+                
                 If backlogSucceeded Then
-                    Dim okAll As Boolean: okAll = True
-                    Dim planL_s As Double, planP1_s As Double, planP2_s As Double
-                    planL_s = 0#: planP1_s = 0#: planP2_s = 0#
+                    Dim sumSales As Double
+                    sumSales = salesTotalNew
                 
-                    ' 1) Feasibility check: every box with demand must be routable (Local -> P1 -> P2)
-                    For b = 1 To MAX_BOX
-                        v = raw(b)
-                        If v > 0 Then
-                            If allowedLocal(b) Then
-                                ' ok
-                            ElseIf canP1 And Not IsEmpty(allowedP1) And allowedP1(b) Then
-                                ' ok
-                            ElseIf canP2 And Not IsEmpty(allowedP2) And allowedP2(b) Then
-                                ' ok
-                            Else
-                                okAll = False
-                                Exit For
-                            End If
-                        End If
-                    Next b
-                
-                    ' 2) Commit if feasible; also attribute OutOfCity by origin week
-                    If okAll Then
+                    ' Try Local for ALL demanded box types
+                    Dim allLocal As Boolean: allLocal = corePass ' must have passed the gate
+                    If allLocal Then
                         For b = 1 To MAX_BOX
                             v = raw(b)
                             If v > 0 Then
-                                If allowedLocal(b) Then
-                                    planL_s = planL_s + v
-                                    UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, v
-                                ElseIf canP1 And Not IsEmpty(allowedP1) And allowedP1(b) Then
-                                    planP1_s = planP1_s + v
-                                    UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB).Name), demandCity, colorKey, p1WkStart, p1WkEnd, v
-                                ElseIf canP2 And Not IsEmpty(allowedP2) And allowedP2(b) Then
-                                    planP2_s = planP2_s + v
-                                    UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB + 1).Name), demandCity, colorKey, p2WkStart, p2WkEnd, v
-                                End If
+                                If Not allowedLocal(b) Then allLocal = False: Exit For
                             End If
                         Next b
+                    End If
                 
-                        fromLocal_NewSales = planL_s
-                        fromP1_NewSales    = planP1_s
-                        fromP2_NewSales    = planP2_s
+                    If allLocal Then
+                        ' Entirety of SalesTotal_New ships from Local
+                        fromLocal_NewSales = sumSales
+                        ' Attribute OutOfCity/Origin (Local -> demand city)
+                        If sumSales > 0 Then
+                            UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, sumSales
+                        End If
                     Else
-                        ' Not fully routable -> ship none of the new sales
-                        fromLocal_NewSales = 0#
-                        fromP1_NewSales    = 0#
-                        fromP2_NewSales    = 0#
+                        ' Try P1 for ALL demanded box types
+                        Dim allP1 As Boolean: allP1 = (canP1 And Not IsEmpty(allowedP1))
+                        If allP1 Then
+                            For b = 1 To MAX_BOX
+                                v = raw(b)
+                                If v > 0 Then
+                                    If Not allowedP1(b) Then allP1 = False: Exit For
+                                End If
+                            Next b
+                        End If
+                
+                        If allP1 Then
+                            ' Entirety ships from P1
+                            fromP1_NewSales = sumSales
+                            If sumSales > 0 Then
+                                UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB).Name), demandCity, colorKey, p1WkStart, p1WkEnd, sumSales
+                            End If
+                        Else
+                            ' Try P2 for ALL demanded box types
+                            Dim allP2 As Boolean: allP2 = (canP2 And Not IsEmpty(allowedP2))
+                            If allP2 Then
+                                For b = 1 To MAX_BOX
+                                    v = raw(b)
+                                    If v > 0 Then
+                                        If Not allowedP2(b) Then allP2 = False: Exit For
+                                    End If
+                                Next b
+                            End If
+                
+                            If allP2 Then
+                                ' Entirety ships from P2
+                                fromP2_NewSales = sumSales
+                                If sumSales > 0 Then
+                                    UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB + 1).Name), demandCity, colorKey, p2WkStart, p2WkEnd, sumSales
+                                End If
+                            Else
+                                ' No origin can ship the full set -> ship ZERO new sales
+                                fromLocal_NewSales = 0#: fromP1_NewSales = 0#: fromP2_NewSales = 0#
+                            End If
+                        End If
                     End If
                 End If
+
                 
                 ' Totals per origin (used later when writing the row)
                 fromLocal_Total = fromLocal_Backlog + fromLocal_NewSales
