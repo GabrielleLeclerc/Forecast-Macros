@@ -118,7 +118,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 8 + 2 * MAX_BOX + 20) ' 8 fixed + 24 raw/elig + 11 tail = 43 cols
+    ReDim hdr(1 To 8 + 2 * MAX_BOX + 17) 
     hdr(1) = "Demand City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "GateBy": hdr(7) = "LocalCorePass": hdr(8) = "Reason"
     k = 8
@@ -145,6 +145,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "BoxesShipped"
     k = k + 1: hdr(k) = "Pending_ThisWeek"
     k = k + 1: hdr(k) = "OutOfCityTotal"
+
+    Dim COL_COUNT As Long
+    COL_COUNT = k  ' total columns actually created in hdr
     
     wsDbg.Cells(1, 1).Resize(1, UBound(hdr)).Value = hdr
 
@@ -333,7 +336,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                 ' ---- Stash row for later write (after we know OutOfCityTotal) ----
                 Dim rowArr() As Variant, idx As Long
-                ReDim rowArr(1 To 8 + 2 * MAX_BOX + 20)
+                ReDim rowArr(1 To COL_COUNT)
                 
                 rowArr(1) = demandCity
                 rowArr(2) = colorRaw
