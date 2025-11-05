@@ -1,78 +1,5 @@
 Option Explicit
 
-'==================== TINY, PURE-VBA DICTIONARY ====================
-' Works on Windows and Mac. Keys are case-insensitive (stored UCase).
-Private Type TinyDict
-    keys As Collection
-    vals As Collection
-End Type
-
-Private Sub TD_Init(ByRef d As TinyDict)
-    Set d.keys = New Collection
-    Set d.vals = New Collection
-End Sub
-
-Private Function TD_Count(ByRef d As TinyDict) As Long
-    TD_Count = d.keys.Count
-End Function
-
-Private Function TD_IndexOf(ByRef d As TinyDict, ByVal key As String) As Long
-    Dim i As Long, k As String
-    key = UCase$(Trim$(key))
-    For i = 1 To d.keys.Count
-        k = d.keys(i)
-        If k = key Then TD_IndexOf = i: Exit Function
-    Next i
-End Function
-
-Private Function TD_Exists(ByRef d As TinyDict, ByVal key As String) As Boolean
-    TD_Exists = (TD_IndexOf(d, key) > 0)
-End Function
-
-Private Sub TD_Add(ByRef d As TinyDict, ByVal key As String, ByVal value As Variant)
-    If TD_Exists(d, key) Then Err.Raise 457, , "Key already exists: " & key
-    d.keys.Add UCase$(Trim$(key))
-    d.vals.Add value
-End Sub
-
-' Set = Add or Replace
-Private Sub TD_Set(ByRef d As TinyDict, ByVal key As String, ByVal value As Variant)
-    Dim i As Long
-    i = TD_IndexOf(d, key)
-    If i = 0 Then
-        TD_Add d, key, value
-    Else
-        d.vals.Remove i
-        d.vals.Add value, , i
-    End If
-End Sub
-
-Private Function TD_Get(ByRef d As TinyDict, ByVal key As String, Optional ByVal defaultValue As Variant) As Variant
-    Dim i As Long
-    i = TD_IndexOf(d, key)
-    If i = 0 Then
-        TD_Get = defaultValue
-    Else
-        TD_Get = d.vals(i)
-    End If
-End Function
-
-' Returns a 1-based Variant array of keys
-Private Function TD_Keys(ByRef d As TinyDict) As Variant
-    Dim n As Long, i As Long, arr() As Variant
-    n = d.keys.Count
-    If n = 0 Then
-        TD_Keys = VBA.Array()
-        Exit Function
-    End If
-    ReDim arr(1 To n)
-    For i = 1 To n
-        arr(i) = d.keys(i)
-    Next i
-    TD_Keys = arr
-End Function
-'================== END TINY, PURE-VBA DICTIONARY ==================
-
 '========================= SETTINGS =========================
 Public Const GATE_BY As String = "ENDING"          ' "ENDING" | "BEGINNING" | "EXISTING"
 Public Const EPS_NEG As Double = 0                 ' Any value < EPS_NEG fails (0 = strictly negative fails)
@@ -157,23 +84,23 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     Dim dcSheets As Variant, dcNames As Variant
     dcSheets = VBA.Array("Neptune-Montreal", "Neptune-Toronto", "Neptune-Vancouver", "Neptune-Ironlink", "Neptune-Moreno")
-    dcNames = VBA.Array("Montreal", "Toronto", "Vancouver", "Ironlink", "Moreno")
+    dcNames  = VBA.Array("Montreal", "Toronto", "Vancouver", "Ironlink", "Moreno")
 
     Dim wb As Workbook: Set wb = ThisWorkbook
 
     ' Load last run's carryover (keyed by City|Color) and make a run-time rolling map
-    Dim carryPrev As TinyDict
-    carryPrev = LoadCarryMap(wb)
+    Dim carryPrev As Object
+    Set carryPrev = LoadCarryMap(wb)
     ' Hide the carry sheet every run
     ThisWorkbook.Worksheets(CARRY_SHEET).Visible = xlSheetHidden
     
-    Dim carryRun As TinyDict
-    TD_Init carryRun
+    Dim carryRun As Object
+    Set carryRun = CreateObject("Scripting.Dictionary")
     
     ' Seed carryRun with whatever was saved last week
     Dim kKey As Variant
-    For Each kKey In TD_Keys(carryPrev)
-        TD_Set carryRun, CStr(kKey), TD_Get(carryPrev, CStr(kKey), 0#)
+    For Each kKey In carryPrev.Keys
+        carryRun(kKey) = carryPrev(kKey)
     Next kKey
 
     ' ===== Speed up =====
@@ -193,7 +120,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 8 + 2 * MAX_BOX + 17)
+    ReDim hdr(1 To 8 + 2 * MAX_BOX + 17) 
     hdr(1) = "Demand City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "GateBy": hdr(7) = "LocalCorePass": hdr(8) = "Reason"
     k = 8
@@ -224,7 +151,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     Dim COL_COUNT As Long
     COL_COUNT = k  ' total columns actually created in hdr
     
-    wsDbg.Cells(1, 1).Resize(1, UBound(hdr)).value = hdr
+    wsDbg.Cells(1, 1).Resize(1, UBound(hdr)).Value = hdr
+
 
     Dim dbgRow As Long: dbgRow = 2
 
@@ -242,7 +170,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     For iCity = LBound(dcSheets) To UBound(dcSheets)
 
         Dim demandSheet As String: demandSheet = CStr(dcSheets(iCity))
-        Dim demandCity  As String: demandCity = CStr(dcNames(iCity))
+        Dim demandCity  As String: demandCity  = CStr(dcNames(iCity))
         If Not SheetExists(demandSheet) Then GoTo NextSheet
 
         Dim wsDC As Worksheet: Set wsDC = wb.Worksheets(demandSheet)
@@ -255,7 +183,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         ' Sections
         Dim salesTbl As Variant, gateTbl As Variant, begTbl As Variant
         salesTbl = BuildSectionTable_Block(wsDC, "Sales")
-        begTbl = BuildSectionTable_Block(wsDC, "Beginning Stock")
+        begTbl   = BuildSectionTable_Block(wsDC, "Beginning Stock")
 
         Select Case UCase$(GATE_BY)
             Case "ENDING":    gateTbl = BuildSectionTable_Block(wsDC, "Ending Stock")
@@ -292,9 +220,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         Dim c As Long
         For c = cStart To cEnd
 
-            If Not IsDate(wsDC.Cells(2, c).value) Or Not IsDate(wsDC.Cells(4, c).value) Then GoTo NextCol
-            Dim wkStart As Date: wkStart = CDate(wsDC.Cells(2, c).value)
-            Dim wkEnd   As Date: wkEnd = CDate(wsDC.Cells(4, c).value)
+            If Not IsDate(wsDC.Cells(2, c).Value) Or Not IsDate(wsDC.Cells(4, c).Value) Then GoTo NextCol
+            Dim wkStart As Date: wkStart = CDate(wsDC.Cells(2, c).Value)
+            Dim wkEnd   As Date: wkEnd   = CDate(wsDC.Cells(4, c).Value)
 
             ' Colors
             Dim clr As Variant
@@ -339,9 +267,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 For b = 1 To MAX_BOX
                     rr = RowForInTable(salesTbl, colorKey, b)
                     If rr > 0 Then
-                        v = ValD(wsDC.Cells(rr, c).value)
+                        v = ValD(wsDC.Cells(rr, c).Value)
                         If v > 0 Then raw(b) = v
                     End If
+                    
                 Next b
                 
                 ' SalesTotal_New = simple row-only sum of Raw B1..B12
@@ -358,28 +287,32 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 AllowedBoxesForDC_Single wsDC, gateTbl, colorKey, c, CoreGroup(), corePass, reason, allowedLocal
 
                 ' ---- Cover locally first ----
+                'PATCH: mark local-eligible boxes, but do NOT ship yet
                 For b = 1 To MAX_BOX
                     If raw(b) > 0 And allowedLocal(b) Then
                         eligLocal(b) = raw(b)
                     End If
                 Next b
 
+
                 ' ---- Cover remaining with partners in order; first eligible wins ----
+                ' PATCH: precompute partner eligibility (no shipping yet)
                 If hasPartners Then
                     Dim p1Start As Long, p1End As Long, p1Col As Long, off1 As Long
                     Dim p2Start As Long, p2End As Long, p2Col As Long, off2 As Long
                 
                     ' Partner 1 (if present)
                     If Not partners(pLB) Is Nothing Then
-                        GetFixedSpan partners(pLB).name, p1Start, p1End
+                        GetFixedSpan partners(pLB).Name, p1Start, p1End
                         off1 = c - cStart: p1Col = p1Start + off1
                         If p1Col >= p1Start And p1Col <= p1End Then
                             ReDim allowedP1(1 To MAX_BOX)
                             AllowedBoxesForDC_Single partners(pLB), partnerGate(pLB), colorKey, p1Col, CoreGroup(), p1Pass, rz1, allowedP1
                             If p1Pass Then
                                 canP1 = True
-                                If IsDate(partners(pLB).Cells(2, p1Col).value) Then p1WkStart = CDate(partners(pLB).Cells(2, p1Col).value)
-                                If IsDate(partners(pLB).Cells(4, p1Col).value) Then p1WkEnd = CDate(partners(pLB).Cells(4, p1Col).value)
+                                ' use ORIGIN (partner) headers for OutOfCityTotal key
+                                If IsDate(partners(pLB).Cells(2, p1Col).Value) Then p1WkStart = CDate(partners(pLB).Cells(2, p1Col).Value)
+                                If IsDate(partners(pLB).Cells(4, p1Col).Value) Then p1WkEnd   = CDate(partners(pLB).Cells(4, p1Col).Value)
                             End If
                         End If
                     End If
@@ -387,20 +320,21 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     ' Partner 2 (if present)
                     If pUB >= pLB + 1 Then
                         If Not partners(pLB + 1) Is Nothing Then
-                            GetFixedSpan partners(pLB + 1).name, p2Start, p2End
+                            GetFixedSpan partners(pLB + 1).Name, p2Start, p2End
                             off2 = c - cStart: p2Col = p2Start + off2
                             If p2Col >= p2Start And p2Col <= p2End Then
                                 ReDim allowedP2(1 To MAX_BOX)
                                 AllowedBoxesForDC_Single partners(pLB + 1), partnerGate(pLB + 1), colorKey, p2Col, CoreGroup(), p2Pass, rz2, allowedP2
                                 If p2Pass Then
                                     canP2 = True
-                                    If IsDate(partners(pLB + 1).Cells(2, p2Col).value) Then p2WkStart = CDate(partners(pLB + 1).Cells(2, p2Col).value)
-                                    If IsDate(partners(pLB + 1).Cells(4, p2Col).value) Then p2WkEnd = CDate(partners(pLB + 1).Cells(4, p2Col).value)
+                                    If IsDate(partners(pLB + 1).Cells(2, p2Col).Value) Then p2WkStart = CDate(partners(pLB + 1).Cells(2, p2Col).Value)
+                                    If IsDate(partners(pLB + 1).Cells(4, p2Col).Value) Then p2WkEnd   = CDate(partners(pLB + 1).Cells(4, p2Col).Value)
                                 End If
                             End If
                         End If
                     End If
                 End If
+
 
                 ' ---- Stash row for later write (after we know OutOfCityTotal) ----
                 Dim rowArr() As Variant, idx As Long
@@ -417,13 +351,16 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 
                 idx = 8
                 Dim bb As Long
+                ' Raw B1..B12
                 For bb = 1 To MAX_BOX
                     idx = idx + 1: rowArr(idx) = raw(bb)
                 Next bb
+                ' EligLocal B1..B12
                 For bb = 1 To MAX_BOX
                     idx = idx + 1: rowArr(idx) = eligLocal(bb)
                 Next bb
                 
+                ' SalesTotal_New
                 idx = idx + 1: rowArr(idx) = salesTotalNew
                 
                 ' Carryover: Backlog, TotalToShip   (week-agnostic carry key)
@@ -431,8 +368,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 carryKey = MakeCarryKey(demandCity, colorKey)
                 
                 Dim backlog As Double
-                If TD_Exists(carryRun, carryKey) Then
-                    backlog = CDbl(TD_Get(carryRun, carryKey, 0#))
+                If carryRun.Exists(carryKey) Then
+                    backlog = CDbl(carryRun(carryKey))
                 Else
                     backlog = 0#
                 End If
@@ -461,19 +398,21 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 backlogSucceeded = (backlog = 0#) Or (needB <= 0#)
                 
                 If backlogSucceeded Then
+                    ' Commit backlog shipments + OutOfCity attribution
                     If planL_b > 0 Then
                         fromLocal_Backlog = planL_b
                         UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, planL_b
                     End If
                     If planP1_b > 0 Then
                         fromP1_Backlog = planP1_b
-                        UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB).name), demandCity, colorKey, p1WkStart, p1WkEnd, planP1_b
+                        UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB).Name), demandCity, colorKey, p1WkStart, p1WkEnd, planP1_b
                     End If
                     If planP2_b > 0 Then
                         fromP2_Backlog = planP2_b
-                        UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB + 1).name), demandCity, colorKey, p2WkStart, p2WkEnd, planP2_b
+                        UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB + 1).Name), demandCity, colorKey, p2WkStart, p2WkEnd, planP2_b
                     End If
                 Else
+                    ' Couldn’t cover all backlog -> no shipments at all this week; skip new sales too
                     fromLocal_Backlog = 0#: fromP1_Backlog = 0#: fromP2_Backlog = 0#
                     fromLocal_NewSales = 0#: fromP1_NewSales = 0#: fromP2_NewSales = 0#
                 End If
@@ -485,7 +424,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     Dim sumSales As Double
                     sumSales = salesTotalNew
                 
-                    Dim allLocal As Boolean: allLocal = corePass
+                    ' Try Local for ALL demanded box types
+                    Dim allLocal As Boolean: allLocal = corePass ' must have passed the gate
                     If allLocal Then
                         For b = 1 To MAX_BOX
                             v = raw(b)
@@ -496,11 +436,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     End If
                 
                     If allLocal Then
+                        ' Entirety of SalesTotal_New ships from Local
                         fromLocal_NewSales = sumSales
+                        ' Attribute OutOfCity/Origin (Local -> demand city)
                         If sumSales > 0 Then
                             UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, sumSales
                         End If
                     Else
+                        ' Try P1 for ALL demanded box types
                         Dim allP1 As Boolean: allP1 = (canP1 And Not IsEmpty(allowedP1))
                         If allP1 Then
                             For b = 1 To MAX_BOX
@@ -512,11 +455,13 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         End If
                 
                         If allP1 Then
+                            ' Entirety ships from P1
                             fromP1_NewSales = sumSales
                             If sumSales > 0 Then
-                                UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB).name), demandCity, colorKey, p1WkStart, p1WkEnd, sumSales
+                                UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB).Name), demandCity, colorKey, p1WkStart, p1WkEnd, sumSales
                             End If
                         Else
+                            ' Try P2 for ALL demanded box types
                             Dim allP2 As Boolean: allP2 = (canP2 And Not IsEmpty(allowedP2))
                             If allP2 Then
                                 For b = 1 To MAX_BOX
@@ -528,33 +473,40 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             End If
                 
                             If allP2 Then
+                                ' Entirety ships from P2
                                 fromP2_NewSales = sumSales
                                 If sumSales > 0 Then
-                                    UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB + 1).name), demandCity, colorKey, p2WkStart, p2WkEnd, sumSales
+                                    UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB + 1).Name), demandCity, colorKey, p2WkStart, p2WkEnd, sumSales
                                 End If
                             Else
+                                ' No origin can ship the full set -> ship ZERO new sales
                                 fromLocal_NewSales = 0#: fromP1_NewSales = 0#: fromP2_NewSales = 0#
                             End If
                         End If
                     End If
                 End If
 
+                
+                ' Totals per origin (used later when writing the row)
                 fromLocal_Total = fromLocal_Backlog + fromLocal_NewSales
-                fromP1_Total = fromP1_Backlog + fromP1_NewSales
-                fromP2_Total = fromP2_Backlog + fromP2_NewSales
+                fromP1_Total    = fromP1_Backlog    + fromP1_NewSales
+                fromP2_Total    = fromP2_Backlog    + fromP2_NewSales
 
                 idx = idx + 1: rowArr(idx) = backlog
                 idx = idx + 1: rowArr(idx) = totalToShip
 
+                ' Write in the same order as header
+                ' Local (backlog/new/total)
                 idx = idx + 1: rowArr(idx) = fromLocal_Backlog
                 idx = idx + 1: rowArr(idx) = fromLocal_NewSales
                 idx = idx + 1: rowArr(idx) = fromLocal_Total
                 
+                ' P1 name + numbers
                 Dim p1Name As String, p2Name As String
                 p1Name = "": p2Name = ""
                 If hasPartners Then
-                    If Not partners(pLB) Is Nothing Then p1Name = SheetCityName(partners(pLB).name)
-                    If pUB >= pLB + 1 Then If Not partners(pLB + 1) Is Nothing Then p2Name = SheetCityName(partners(pLB + 1).name)
+                    If Not partners(pLB) Is Nothing Then p1Name = SheetCityName(partners(pLB).Name)
+                    If pUB >= pLB + 1 Then If Not partners(pLB + 1) Is Nothing Then p2Name = SheetCityName(partners(pLB + 1).Name)
                 End If
                 
                 idx = idx + 1: rowArr(idx) = p1Name
@@ -562,24 +514,29 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = fromP1_NewSales
                 idx = idx + 1: rowArr(idx) = fromP1_Total
                 
+                ' P2 name + numbers
                 idx = idx + 1: rowArr(idx) = p2Name
                 idx = idx + 1: rowArr(idx) = fromP2_Backlog
                 idx = idx + 1: rowArr(idx) = fromP2_NewSales
                 idx = idx + 1: rowArr(idx) = fromP2_Total
                 
+                ' BoxesShipped & Pending
                 boxesShipped = fromLocal_Total + fromP1_Total + fromP2_Total
                 Dim pendingThisWeek As Double
                 pendingThisWeek = totalToShip - boxesShipped
                 If pendingThisWeek < 0 Then pendingThisWeek = 0#
                 
-                TD_Set carryRun, carryKey, pendingThisWeek
+                carryRun(carryKey) = pendingThisWeek
                 
                 idx = idx + 1: rowArr(idx) = boxesShipped
                 idx = idx + 1: rowArr(idx) = pendingThisWeek
                 
+                ' OutOfCityTotal placeholder (filled later)
                 idx = idx + 1: rowArr(idx) = 0#
                 
+                ' Save normalized color key with the row
                 rowCache.Add Array(rowArr, colorKey)
+
 
 NextColor:
             Next clr
@@ -594,7 +551,7 @@ NextSheet:
     Dim it As Variant, outKey As String, outIdx As Long
     For Each it In rowCache
         Dim rArr() As Variant: rArr = it(0)
-        Dim outColorKey As String: outColorKey = it(1)
+        Dim outColorKey As String: outColorKey = it(1)         ' <— renamed to avoid duplicate declaration
         outKey = MakeKey(CStr(rArr(1)), outColorKey, CDate(rArr(3)), CDate(rArr(4)))
         outIdx = FindKeyIndex(keys, cnt, outKey)
         If outIdx > 0 Then
@@ -602,7 +559,7 @@ NextSheet:
         Else
             rArr(UBound(rArr)) = 0#
         End If
-        wsDbg.Cells(dbgRow, 1).Resize(1, UBound(rArr)).value = rArr
+        wsDbg.Cells(dbgRow, 1).Resize(1, UBound(rArr)).Value = rArr
         dbgRow = dbgRow + 1
     Next it
 
@@ -624,8 +581,6 @@ cleanup:
     Application.ScreenUpdating = prevScr
 End Sub
 '============================================================
-
-
 '======================= CARRYOVER HELPERS ============================
 Private Function EnsureCarrySheet(wb As Workbook) As Worksheet
     If SheetExists(CARRY_SHEET) Then
@@ -633,53 +588,53 @@ Private Function EnsureCarrySheet(wb As Workbook) As Worksheet
     Else
         Dim ws As Worksheet
         Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
-        ws.name = CARRY_SHEET
-        ws.Range("A1:B1").value = Array("Key", "Pending_ThisWeek")
+        ws.Name = CARRY_SHEET
+        ws.Range("A1:B1").Value = Array("Key", "Pending_ThisWeek")
         Set EnsureCarrySheet = ws
     End If
 End Function
 
-Private Function LoadCarryMap(wb As Workbook) As TinyDict
-    Dim ws As Worksheet, lastRow As Long
-    Dim d As TinyDict
-    TD_Init d
-
+Private Function LoadCarryMap(wb As Workbook) As Object
+    Dim ws As Worksheet, lastRow As Long, d As Object
     Set ws = EnsureCarrySheet(wb)
+    Set d = CreateObject("Scripting.Dictionary")
     lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
     If lastRow >= 2 Then
         Dim r As Long, k As String, v As Double, nk As String
         For r = 2 To lastRow
-            k = CStr(ws.Cells(r, "A").value)
-            v = ValD(ws.Cells(r, "B").value)
+            k = CStr(ws.Cells(r, "A").Value)
+            v = ValD(ws.Cells(r, "B").Value)
             If Len(k) > 0 Then
-                nk = NormalizeCarryKey(k)          ' collapse City|Color|wkStart|wkEnd -> City|Color
-                TD_Set d, nk, v
+                nk = NormalizeCarryKey(k)          ' <-- collapse City|Color|wkStart|wkEnd -> City|Color
+                d(nk) = v
             End If
         Next r
     End If
-    LoadCarryMap = d
+    Set LoadCarryMap = d
 End Function
 
-Private Sub SaveCarryMap(wb As Workbook, ByRef carry As TinyDict)
+
+Private Sub SaveCarryMap(wb As Workbook, ByVal carry As Object)
     Dim ws As Worksheet
     Set ws = EnsureCarrySheet(wb)
     ws.Rows("2:" & ws.Rows.Count).ClearContents
 
-    Dim n As Long: n = TD_Count(carry)
-    If n > 0 Then
-        Dim arr() As Variant, i As Long, key As Variant
-        ReDim arr(1 To n, 1 To 2)
-        i = 0
-        For Each key In TD_Keys(carry)
-            i = i + 1
-            arr(i, 1) = CStr(key)
-            arr(i, 2) = CDbl(TD_Get(carry, CStr(key), 0#))
-        Next key
-        ws.Range("A2").Resize(n, 2).value = arr
+    If Not carry Is Nothing Then
+        Dim arr() As Variant, i As Long, n As Long
+        n = carry.Count
+        If n > 0 Then
+            ReDim arr(1 To n, 1 To 2)
+            i = 0
+            Dim key As Variant
+            For Each key In carry.Keys
+                i = i + 1
+                arr(i, 1) = CStr(key)
+                arr(i, 2) = CDbl(carry(key))
+            Next key
+            ws.Range("A2").Resize(n, 2).Value = arr
+        End If
     End If
 End Sub
-'=============================================================================
-
 
 '======================= ORIGIN AGG (for OutOfCityTotal) ===========================
 Private Sub UpdateOriginAgg(ByRef keys() As String, ByRef tot() As Double, _
@@ -745,7 +700,7 @@ Private Sub GetFixedSpan(ByVal sheetName As String, ByRef startCol As Long, ByRe
         Case "Neptune-Moreno":    sStart = MOR_START_COL: sEnd = MOR_END_COL
     End Select
     startCol = ColLetterToNumber(sStart)
-    endCol = ColLetterToNumber(sEnd)
+    endCol   = ColLetterToNumber(sEnd)
 End Sub
 
 Private Function ColLetterToNumber(ByVal colLetters As String) As Long
@@ -773,7 +728,7 @@ Private Function EnsureOutputSheet(wb As Workbook, ByVal name As String) As Work
         Set EnsureOutputSheet = wb.Worksheets(name)
     Else
         Set EnsureOutputSheet = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
-        EnsureOutputSheet.name = name
+        EnsureOutputSheet.Name = name
     End If
 End Function
 
@@ -797,7 +752,7 @@ Private Function BuildSectionTable_Block(ws As Worksheet, ByVal sectionName As S
     Dim r As Long, rStart As Long, rEnd As Long
 
     For r = 1 To lastRow
-        If UCase$(Trim$(CStr(ws.Cells(r, "C").value))) = UCase$(sectionName) Then
+        If UCase$(Trim$(CStr(ws.Cells(r, "C").Value))) = UCase$(sectionName) Then
             rStart = r + 1
             Exit For
         End If
@@ -806,7 +761,7 @@ Private Function BuildSectionTable_Block(ws As Worksheet, ByVal sectionName As S
 
     rEnd = lastRow
     For r = rStart To lastRow
-        Dim hdr As String: hdr = UCase$(Trim$(CStr(ws.Cells(r, "C").value)))
+        Dim hdr As String: hdr = UCase$(Trim$(CStr(ws.Cells(r, "C").Value)))
         If (hdr = "BEGINNING STOCK") Or (hdr = "ENDING STOCK") Or (hdr = "SALES") Or (hdr = "EXISTING") Or (hdr = "TO BE RECEIVED") Then
             If r > rStart Then rEnd = r - 1
             Exit For
@@ -817,17 +772,18 @@ Private Function BuildSectionTable_Block(ws As Worksheet, ByVal sectionName As S
     Dim lastColorKey As String: lastColorKey = ""
 
     For r = rStart To rEnd
-        Dim desc As String: desc = CStr(ws.Cells(r, "D").value)
+        Dim desc As String: desc = CStr(ws.Cells(r, "D").Value)
         Dim bx As Long: bx = ParseBoxNum(desc)
         If bx = 0 Then GoTo NextRow
 
+        ' ignore "Box 8 - NEW ARMS/SRMS"
         If bx = 8 Then
             Dim U8 As String: U8 = UCase$(desc)
             If (InStr(1, U8, "NEW") > 0) And (InStr(1, U8, "ARMS") > 0 Or InStr(1, U8, "SRMS") > 0) Then GoTo NextRow
         End If
 
         Dim colorRaw As String, colorKey As String
-        colorRaw = CStr(ws.Cells(r, "E").value)
+        colorRaw = CStr(ws.Cells(r, "E").Value)
         colorKey = ""
         If IsLikelyColor(colorRaw) Then colorKey = NormalizeColor(colorRaw)
         If Len(colorKey) = 0 And Len(lastColorKey) > 0 Then colorKey = lastColorKey
@@ -942,9 +898,9 @@ Private Function SectionAvailable_Table(ws As Worksheet, gateTbl As Variant, ByV
             End If
         Else
             hasAny = True
-            v = ValD(ws.Cells(r, colIdx).value)
+            v = ValD(ws.Cells(r, colIdx).Value)
             If v < EPS_NEG Then
-                reason = "Box " & b & " < 0 at " & ws.name & "!" & ws.Cells(r, colIdx).Address(False, False)
+                reason = "Box " & b & " < 0 at " & ws.Name & "!" & ws.Cells(r, colIdx).Address(False, False)
                 Exit Function
             End If
         End If
@@ -997,7 +953,3 @@ Private Function GetArrayBounds(ByVal arr As Variant, ByRef lb As Long, ByRef ub
     On Error GoTo 0
 End Function
 '============================================================
-
-
-
-
