@@ -95,7 +95,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     ThisWorkbook.Worksheets(CARRY_SHEET).Visible = xlSheetHidden
     
     Dim carryRun As Object
-    Set carryRun = CreateObject("Scripting.Dictionary")
+    Set carryRun = NewDictionary()
     
     ' Seed carryRun with whatever was saved last week
     Dim kKey As Variant
@@ -581,6 +581,19 @@ cleanup:
     Application.ScreenUpdating = prevScr
 End Sub
 '============================================================
+
+'---- Cross-platform Dictionary factory (Windows uses COM; Mac uses class) ----
+Public Function NewDictionary() As Object
+    On Error Resume Next
+    Set NewDictionary = CreateObject("Scripting.Dictionary") ' Windows
+    On Error GoTo 0
+    If NewDictionary Is Nothing Then
+        ' Mac fallback – requires your cDictionary class to exist
+        Set NewDictionary = New cDictionary
+    End If
+End Function
+'----------------------------------------------------------------------------
+
 '======================= CARRYOVER HELPERS ============================
 Private Function EnsureCarrySheet(wb As Workbook) As Worksheet
     If SheetExists(CARRY_SHEET) Then
@@ -597,7 +610,7 @@ End Function
 Private Function LoadCarryMap(wb As Workbook) As Object
     Dim ws As Worksheet, lastRow As Long, d As Object
     Set ws = EnsureCarrySheet(wb)
-    Set d = CreateObject("Scripting.Dictionary")
+    Set d = NewDictionary()
     lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
     If lastRow >= 2 Then
         Dim r As Long, k As String, v As Double, nk As String
