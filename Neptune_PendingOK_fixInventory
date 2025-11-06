@@ -189,15 +189,15 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     hdr(1) = "Demand City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "GateBy": hdr(7) = "LocalCorePass": hdr(8) = "Reason"
 
-    ' NEW: Local stock snapshots
-    k = 8
+    For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "Raw B" & iCol: Next iCol
+    For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "EligLocal B" & iCol: Next iCol
+
+    ' >>> Local snapshots should come right after EligLocal B1..B12 <<<
     k = k + 1: hdr(k) = "LocalBase_Before"
     k = k + 1: hdr(k) = "LocalRemain_AfterLocal"
     k = k + 1: hdr(k) = "LocalRemain_AfterP1"
     k = k + 1: hdr(k) = "LocalRemain_AfterP2"
 
-    For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "Raw B" & iCol: Next iCol
-    For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "EligLocal B" & iCol: Next iCol
     k = k + 1: hdr(k) = "NewSalesTotal"
     k = k + 1: hdr(k) = "Backlog"
     k = k + 1: hdr(k) = "TotalToShip"
@@ -445,23 +445,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 rowArr(5) = ColN2L(c)
                 rowArr(6) = UCase$(GATE_BY)
                 rowArr(7) = corePass
-                rowArr(8) = reason
-
-                ' Reserve positions for the 4 snapshot cells; fill 3 of them at the END of the run.
-                ' We do write LocalBase_Before now (we know it here).
-                Dim posLocalBase As Long, posLocalAfterLocal As Long, posLocalAfterP1 As Long, posLocalAfterP2 As Long
-                
-                idx = 8
-                posLocalBase       = idx + 1
-                posLocalAfterLocal = idx + 2
-                posLocalAfterP1    = idx + 3
-                posLocalAfterP2    = idx + 4
-                
-                ' Write LocalBase_Before now
-                rowArr(posLocalBase) = baseLocal
-                
-                ' The three remainder cells will be filled later (after all rows are processed)
-                idx = idx + 4   ' advance; Raw/Elig start next
+                rowArr(8) = reason 
 
                 ' Raw B1..B12
 
@@ -472,6 +456,19 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 For bb = 1 To MAX_BOX
                     idx = idx + 1: rowArr(idx) = eligLocal(bb)
                 Next bb
+
+                ' Reserve positions for Local snapshots right after EligLocal block
+                Dim posLocalBase As Long, posLocalAfterLocal As Long, posLocalAfterP1 As Long, posLocalAfterP2 As Long
+                posLocalBase       = idx + 1
+                posLocalAfterLocal = idx + 2
+                posLocalAfterP1    = idx + 3
+                posLocalAfterP2    = idx + 4
+                
+                ' We already know baseLocal here
+                rowArr(posLocalBase) = baseLocal
+                
+                ' advance past the four snapshot columns
+                idx = idx + 4
                 
                 ' SalesTotal_New
                 idx = idx + 1: rowArr(idx) = salesTotalNew
@@ -634,12 +631,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 fromP1_Total    = fromP1_Backlog    + fromP1_NewSales
                 fromP2_Total    = fromP2_Backlog    + fromP2_NewSales
 
-                ' Now that all consumes are done, write the 4 Local* snapshot cells
-                rowArr(posLocalBase)       = baseLocal
-                rowArr(posLocalAfterLocal) = Remaining_For(usedByOrigin, baseLocal, demandCity, colorKey, wkStart, wkEnd)
-                rowArr(posLocalAfterP1)    = rowArr(posLocalAfterLocal)  ' P1 does not alter local city's stock
-                rowArr(posLocalAfterP2)    = rowArr(posLocalAfterLocal)  ' P2 does not alter local city's stock
-
                 idx = idx + 1: rowArr(idx) = backlog
                 idx = idx + 1: rowArr(idx) = totalToShip
 
@@ -705,17 +696,13 @@ NextSheet:
 
     ' === NEW: finalize LocalRemain_* using role-specific maps (full-run totals) ===
     ' Column positions based on your header building:
-    '  1..8 = meta
-    '  9    = LocalBase_Before
-    ' 10    = LocalRemain_AfterLocal
-    ' 11    = LocalRemain_AfterP1
-    ' 12    = LocalRemain_AfterP2
+    ' Positions now: 1..8 meta, then Raw (MAX_BOX), then EligLocal (MAX_BOX), then the 4 Local* snapshots
     Dim posLocalBase As Long, posLocalAfterLocal As Long, posLocalAfterP1 As Long, posLocalAfterP2 As Long
-    posLocalBase       = 9
-    posLocalAfterLocal = 10
-    posLocalAfterP1    = 11
-    posLocalAfterP2    = 12
-
+    posLocalBase       = 8 + 2 * MAX_BOX + 1
+    posLocalAfterLocal = posLocalBase + 1
+    posLocalAfterP1    = posLocalBase + 2
+    posLocalAfterP2    = posLocalBase + 3
+    
     Dim originCity As String: originCity = CStr(rArr(1))
     Dim wkStart As Date: wkStart = CDate(rArr(3))
     Dim wkEnd   As Date: wkEnd   = CDate(rArr(4))
