@@ -22,58 +22,108 @@ Public Const MOR_START_COL As String = "BP"
 Public Const MOR_END_COL   As String = "EN"
 Private Const CARRY_SHEET As String = "Boxes_Shipped_CARRY" ' Persist previous run's pending here
 
-' ---------- Core / Add-ons ----------
-Private Function CoreGroup() As Variant
-    CoreGroup = VBA.Array(1, 2, 3, 4, 5) ' core = 1..5
+'============================================================
+'==================== CROSS-PLATFORM MAP ====================
+' Small wrapper that uses Scripting.Dictionary if present;
+' otherwise falls back to a Collection storing [key, value] pairs.
+' Keeps everything in ONE module (no class files needed).
+
+Public Function Map_Create() As Object
+    On Error Resume Next
+    Dim d As Object
+    Set d = CreateObject("Scripting.Dictionary") ' Windows & some Mac installs
+    On Error GoTo 0
+    If d Is Nothing Then
+        Dim c As Collection
+        Set c = New Collection
+        Set Map_Create = c
+    Else
+        Set Map_Create = d
+    End If
 End Function
 
-Private Function AddOnBoxes() As Variant
-    Dim a() As Variant, b As Long, n As Long
-    If MAX_BOX < 6 Then AddOnBoxes = VBA.Array(): Exit Function
-    ReDim a(0 To MAX_BOX - 6)
-    n = 0
-    For b = 6 To MAX_BOX
-        a(n) = b
-        n = n + 1
-    Next b
-    AddOnBoxes = a
-End Function
-
-' ---------- Partner rules (priority order) ----------
-Private Function PartnersFor(ByVal sheetName As String) As Variant
-    Select Case sheetName
-        Case "Neptune-Montreal":  PartnersFor = VBA.Array("Neptune-Toronto", "Neptune-Vancouver")
-        Case "Neptune-Toronto":   PartnersFor = VBA.Array("Neptune-Montreal", "Neptune-Vancouver")
-        Case "Neptune-Vancouver": PartnersFor = VBA.Array("Neptune-Toronto", "Neptune-Montreal")  ' <-- order swapped
-        Case "Neptune-Ironlink":  PartnersFor = VBA.Array("Neptune-Moreno")
-        Case "Neptune-Moreno":    PartnersFor = VBA.Array("Neptune-Ironlink")
-        Case Else:                PartnersFor = VBA.Array()
-    End Select
-End Function
-
-' Display names for sheet names
-Private Function SheetCityName(ByVal sheetName As String) As String
-    Select Case sheetName
-        Case "Neptune-Montreal":  SheetCityName = "Montreal"
-        Case "Neptune-Toronto":   SheetCityName = "Toronto"
-        Case "Neptune-Vancouver": SheetCityName = "Vancouver"
-        Case "Neptune-Ironlink":  SheetCityName = "Ironlink"
-        Case "Neptune-Moreno":    SheetCityName = "Moreno"
-        Case Else:                SheetCityName = sheetName
-    End Select
-End Function
-
-' For outbound split label (not strictly required, but kept)
-Private Sub OriginPartnerDisplay(ByVal originCity As String, ByRef p1Disp As String, ByRef p2Disp As String)
-    Select Case originCity
-        Case "Montreal":  p1Disp = "Toronto":  p2Disp = "Vancouver"
-        Case "Toronto":   p1Disp = "Montreal": p2Disp = "Vancouver"
-        Case "Vancouver": p1Disp = "Toronto":  p2Disp = "Montreal"  ' <-- order swapped
-        Case "Ironlink":  p1Disp = "Moreno":   p2Disp = ""
-        Case "Moreno":    p1Disp = "Ironlink": p2Disp = ""
-        Case Else:        p1Disp = "":         p2Disp = ""
-    End Select
+Public Sub Map_Set(ByVal m As Object, ByVal key As String, ByVal value As Double)
+    If TypeName(m) = "Dictionary" Or TypeName(m) = "Scripting.Dictionary" Then
+        m(key) = value
+    Else
+        ' Collection fallback — store [key, value] and use key for uniqueness
+        On Error Resume Next
+        m.Remove CStr(key)             ' remove if already exists
+        Err.Clear
+        m.Add Array(CStr(key), CDbl(value)), CStr(key)
+        On Error GoTo 0
+    End If
 End Sub
+
+Public Function Map_Get(ByVal m As Object, ByVal key As String, Optional ByVal defaultValue As Double = 0#) As Double
+    If TypeName(m) = "Dictionary" Or TypeName(m) = "Scripting.Dictionary" Then
+        If m.Exists(CStr(key)) Then
+            Map_Get = CDbl(m(CStr(key)))
+        Else
+            Map_Get = defaultValue
+        End If
+    Else
+        On Error Resume Next
+        Dim itm As Variant
+        itm = m.Item(CStr(key))        ' keyed access
+        If Err.Number <> 0 Then
+            Err.Clear
+            Map_Get = defaultValue
+        Else
+            If IsArray(itm) Then
+                If UBound(itm) >= 1 Then
+                    Map_Get = CDbl(itm(1))
+                Else
+                    Map_Get = defaultValue
+                End If
+            Else
+                Map_Get = CDbl(itm)
+            End If
+        End If
+        On Error GoTo 0
+    End If
+End Function
+
+Public Function Map_Exists(ByVal m As Object, ByVal key As String) As Boolean
+    If TypeName(m) = "Dictionary" Or TypeName(m) = "Scripting.Dictionary" Then
+        Map_Exists = m.Exists(CStr(key))
+    Else
+        On Error Resume Next
+        Dim tmp As Variant
+        tmp = m.Item(CStr(key))
+        Map_Exists = (Err.Number = 0)
+        Err.Clear
+        On Error GoTo 0
+    End If
+End Function
+
+Public Function Map_Keys(ByVal m As Object) As Variant
+    If TypeName(m) = "Dictionary" Or TypeName(m) = "Scripting.Dictionary" Then
+        Map_Keys = m.Keys
+    Else
+        Dim n As Long, i As Long
+        n = m.Count
+        If n = 0 Then
+            Map_Keys = Empty
+            Exit Function
+        End If
+        Dim arr() As String, v As Variant
+        ReDim arr(1 To n)
+        For i = 1 To n
+            v = m.Item(i)              ' positional access
+            If IsArray(v) Then
+                arr(i) = CStr(v(0))    ' stored key
+            Else
+                arr(i) = ""            ' should not happen; keep safe
+            End If
+        Next i
+        Map_Keys = arr
+    End If
+End Function
+
+Public Function Map_Count(ByVal m As Object) As Long
+    Map_Count = m.Count
+End Function
 
 '============================================================
 
@@ -95,13 +145,16 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     ThisWorkbook.Worksheets(CARRY_SHEET).Visible = xlSheetHidden
     
     Dim carryRun As Object
-    Set carryRun = CreateObject("Scripting.Dictionary")
+    Set carryRun = Map_Create()
     
     ' Seed carryRun with whatever was saved last week
-    Dim kKey As Variant
-    For Each kKey In carryPrev.Keys
-        carryRun(kKey) = carryPrev(kKey)
-    Next kKey
+    Dim kKey As Variant, prevKeys As Variant
+    prevKeys = Map_Keys(carryPrev)
+    If Not IsEmpty(prevKeys) Then
+        For Each kKey In prevKeys
+            Map_Set carryRun, CStr(kKey), Map_Get(carryPrev, CStr(kKey))
+        Next kKey
+    End If
 
     ' ===== Speed up =====
     Dim prevCalc As XlCalculation, prevScr As Boolean, prevEvt As Boolean
@@ -288,6 +341,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                 ' ---- Cover locally first ----
                 'PATCH: mark local-eligible boxes, but do NOT ship yet
+                Dim bb As Long
                 For b = 1 To MAX_BOX
                     If raw(b) > 0 And allowedLocal(b) Then
                         eligLocal(b) = raw(b)
@@ -297,10 +351,12 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                 ' ---- Cover remaining with partners in order; first eligible wins ----
                 ' PATCH: precompute partner eligibility (no shipping yet)
-                If hasPartners Then
-                    Dim p1Start As Long, p1End As Long, p1Col As Long, off1 As Long
-                    Dim p2Start As Long, p2End As Long, p2Col As Long, off2 As Long
+                Dim p1Start As Long, p1End As Long, p1Col As Long, off1 As Long
+                Dim p2Start As Long, p2End As Long, p2Col As Long, off2 As Long
+                Dim p1Name As String, p2Name As String
+                p1Name = "": p2Name = ""
                 
+                If hasPartners Then
                     ' Partner 1 (if present)
                     If Not partners(pLB) Is Nothing Then
                         GetFixedSpan partners(pLB).Name, p1Start, p1End
@@ -310,7 +366,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             AllowedBoxesForDC_Single partners(pLB), partnerGate(pLB), colorKey, p1Col, CoreGroup(), p1Pass, rz1, allowedP1
                             If p1Pass Then
                                 canP1 = True
-                                ' use ORIGIN (partner) headers for OutOfCityTotal key
+                                p1Name = SheetCityName(partners(pLB).Name)
                                 If IsDate(partners(pLB).Cells(2, p1Col).Value) Then p1WkStart = CDate(partners(pLB).Cells(2, p1Col).Value)
                                 If IsDate(partners(pLB).Cells(4, p1Col).Value) Then p1WkEnd   = CDate(partners(pLB).Cells(4, p1Col).Value)
                             End If
@@ -327,6 +383,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                                 AllowedBoxesForDC_Single partners(pLB + 1), partnerGate(pLB + 1), colorKey, p2Col, CoreGroup(), p2Pass, rz2, allowedP2
                                 If p2Pass Then
                                     canP2 = True
+                                    p2Name = SheetCityName(partners(pLB + 1).Name)
                                     If IsDate(partners(pLB + 1).Cells(2, p2Col).Value) Then p2WkStart = CDate(partners(pLB + 1).Cells(2, p2Col).Value)
                                     If IsDate(partners(pLB + 1).Cells(4, p2Col).Value) Then p2WkEnd   = CDate(partners(pLB + 1).Cells(4, p2Col).Value)
                                 End If
@@ -350,7 +407,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 rowArr(8) = reason
                 
                 idx = 8
-                Dim bb As Long
                 ' Raw B1..B12
                 For bb = 1 To MAX_BOX
                     idx = idx + 1: rowArr(idx) = raw(bb)
@@ -368,8 +424,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 carryKey = MakeCarryKey(demandCity, colorKey)
                 
                 Dim backlog As Double
-                If carryRun.Exists(carryKey) Then
-                    backlog = CDbl(carryRun(carryKey))
+                If Map_Exists(carryRun, carryKey) Then
+                    backlog = Map_Get(carryRun, carryKey)
                 Else
                     backlog = 0#
                 End If
@@ -397,6 +453,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim backlogSucceeded As Boolean
                 backlogSucceeded = (backlog = 0#) Or (needB <= 0#)
                 
+                Dim fromLocal_NewSales_tmp As Double, fromP1_NewSales_tmp As Double, fromP2_NewSales_tmp As Double
                 If backlogSucceeded Then
                     ' Commit backlog shipments + OutOfCity attribution
                     If planL_b > 0 Then
@@ -436,9 +493,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     End If
                 
                     If allLocal Then
-                        ' Entirety of SalesTotal_New ships from Local
                         fromLocal_NewSales = sumSales
-                        ' Attribute OutOfCity/Origin (Local -> demand city)
                         If sumSales > 0 Then
                             UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, sumSales
                         End If
@@ -455,10 +510,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         End If
                 
                         If allP1 Then
-                            ' Entirety ships from P1
                             fromP1_NewSales = sumSales
                             If sumSales > 0 Then
-                                UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB).Name), demandCity, colorKey, p1WkStart, p1WkEnd, sumSales
+                                UpdateOriginAgg keys, tot, cnt, cap, p1Name, demandCity, colorKey, p1WkStart, p1WkEnd, sumSales
                             End If
                         Else
                             ' Try P2 for ALL demanded box types
@@ -473,10 +527,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             End If
                 
                             If allP2 Then
-                                ' Entirety ships from P2
                                 fromP2_NewSales = sumSales
                                 If sumSales > 0 Then
-                                    UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB + 1).Name), demandCity, colorKey, p2WkStart, p2WkEnd, sumSales
+                                    UpdateOriginAgg keys, tot, cnt, cap, p2Name, demandCity, colorKey, p2WkStart, p2WkEnd, sumSales
                                 End If
                             Else
                                 ' No origin can ship the full set -> ship ZERO new sales
@@ -502,13 +555,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = fromLocal_Total
                 
                 ' P1 name + numbers
-                Dim p1Name As String, p2Name As String
-                p1Name = "": p2Name = ""
-                If hasPartners Then
-                    If Not partners(pLB) Is Nothing Then p1Name = SheetCityName(partners(pLB).Name)
-                    If pUB >= pLB + 1 Then If Not partners(pLB + 1) Is Nothing Then p2Name = SheetCityName(partners(pLB + 1).Name)
-                End If
-                
                 idx = idx + 1: rowArr(idx) = p1Name
                 idx = idx + 1: rowArr(idx) = fromP1_Backlog
                 idx = idx + 1: rowArr(idx) = fromP1_NewSales
@@ -526,7 +572,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 pendingThisWeek = totalToShip - boxesShipped
                 If pendingThisWeek < 0 Then pendingThisWeek = 0#
                 
-                carryRun(carryKey) = pendingThisWeek
+                Map_Set carryRun, carryKey, pendingThisWeek
                 
                 idx = idx + 1: rowArr(idx) = boxesShipped
                 idx = idx + 1: rowArr(idx) = pendingThisWeek
@@ -551,7 +597,7 @@ NextSheet:
     Dim it As Variant, outKey As String, outIdx As Long
     For Each it In rowCache
         Dim rArr() As Variant: rArr = it(0)
-        Dim outColorKey As String: outColorKey = it(1)         ' <— renamed to avoid duplicate declaration
+        Dim outColorKey As String: outColorKey = it(1)
         outKey = MakeKey(CStr(rArr(1)), outColorKey, CDate(rArr(3)), CDate(rArr(4)))
         outIdx = FindKeyIndex(keys, cnt, outKey)
         If outIdx > 0 Then
@@ -597,7 +643,8 @@ End Function
 Private Function LoadCarryMap(wb As Workbook) As Object
     Dim ws As Worksheet, lastRow As Long, d As Object
     Set ws = EnsureCarrySheet(wb)
-    Set d = CreateObject("Scripting.Dictionary")
+    Set d = Map_Create()
+
     lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
     If lastRow >= 2 Then
         Dim r As Long, k As String, v As Double, nk As String
@@ -605,35 +652,40 @@ Private Function LoadCarryMap(wb As Workbook) As Object
             k = CStr(ws.Cells(r, "A").Value)
             v = ValD(ws.Cells(r, "B").Value)
             If Len(k) > 0 Then
-                nk = NormalizeCarryKey(k)          ' <-- collapse City|Color|wkStart|wkEnd -> City|Color
-                d(nk) = v
+                nk = NormalizeCarryKey(k)          ' collapse City|Color|wkStart|wkEnd -> City|Color
+                Map_Set d, nk, v
             End If
         Next r
     End If
     Set LoadCarryMap = d
 End Function
 
-
 Private Sub SaveCarryMap(wb As Workbook, ByVal carry As Object)
     Dim ws As Worksheet
     Set ws = EnsureCarrySheet(wb)
     ws.Rows("2:" & ws.Rows.Count).ClearContents
 
-    If Not carry Is Nothing Then
-        Dim arr() As Variant, i As Long, n As Long
-        n = carry.Count
-        If n > 0 Then
-            ReDim arr(1 To n, 1 To 2)
-            i = 0
-            Dim key As Variant
-            For Each key In carry.Keys
-                i = i + 1
-                arr(i, 1) = CStr(key)
-                arr(i, 2) = CDbl(carry(key))
-            Next key
-            ws.Range("A2").Resize(n, 2).Value = arr
-        End If
+    If carry Is Nothing Then Exit Sub
+
+    Dim n As Long
+    n = Map_Count(carry)
+    If n <= 0 Then Exit Sub
+
+    Dim arr() As Variant, i As Long
+    ReDim arr(1 To n, 1 To 2)
+
+    Dim key As Variant, keys As Variant
+    keys = Map_Keys(carry)
+    i = 0
+    If Not IsEmpty(keys) Then
+        For Each key In keys
+            i = i + 1
+            arr(i, 1) = CStr(key)
+            arr(i, 2) = Map_Get(carry, CStr(key))
+        Next key
     End If
+
+    If i > 0 Then ws.Range("A2").Resize(i, 2).Value = arr
 End Sub
 
 '======================= ORIGIN AGG (for OutOfCityTotal) ===========================
@@ -690,6 +742,58 @@ End Function
 
 
 '======================= COMMON HELPERS ============================
+Private Function CoreGroup() As Variant
+    CoreGroup = VBA.Array(1, 2, 3, 4, 5) ' core = 1..5
+End Function
+
+Private Function AddOnBoxes() As Variant
+    Dim a() As Variant, b As Long, n As Long
+    If MAX_BOX < 6 Then AddOnBoxes = VBA.Array(): Exit Function
+    ReDim a(0 To MAX_BOX - 6)
+    n = 0
+    For b = 6 To MAX_BOX
+        a(n) = b
+        n = n + 1
+    Next b
+    AddOnBoxes = a
+End Function
+
+' ---------- Partner rules (priority order) ----------
+Private Function PartnersFor(ByVal sheetName As String) As Variant
+    Select Case sheetName
+        Case "Neptune-Montreal":  PartnersFor = VBA.Array("Neptune-Toronto", "Neptune-Vancouver")
+        Case "Neptune-Toronto":   PartnersFor = VBA.Array("Neptune-Montreal", "Neptune-Vancouver")
+        Case "Neptune-Vancouver": PartnersFor = VBA.Array("Neptune-Toronto", "Neptune-Montreal")  ' <-- order swapped
+        Case "Neptune-Ironlink":  PartnersFor = VBA.Array("Neptune-Moreno")
+        Case "Neptune-Moreno":    PartnersFor = VBA.Array("Neptune-Ironlink")
+        Case Else:                PartnersFor = VBA.Array()
+    End Select
+End Function
+
+' Display names for sheet names
+Private Function SheetCityName(ByVal sheetName As String) As String
+    Select Case sheetName
+        Case "Neptune-Montreal":  SheetCityName = "Montreal"
+        Case "Neptune-Toronto":   SheetCityName = "Toronto"
+        Case "Neptune-Vancouver": SheetCityName = "Vancouver"
+        Case "Neptune-Ironlink":  SheetCityName = "Ironlink"
+        Case "Neptune-Moreno":    SheetCityName = "Moreno"
+        Case Else:                SheetCityName = sheetName
+    End Select
+End Function
+
+' For outbound split label (not strictly required, but kept)
+Private Sub OriginPartnerDisplay(ByVal originCity As String, ByRef p1Disp As String, ByRef p2Disp As String)
+    Select Case originCity
+        Case "Montreal":  p1Disp = "Toronto":  p2Disp = "Vancouver"
+        Case "Toronto":   p1Disp = "Montreal": p2Disp = "Vancouver"
+        Case "Vancouver": p1Disp = "Toronto":  p2Disp = "Montreal"  ' <-- order swapped
+        Case "Ironlink":  p1Disp = "Moreno":   p2Disp = ""
+        Case "Moreno":    p1Disp = "Ironlink": p2Disp = ""
+        Case Else:        p1Disp = "":         p2Disp = ""
+    End Select
+End Sub
+
 Private Sub GetFixedSpan(ByVal sheetName As String, ByRef startCol As Long, ByRef endCol As Long)
     Dim sStart As String, sEnd As String
     Select Case sheetName
