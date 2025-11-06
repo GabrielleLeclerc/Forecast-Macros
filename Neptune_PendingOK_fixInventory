@@ -188,7 +188,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     ReDim hdr(1 To 8 + 2 * MAX_BOX + 21)
     hdr(1) = "Demand City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "GateBy": hdr(7) = "LocalCorePass": hdr(8) = "Reason"
-
+    k = 8
     For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "Raw B" & iCol: Next iCol
     For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "EligLocal B" & iCol: Next iCol
 
@@ -447,29 +447,39 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 rowArr(7) = corePass
                 rowArr(8) = reason 
 
+               ' Start filling after the first 8 meta columns
+                idx = 8
+                
                 ' Raw B1..B12
-
                 For bb = 1 To MAX_BOX
                     idx = idx + 1: rowArr(idx) = raw(bb)
                 Next bb
+                
                 ' EligLocal B1..B12
                 For bb = 1 To MAX_BOX
                     idx = idx + 1: rowArr(idx) = eligLocal(bb)
                 Next bb
-
+                
                 ' Reserve positions for Local snapshots right after EligLocal block
-                Dim posLocalBase As Long, posLocalAfterLocal As Long, posLocalAfterP1 As Long, posLocalAfterP2 As Long
-                posLocalBase       = idx + 1
-                posLocalAfterLocal = idx + 2
-                posLocalAfterP1    = idx + 3
-                posLocalAfterP2    = idx + 4
+                Dim posLocalBase_wip As Long, posLocalAfterLocal_wip As Long, posLocalAfterP1_wip As Long, posLocalAfterP2_wip As Long
+                posLocalBase_wip       = idx + 1
+                posLocalAfterLocal_wip = idx + 2
+                posLocalAfterP1_wip    = idx + 3
+                posLocalAfterP2_wip    = idx + 4
                 
                 ' We already know baseLocal here
-                rowArr(posLocalBase) = baseLocal
+                rowArr(posLocalBase_wip) = baseLocal
                 
                 ' advance past the four snapshot columns
                 idx = idx + 4
+
                 
+                ' We already know baseLocal here
+                rowArr(posLocalBase_wip) = baseLocal
+                
+                ' advance past the four snapshot columns
+                idx = idx + 4
+
                 ' SalesTotal_New
                 idx = idx + 1: rowArr(idx) = salesTotalNew
                 
@@ -706,16 +716,19 @@ NextSheet:
     Dim originCity As String: originCity = CStr(rArr(1))
     Dim wkStart As Date: wkStart = CDate(rArr(3))
     Dim wkEnd   As Date: wkEnd   = CDate(rArr(4))
-    Dim k As String: k = OriginKey(originCity, outColorKey, wkStart, wkEnd)
+    Dim originKeyStr As String: originKeyStr = OriginKey(originCity, outColorKey, wkStart, wkEnd)
+    
+    Dim baseLocal_out As Double
+    baseLocal_out = ValD(rArr(posLocalBase))
+    
+    Dim usedLoc As Double: usedLoc = Map_Get(usedLocal, originKeyStr, 0#)
+    Dim usedP1  As Double: usedP1  = Map_Get(usedAsP1, originKeyStr, 0#)
+    Dim usedP2  As Double: usedP2  = Map_Get(usedAsP2, originKeyStr, 0#)
+    
+    rArr(posLocalAfterLocal) = baseLocal_out - usedLoc
+    rArr(posLocalAfterP1)    = baseLocal_out - usedLoc - usedP1
+    rArr(posLocalAfterP2)    = baseLocal_out - usedLoc - usedP1 - usedP2
 
-    Dim baseLocal As Double: baseLocal = ValD(rArr(posLocalBase))
-    Dim usedLoc As Double:   usedLoc   = Map_Get(usedLocal, k, 0#)
-    Dim usedP1  As Double:   usedP1    = Map_Get(usedAsP1, k, 0#)
-    Dim usedP2  As Double:   usedP2    = Map_Get(usedAsP2, k, 0#)
-
-    rArr(posLocalAfterLocal) = baseLocal - usedLoc
-    rArr(posLocalAfterP1)    = baseLocal - usedLoc - usedP1
-    rArr(posLocalAfterP2)    = baseLocal - usedLoc - usedP1 - usedP2
 
     ' Now write the row
     wsDbg.Cells(dbgRow, 1).Resize(1, UBound(rArr)).Value = rArr
