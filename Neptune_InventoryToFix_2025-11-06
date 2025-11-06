@@ -173,16 +173,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-
-    ' Column index trackers (must be declared before use)
-    Dim COL_FROMLOCAL_TOTAL As Long
-    Dim COL_OUTOFCITY As Long
-    Dim COL_LOCALBASE As Long
-    Dim COL_REM_AFTERLOCAL As Long
-    Dim COL_REM_AFTERP1 As Long
-    Dim COL_REM_AFTERP2 As Long
-
-    ReDim hdr(1 To 8 + 2 * MAX_BOX + 21) 
+    ReDim hdr(1 To 8 + 2 * MAX_BOX + 17) 
     hdr(1) = "Demand City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "GateBy": hdr(7) = "LocalCorePass": hdr(8) = "Reason"
     k = 8
@@ -210,22 +201,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "Unfulfilled"
     k = k + 1: hdr(k) = "OutOfCityTotal"
 
-    ' Remember the column where FromLocal_Total ended up
-    COL_FROMLOCAL_TOTAL = k - 11   ' Explanation:
-                                   ' At this point k points at "OutOfCityTotal".
-                                   ' "FromLocal_Total" is 11 positions before:
-                                   '   P1 City(1) + 3 P1 vals(3) + P2 City(1) + 3 P2 vals(3)
-                                   '   + BoxesShipped(1) + Unfulfilled(1) + OutOfCityTotal(1) = 11.
-  
-    ' Track OutOfCityTotal's index before we add new columns
-    COL_OUTOFCITY = k
-
-    ' === New columns requested ===
-    k = k + 1: hdr(k) = "LocalBase_Before"           : COL_LOCALBASE       = k
-    k = k + 1: hdr(k) = "LocalRemain_AfterLocal"     : COL_REM_AFTERLOCAL  = k
-    k = k + 1: hdr(k) = "LocalRemain_AfterP1"        : COL_REM_AFTERP1     = k
-    k = k + 1: hdr(k) = "LocalRemain_AfterP2"        : COL_REM_AFTERP2     = k
-    
     Dim COL_COUNT As Long
     COL_COUNT = k  ' total columns actually created in hdr
     
@@ -240,18 +215,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     ReDim keys(1 To cap)
     ReDim tot(1 To cap)
 
-    ' NEW: tier-specific origin aggregators (only P1/P2 needed for the “remain” math)
-    Dim keysP1() As String, totP1() As Double, cntP1 As Long, capP1 As Long
-    Dim keysP2() As String, totP2() As Double, cntP2 As Long, capP2 As Long
-    capP1 = 256: capP2 = 256
-    ReDim keysP1(1 To capP1): ReDim totP1(1 To capP1)
-    ReDim keysP2(1 To capP2): ReDim totP2(1 To capP2)
-    cntP1 = 0: cntP2 = 0
-
     ' ===== Cache demand rows (to fill OutOfCityTotal after aggregation is complete) =====
     Dim rowCache As Collection: Set rowCache = New Collection
 
-    
     ' ===== Iterate DEMAND cities and decide who ships each box/qty =====
     Dim iCity As Long
     For iCity = LBound(dcSheets) To UBound(dcSheets)
@@ -372,19 +338,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 ' ---- Local gating ----
                 Dim corePass As Boolean, reason As String
                 AllowedBoxesForDC_Single wsDC, gateTbl, colorKey, c, CoreGroup(), corePass, reason, allowedLocal
-
-                ' === LocalBase_Before: base gate total for this demand city/week/color BEFORE any allocation ===
-                Dim localBaseBefore As Double: localBaseBefore = 0#
-                If corePass Then
-                    Dim rGate As Long, vGate As Double
-                    For b = 1 To MAX_BOX
-                        rGate = RowForInTable(gateTbl, colorKey, b)
-                        If rGate > 0 Then
-                            vGate = ValD(wsDC.Cells(rGate, c).Value)
-                            If vGate > 0 Then localBaseBefore = localBaseBefore + vGate
-                        End If
-                    Next b
-                End If
 
                 ' ---- Cover locally first ----
                 'PATCH: mark local-eligible boxes, but do NOT ship yet
@@ -509,19 +462,12 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     End If
                     If planP1_b > 0 Then
                         fromP1_Backlog = planP1_b
-                        ' Combined (for OutOfCityTotal)
-                        UpdateOriginAgg keys,  tot,  cnt,  cap,  SheetCityName(partners(pLB).Name),      demandCity, colorKey, p1WkStart, p1WkEnd, planP1_b
-                        ' Tier = P1
-                        UpdateOriginAgg keysP1, totP1, cntP1, capP1, SheetCityName(partners(pLB).Name), demandCity, colorKey, p1WkStart, p1WkEnd, planP1_b
+                        UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB).Name), demandCity, colorKey, p1WkStart, p1WkEnd, planP1_b
                     End If
                     If planP2_b > 0 Then
                         fromP2_Backlog = planP2_b
-                        ' Combined (for OutOfCityTotal)
-                        UpdateOriginAgg keys,  tot,  cnt,  cap,  SheetCityName(partners(pLB + 1).Name),  demandCity, colorKey, p2WkStart, p2WkEnd, planP2_b
-                        ' Tier = P2
-                        UpdateOriginAgg keysP2, totP2, cntP2, capP2, SheetCityName(partners(pLB + 1).Name), demandCity, colorKey, p2WkStart, p2WkEnd, planP2_b
+                        UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB + 1).Name), demandCity, colorKey, p2WkStart, p2WkEnd, planP2_b
                     End If
-
                 Else
                     ' Couldn’t cover all backlog -> no shipments at all this week; skip new sales too
                     fromLocal_Backlog = 0#: fromP1_Backlog = 0#: fromP2_Backlog = 0#
@@ -566,12 +512,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         If allP1 Then
                             fromP1_NewSales = sumSales
                             If sumSales > 0 Then
-                                ' Combined (for OutOfCityTotal)
-                                UpdateOriginAgg keys,  tot,  cnt,  cap,  p1Name, demandCity, colorKey, p1WkStart, p1WkEnd, sumSales
-                                ' Tier = P1
-                                UpdateOriginAgg keysP1, totP1, cntP1, capP1, p1Name, demandCity, colorKey, p1WkStart, p1WkEnd, sumSales
+                                UpdateOriginAgg keys, tot, cnt, cap, p1Name, demandCity, colorKey, p1WkStart, p1WkEnd, sumSales
                             End If
-
                         Else
                             ' Try P2 for ALL demanded box types
                             Dim allP2 As Boolean: allP2 = (canP2 And Not IsEmpty(allowedP2))
@@ -587,12 +529,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             If allP2 Then
                                 fromP2_NewSales = sumSales
                                 If sumSales > 0 Then
-                                    ' Combined (for OutOfCityTotal)
-                                    UpdateOriginAgg keys,  tot,  cnt,  cap,  p2Name, demandCity, colorKey, p2WkStart, p2WkEnd, sumSales
-                                    ' Tier = P2
-                                    UpdateOriginAgg keysP2, totP2, cntP2, capP2, p2Name, demandCity, colorKey, p2WkStart, p2WkEnd, sumSales
+                                    UpdateOriginAgg keys, tot, cnt, cap, p2Name, demandCity, colorKey, p2WkStart, p2WkEnd, sumSales
                                 End If
-
                             Else
                                 ' No origin can ship the full set -> ship ZERO new sales
                                 fromLocal_NewSales = 0#: fromP1_NewSales = 0#: fromP2_NewSales = 0#
@@ -641,16 +579,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 
                 ' OutOfCityTotal placeholder (filled later)
                 idx = idx + 1: rowArr(idx) = 0#
-
-                ' === New fields ===
-                Dim remainAfterLocal As Double
-                remainAfterLocal = localBaseBefore - fromLocal_Total
-                
-                idx = idx + 1: rowArr(idx) = localBaseBefore   ' LocalBase_Before
-                idx = idx + 1: rowArr(idx) = remainAfterLocal  ' LocalRemain_AfterLocal
-                idx = idx + 1: rowArr(idx) = 0#                ' LocalRemain_AfterP1 (fill later)
-                idx = idx + 1: rowArr(idx) = 0#                ' LocalRemain_AfterP2 (fill later)
-
                 
                 ' Save normalized color key with the row
                 rowCache.Add Array(rowArr, colorKey)
@@ -666,44 +594,20 @@ NextSheet:
     Next iCity
 
     ' ===== Now write rows, filling OutOfCityTotal from aggregator =====
-    Dim it As Variant, outIdx As Long
+    Dim it As Variant, outKey As String, outIdx As Long
     For Each it In rowCache
-    Dim rArr() As Variant: rArr = it(0)
-    Dim outColorKey As String: outColorKey = it(1)
-
-    Dim keyThis As String
-    keyThis = MakeKey(CStr(rArr(1)), outColorKey, CDate(rArr(3)), CDate(rArr(4)))
-
-    ' OutOfCityTotal (all tiers combined)
-    outIdx = FindKeyIndex(keys, cnt, keyThis)
-    If outIdx > 0 Then
-        rArr(COL_OUTOFCITY) = tot(outIdx)
-    Else
-        rArr(COL_OUTOFCITY) = 0#
-    End If
-
-    ' Tiered outflows (P1, P2) from THIS origin city to OTHERS for this (city,week,color)
-    Dim p1Idx As Long, p2Idx As Long
-    Dim shippedP1 As Double, shippedP2 As Double
-    p1Idx = FindKeyIndex(keysP1, cntP1, keyThis)
-    p2Idx = FindKeyIndex(keysP2, cntP2, keyThis)
-    shippedP1 = IIf(p1Idx > 0, totP1(p1Idx), 0#)
-    shippedP2 = IIf(p2Idx > 0, totP2(p2Idx), 0#)
-
-    ' Recompute the remain columns using the saved base and local-to-self
-    Dim baseBefore As Double, localToSelf As Double
-    baseBefore = ValD(rArr(COL_LOCALBASE))
-    localToSelf = ValD(rArr(COL_FROMLOCAL_TOTAL))
-
-    rArr(COL_REM_AFTERLOCAL) = baseBefore - localToSelf
-    rArr(COL_REM_AFTERP1)    = rArr(COL_REM_AFTERLOCAL) - shippedP1
-    rArr(COL_REM_AFTERP2)    = rArr(COL_REM_AFTERP1)    - shippedP2
-
-    wsDbg.Cells(dbgRow, 1).Resize(1, UBound(rArr)).Value = rArr
-    dbgRow = dbgRow + 1
-
-Next it
-
+        Dim rArr() As Variant: rArr = it(0)
+        Dim outColorKey As String: outColorKey = it(1)
+        outKey = MakeKey(CStr(rArr(1)), outColorKey, CDate(rArr(3)), CDate(rArr(4)))
+        outIdx = FindKeyIndex(keys, cnt, outKey)
+        If outIdx > 0 Then
+            rArr(UBound(rArr)) = tot(outIdx)
+        Else
+            rArr(UBound(rArr)) = 0#
+        End If
+        wsDbg.Cells(dbgRow, 1).Resize(1, UBound(rArr)).Value = rArr
+        dbgRow = dbgRow + 1
+    Next it
 
     ' --- Persist the rolled carry map (City|Color -> latest pending) ---
     SaveCarryMap wb, carryRun
