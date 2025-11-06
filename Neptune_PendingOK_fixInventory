@@ -156,6 +156,11 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         Next kKey
     End If
 
+        ' ---- Remaining-stock tracker (origin,week,color) consumed so far ----
+    Dim usedByOrigin As Object
+    Set usedByOrigin = Map_Create()
+
+
     ' ===== Speed up =====
     Dim prevCalc As XlCalculation, prevScr As Boolean, prevEvt As Boolean
     prevCalc = Application.Calculation
@@ -392,6 +397,15 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     End If
                 End If
 
+                ' ---- Compute partner base gate totals for remaining-stock checks ----
+                Dim p1Base As Double, p2Base As Double
+                p1Base = 0#: p2Base = 0#
+                If canP1 Then
+                    p1Base = GateTotal_For(partners(pLB), partnerGate(pLB), colorKey, p1Col)
+                End If
+                If canP2 Then
+                    p2Base = GateTotal_For(partners(pLB + 1), partnerGate(pLB + 1), colorKey, p2Col)
+                End If
 
                 ' ---- Stash row for later write (after we know OutOfCityTotal) ----
                 Dim rowArr() As Variant, idx As Long
@@ -444,30 +458,40 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     planL_b = needB: needB = 0#
                 End If
                 If needB > 0 And canP1 Then
-                    planP1_b = needB: needB = 0#
+                    If Remaining_For(usedByOrigin, p1Base, p1Name, colorKey, p1WkStart, p1WkEnd) >= needB Then
+                        planP1_b = needB: needB = 0#
+                    End If
                 End If
                 If needB > 0 And canP2 Then
-                    planP2_b = needB: needB = 0#
+                    If Remaining_For(usedByOrigin, p2Base, p2Name, colorKey, p2WkStart, p2WkEnd) >= needB Then
+                        planP2_b = needB: needB = 0#
+                    End If
                 End If
-                
+
                 Dim backlogSucceeded As Boolean
                 backlogSucceeded = (backlog = 0#) Or (needB <= 0#)
                 
                 Dim fromLocal_NewSales_tmp As Double, fromP1_NewSales_tmp As Double, fromP2_NewSales_tmp As Double
                 If backlogSucceeded Then
+
                     ' Commit backlog shipments + OutOfCity attribution
                     If planL_b > 0 Then
                         fromLocal_Backlog = planL_b
+                        Consume_From usedByOrigin, demandCity, colorKey, wkStart, wkEnd, planL_b
                         UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, planL_b
                     End If
                     If planP1_b > 0 Then
                         fromP1_Backlog = planP1_b
+                        Consume_From usedByOrigin, p1Name, colorKey, p1WkStart, p1WkEnd, planP1_b
                         UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB).Name), demandCity, colorKey, p1WkStart, p1WkEnd, planP1_b
                     End If
                     If planP2_b > 0 Then
                         fromP2_Backlog = planP2_b
+                        Consume_From usedByOrigin, p2Name, colorKey, p2WkStart, p2WkEnd, planP2_b
                         UpdateOriginAgg keys, tot, cnt, cap, SheetCityName(partners(pLB + 1).Name), demandCity, colorKey, p2WkStart, p2WkEnd, planP2_b
                     End If
+
+
                 Else
                     ' Couldn’t cover all backlog -> no shipments at all this week; skip new sales too
                     fromLocal_Backlog = 0#: fromP1_Backlog = 0#: fromP2_Backlog = 0#
@@ -495,8 +519,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     If allLocal Then
                         fromLocal_NewSales = sumSales
                         If sumSales > 0 Then
+                            Consume_From usedByOrigin, demandCity, colorKey, wkStart, wkEnd, sumSales
                             UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, sumSales
                         End If
+
                     Else
                         ' Try P1 for ALL demanded box types
                         Dim allP1 As Boolean: allP1 = (canP1 And Not IsEmpty(allowedP1))
@@ -509,12 +535,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             Next b
                         End If
                 
-                        If allP1 Then
+                        If allP1 And Remaining_For(usedByOrigin, p1Base, p1Name, colorKey, p1WkStart, p1WkEnd) >= sumSales Then
                             fromP1_NewSales = sumSales
                             If sumSales > 0 Then
+                                Consume_From usedByOrigin, p1Name, colorKey, p1WkStart, p1WkEnd, sumSales
                                 UpdateOriginAgg keys, tot, cnt, cap, p1Name, demandCity, colorKey, p1WkStart, p1WkEnd, sumSales
                             End If
                         Else
+
                             ' Try P2 for ALL demanded box types
                             Dim allP2 As Boolean: allP2 = (canP2 And Not IsEmpty(allowedP2))
                             If allP2 Then
@@ -526,12 +554,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                                 Next b
                             End If
                 
-                            If allP2 Then
+                            If allP2 And Remaining_For(usedByOrigin, p2Base, p2Name, colorKey, p2WkStart, p2WkEnd) >= sumSales Then
                                 fromP2_NewSales = sumSales
                                 If sumSales > 0 Then
+                                    Consume_From usedByOrigin, p2Name, colorKey, p2WkStart, p2WkEnd, sumSales
                                     UpdateOriginAgg keys, tot, cnt, cap, p2Name, demandCity, colorKey, p2WkStart, p2WkEnd, sumSales
                                 End If
                             Else
+
                                 ' No origin can ship the full set -> ship ZERO new sales
                                 fromLocal_NewSales = 0#: fromP1_NewSales = 0#: fromP2_NewSales = 0#
                             End If
@@ -739,6 +769,46 @@ Private Function FindKeyIndex(ByRef keys() As String, ByVal cnt As Long, ByVal k
     Next i
 End Function
 '=============================================================================
+'======================= REMAINING-STOCK HELPERS ===========================
+Private Function OriginKey(ByVal city As String, ByVal colorKey As String, _
+                           ByVal wkStart As Date, ByVal wkEnd As Date) As String
+    OriginKey = UCase$(Trim$(city)) & "|" & UCase$(Trim$(colorKey)) & "|" & _
+                Format$(wkStart, "yyyy-mm-dd") & "|" & Format$(wkEnd, "yyyy-mm-dd")
+End Function
+
+' Sum the chosen GATE_BY section across Box 1..MAX for a given origin/week/color
+Private Function GateTotal_For(ws As Worksheet, gateTbl As Variant, _
+                               ByVal colorKey As String, ByVal colIdx As Long) As Double
+    Dim b As Long, r As Long, v As Double, s As Double
+    s = 0#
+    If IsEmpty(gateTbl) Then Exit Function
+    For b = 1 To MAX_BOX
+        r = RowForInTable(gateTbl, colorKey, b)
+        If r > 0 Then
+            v = ValD(ws.Cells(r, colIdx).Value)
+            s = s + v
+        End If
+    Next b
+    GateTotal_For = s
+End Function
+
+' Remaining capacity = base gate total - already consumed for this origin/week/color
+Private Function Remaining_For(ByVal used As Object, _
+                               ByVal baseTotal As Double, _
+                               ByVal city As String, ByVal colorKey As String, _
+                               ByVal wkStart As Date, ByVal wkEnd As Date) As Double
+    Dim k As String: k = OriginKey(city, colorKey, wkStart, wkEnd)
+    Remaining_For = baseTotal - Map_Get(used, k, 0#)
+End Function
+
+Private Sub Consume_From(ByVal used As Object, _
+                         ByVal city As String, ByVal colorKey As String, _
+                         ByVal wkStart As Date, ByVal wkEnd As Date, ByVal qty As Double)
+    Dim k As String: k = OriginKey(city, colorKey, wkStart, wkEnd)
+    Dim cur As Double: cur = Map_Get(used, k, 0#)
+    Map_Set used, k, cur + qty
+End Sub
+'==========================================================================
 
 
 '======================= COMMON HELPERS ============================
