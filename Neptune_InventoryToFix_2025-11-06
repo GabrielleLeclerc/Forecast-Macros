@@ -173,12 +173,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 8 + 2 * MAX_BOX + 17) 
+    ReDim hdr(1 To 8 + 2 * MAX_BOX + 18) 
     hdr(1) = "Demand City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "GateBy": hdr(7) = "LocalCorePass": hdr(8) = "Reason"
     k = 8
     For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "Raw B" & iCol: Next iCol
     For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "EligLocal B" & iCol: Next iCol
+    
+    k = k + 1: hdr(k) = "BegPlusPO_AllBoxes"
     k = k + 1: hdr(k) = "NewSalesTotal"
     k = k + 1: hdr(k) = "Backlog"
     k = k + 1: hdr(k) = "TotalToShip"
@@ -234,9 +236,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         If cStart <= 0 Or cEnd < cStart Then GoTo NextSheet
 
         ' Sections
-        Dim salesTbl As Variant, gateTbl As Variant, begTbl As Variant
+        Dim salesTbl As Variant, gateTbl As Variant, begTbl As Variant, toTbl As Variant 
         salesTbl = BuildSectionTable_Block(wsDC, "Sales")
         begTbl   = BuildSectionTable_Block(wsDC, "Beginning Stock")
+        toTbl    = BuildSectionTable_Block(wsDC, "To Be Received")
 
         Select Case UCase$(GATE_BY)
             Case "ENDING":    gateTbl = BuildSectionTable_Block(wsDC, "Ending Stock")
@@ -245,7 +248,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
             Case Else:        gateTbl = BuildSectionTable_Block(wsDC, "Ending Stock")
         End Select
 
-        Dim colors As Collection: Set colors = UnionColors(salesTbl, gateTbl, begTbl)
+        Dim colors As Collection: Set colors = UnionColors(salesTbl, gateTbl, begTbl, toTbl)
         If colors Is Nothing Or colors.Count = 0 Then GoTo NextSheet
 
         ' Partners for this demand city
@@ -253,7 +256,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         partNames = PartnersFor(demandSheet)
         hasPartners = GetArrayBounds(partNames, pLB, pUB)
 
-        Dim partners() As Worksheet, partnerGate() As Variant, p As Long
+        Dim partners() As Worksheet, partnerGate() As Variant, partnerBeg() As Variant, partnerTo() As Variant, p As Long
+
         If hasPartners Then
             ReDim partners(pLB To pUB)
             ReDim partnerGate(pLB To pUB)
@@ -265,6 +269,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         Case "BEGINNING": partnerGate(p) = BuildSectionTable_Block(partners(p), "Beginning Stock")
                         Case "EXISTING":  partnerGate(p) = BuildSectionTable_Block(partners(p), "Existing")
                     End Select
+
+                    partnerBeg(p) = BuildSectionTable_Block(partners(p), "Beginning Stock")
+                    partnerTo(p)  = BuildSectionTable_Block(partners(p), "To Be Received")
                 End If
             Next p
         End If
@@ -333,7 +340,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     rawSum = rawSum + raw(b)
                 Next b
                 salesTotalNew = rawSum
-                If salesTotalNew <= 0 Then GoTo NextColor
+                
 
                 ' ---- Local gating ----
                 Dim corePass As Boolean, reason As String
@@ -348,7 +355,30 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     End If
                 Next b
 
+                ' === Capacity inputs (ALL boxes) ===
+                Dim begPlusPO_All As Double
+                begPlusPO_All = SumSectionForGroup(wsDC, begTbl, colorKey, c, AllBoxes()) _
+                              + SumSectionForGroup(wsDC, toTbl,  colorKey, c, AllBoxes())
+                
+                ' Need backlog now (FIFO), so look it up here and reuse later
+                Dim carryKey As String, backlog As Double
+                carryKey = MakeCarryKey(demandCity, colorKey)
+                If Map_Exists(carryRun, carryKey) Then
+                    backlog = Map_Get(carryRun, carryKey)
+                Else
+                    backlog = 0#
+                End If
 
+                ' If there is neither new sales nor backlog, skip this color/week
+                If (salesTotalNew <= 0) And (backlog <= 0) Then GoTo NextColor
+
+                
+                ' Capacity flags for Local (must pass core gate + have quantities)
+                Dim backlogPassLocal As Boolean, newSalesPassLocal As Boolean
+                backlogPassLocal  = (corePass And (begPlusPO_All >= backlog))
+                newSalesPassLocal = (backlogPassLocal And ((begPlusPO_All - backlog) >= salesTotalNew))
+                
+                            
                 ' ---- Cover remaining with partners in order; first eligible wins ----
                 ' PATCH: precompute partner eligibility (no shipping yet)
                 Dim p1Start As Long, p1End As Long, p1Col As Long, off1 As Long
@@ -407,6 +437,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 rowArr(8) = reason
                 
                 idx = 8
+
                 ' Raw B1..B12
                 For bb = 1 To MAX_BOX
                     idx = idx + 1: rowArr(idx) = raw(bb)
@@ -416,22 +447,17 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     idx = idx + 1: rowArr(idx) = eligLocal(bb)
                 Next bb
                 
+                ' BegPlusPO_Core (NEW column)
+                idx = idx + 1: rowArr(idx) = begPlusPO_All
+                
                 ' SalesTotal_New
                 idx = idx + 1: rowArr(idx) = salesTotalNew
+
                 
-                ' Carryover: Backlog, TotalToShip   (week-agnostic carry key)
-                Dim carryKey As String
-                carryKey = MakeCarryKey(demandCity, colorKey)
-                
-                Dim backlog As Double
-                If Map_Exists(carryRun, carryKey) Then
-                    backlog = Map_Get(carryRun, carryKey)
-                Else
-                    backlog = 0#
-                End If
-                
+                ' Carryover: we already have carryKey and backlog above
                 Dim totalToShip As Double
                 totalToShip = salesTotalNew + backlog
+
 
                 ''' PATCH: ===== BLOCK A — Backlog (all-or-nothing) =====
                 Dim planL_b As Double, planP1_b As Double, planP2_b As Double
@@ -440,9 +466,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim needB As Double
                 needB = backlog
                 
-                If needB > 0 And corePass Then
+                If needB > 0 And backlogPassLocal Then
                     planL_b = needB: needB = 0#
                 End If
+
                 If needB > 0 And canP1 Then
                     planP1_b = needB: needB = 0#
                 End If
@@ -481,8 +508,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     Dim sumSales As Double
                     sumSales = salesTotalNew
                 
-                    ' Try Local for ALL demanded box types
-                    Dim allLocal As Boolean: allLocal = corePass ' must have passed the gate
+                    ' Try Local for ALL demanded box types (must also have capacity after backlog)
+                    Dim allLocal As Boolean: allLocal = newSalesPassLocal
+
                     If allLocal Then
                         For b = 1 To MAX_BOX
                             v = raw(b)
@@ -1056,4 +1084,32 @@ Private Function GetArrayBounds(ByVal arr As Variant, ByRef lb As Long, ByRef ub
     Err.Clear
     On Error GoTo 0
 End Function
+
+Private Function AllBoxes() As Variant
+    Dim a() As Variant, b As Long
+    ReDim a(1 To MAX_BOX)
+    For b = 1 To MAX_BOX
+        a(b) = b
+    Next b
+    AllBoxes = a
+End Function
+
+
+Private Function SumSectionForGroup(ws As Worksheet, tbl As Variant, _
+                                    ByVal colorKey As String, ByVal colIdx As Long, _
+                                    ByRef grp As Variant) As Double
+    Dim k As Long, r As Long, v As Double, total As Double
+    If IsEmpty(tbl) Then Exit Function
+    For k = LBound(grp) To UBound(grp)
+        r = RowForInTable(tbl, colorKey, CLng(grp(k)))
+        If r > 0 Then
+            v = ValD(ws.Cells(r, colIdx).Value)
+            total = total + v
+        End If
+        ' Missing rows count as 0
+    Next k
+    SumSectionForGroup = total
+End Function
+
+
 '============================================================
