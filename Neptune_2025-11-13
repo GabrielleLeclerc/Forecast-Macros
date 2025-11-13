@@ -173,8 +173,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 12 + 5 * MAX_BOX + 17)   ' Raw + EligLocal + EndStock + AvailableStock + Backlog
-    
+    ReDim hdr(1 To 12 + 5 * MAX_BOX + 19)
+
     hdr(1) = "Demand City"
     hdr(2) = "Color"
     hdr(3) = "Week Start"
@@ -213,6 +213,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "BacklogB" & iCol
     Next iCol
+
+    ' NEW: Core-group numeric gating
+    k = k + 1: hdr(k) = "CoreBacklogUnits"
+    k = k + 1: hdr(k) = "CoreBoxesFail"
     
     k = k + 1: hdr(k) = "NewSalesTotal"
     k = k + 1: hdr(k) = "Backlog"
@@ -454,6 +458,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 rowArr(12) = rz2        ' P2Reason
                 
                 idx = 12
+
                 ' Raw B1..B12
                 For bb = 1 To MAX_BOX
                     idx = idx + 1: rowArr(idx) = raw(bb)
@@ -464,7 +469,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     idx = idx + 1: rowArr(idx) = eligLocal(bb)
                 Next bb
                 
-                ' Ending Stock B1..B12 for the demand city (local sheet)
+                ' Ending Stock B1..B12
                 Dim endVal As Double
                 For bb = 1 To MAX_BOX
                     rr = RowForInTable(gateTbl, colorKey, bb)
@@ -473,12 +478,12 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     Else
                         endVal = 0#
                     End If
-                    endStock(bb) = endVal           ' store for later
+                    endStock(bb) = endVal
                     idx = idx + 1
                     rowArr(idx) = endVal
                 Next bb
                 
-                ' AvailableStockB = EndStockB + RawB   (keeping your current logic)
+                ' AvailableStockB = EndStockB + RawB
                 For bb = 1 To MAX_BOX
                     availStock(bb) = endStock(bb) + raw(bb)
                     idx = idx + 1
@@ -486,7 +491,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Next bb
                 
                 ' BacklogB:
-                '   = 0            if EndStockB >= 0
+                '   = 0              if EndStockB >= 0
                 '   = Abs(EndStockB) if EndStockB < 0
                 For bb = 1 To MAX_BOX
                     If endStock(bb) >= 0 Then
@@ -497,6 +502,27 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     idx = idx + 1
                     rowArr(idx) = backlogPerBox(bb)
                 Next bb
+                
+                ' === NEW: core-group numeric gating ===
+                Dim coreBacklogUnits As Double
+                Dim coreBoxesFail As Long
+                Dim cg As Variant
+                
+                coreBacklogUnits = 0#
+                coreBoxesFail = 0
+                
+                For Each cg In CoreGroup()
+                    b = CLng(cg)
+                    If b >= 1 And b <= MAX_BOX Then
+                        If backlogPerBox(b) > 0 Then
+                            coreBacklogUnits = coreBacklogUnits + backlogPerBox(b)
+                            coreBoxesFail = coreBoxesFail + 1
+                        End If
+                    End If
+                Next cg
+                
+                idx = idx + 1: rowArr(idx) = coreBacklogUnits
+                idx = idx + 1: rowArr(idx) = coreBoxesFail
 
 
                 ' SalesTotal_New
