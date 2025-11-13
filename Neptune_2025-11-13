@@ -173,7 +173,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 12 + 5 * MAX_BOX + 19)
+    ReDim hdr(1 To 12 + 5 * MAX_BOX + 20)
 
     hdr(1) = "Demand City"
     hdr(2) = "Color"
@@ -217,6 +217,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     ' NEW: Core-group numeric gating
     k = k + 1: hdr(k) = "CoreBacklogUnits"
     k = k + 1: hdr(k) = "CoreBoxesFail"
+    k = k + 1: hdr(k) = "LocalGateOK_New"
     
     k = k + 1: hdr(k) = "NewSalesTotal"
     k = k + 1: hdr(k) = "Backlog"
@@ -324,7 +325,12 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 ' ---- Reset per-row state ----
                 Dim raw() As Double, eligLocal() As Double, allowedLocal() As Boolean
                 Dim endStock() As Double, availStock() As Double, backlogPerBox() As Double
-                
+
+                Dim coreBacklogUnits As Double
+                Dim coreBoxesFail As Long
+                Dim gateOK As Boolean
+                Dim cg As Variant
+
                 ReDim raw(1 To MAX_BOX)
                 ReDim eligLocal(1 To MAX_BOX)
                 ReDim allowedLocal(1 To MAX_BOX)
@@ -504,10 +510,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Next bb
                 
                 ' === NEW: core-group numeric gating ===
-                Dim coreBacklogUnits As Double
-                Dim coreBoxesFail As Long
-                Dim cg As Variant
-                
                 coreBacklogUnits = 0#
                 coreBoxesFail = 0
                 
@@ -521,14 +523,15 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     End If
                 Next cg
                 
+                gateOK = (coreBacklogUnits = 0#)  ' all core BacklogB are 0
+                
                 idx = idx + 1: rowArr(idx) = coreBacklogUnits
                 idx = idx + 1: rowArr(idx) = coreBoxesFail
-
-                Dim gateOK As Boolean
-                gateOK = (coreBacklogUnits = 0#)  ' all core BacklogB are 0
+                idx = idx + 1: rowArr(idx) = gateOK          ' <<< this will show as TRUE/FALSE in the debug sheet >>>
 
                 ' SalesTotal_New
                 idx = idx + 1: rowArr(idx) = salesTotalNew
+
                 
                 ' Carryover: Backlog, TotalToShip   (week-agnostic carry key)
                 Dim carryKey As String
