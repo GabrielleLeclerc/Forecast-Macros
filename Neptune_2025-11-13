@@ -173,7 +173,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 12 + 4 * MAX_BOX + 17)   ' Raw + EligLocal + EndStock + AvailableStock
+    ReDim hdr(1 To 12 + 5 * MAX_BOX + 17)   ' Raw + EligLocal + EndStock + AvailableStock + Backlog
     
     hdr(1) = "Demand City"
     hdr(2) = "Color"
@@ -208,6 +208,11 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "AvailableStockB" & iCol
     Next iCol 
+
+    ' NEW: Backlog per box
+    For iCol = 1 To MAX_BOX
+        k = k + 1: hdr(k) = "BacklogB" & iCol
+    Next iCol
     
     k = k + 1: hdr(k) = "NewSalesTotal"
     k = k + 1: hdr(k) = "Backlog"
@@ -313,11 +318,17 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim colorKey As String: colorKey = NormalizeColor(colorRaw)
 
                 ' ---- Reset per-row state ----
-                Dim raw() As Double, eligLocal() As Double, allowedLocal() As Boolean, endStock() As Double
+                Dim raw() As Double, eligLocal() As Double, allowedLocal() As Boolean
+                Dim endStock() As Double, availStock() As Double, backlogPerBox() As Double
+                
                 ReDim raw(1 To MAX_BOX)
                 ReDim eligLocal(1 To MAX_BOX)
                 ReDim allowedLocal(1 To MAX_BOX)
                 ReDim endStock(1 To MAX_BOX)
+                ReDim availStock(1 To MAX_BOX)
+                ReDim backlogPerBox(1 To MAX_BOX)
+
+
                 Dim b As Long, rr As Long, v As Double
                 Dim fromLocal_Total As Double, fromP1_Total As Double, fromP2_Total As Double
                 fromLocal_Total = 0#: fromP1_Total = 0#: fromP2_Total = 0#
@@ -447,12 +458,13 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 For bb = 1 To MAX_BOX
                     idx = idx + 1: rowArr(idx) = raw(bb)
                 Next bb
+                
                 ' EligLocal B1..B12
                 For bb = 1 To MAX_BOX
                     idx = idx + 1: rowArr(idx) = eligLocal(bb)
                 Next bb
-
-                ' NEW: Ending Stock B1..B12 for the demand city (local sheet)
+                
+                ' Ending Stock B1..B12 for the demand city (local sheet)
                 Dim endVal As Double
                 For bb = 1 To MAX_BOX
                     rr = RowForInTable(gateTbl, colorKey, bb)
@@ -465,12 +477,27 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     idx = idx + 1
                     rowArr(idx) = endVal
                 Next bb
-
-                ' NEW: AvailableStockB = EndStockB + RawB
+                
+                ' AvailableStockB = EndStockB + RawB   (keeping your current logic)
                 For bb = 1 To MAX_BOX
+                    availStock(bb) = endStock(bb) + raw(bb)
                     idx = idx + 1
-                    rowArr(idx) = endStock(bb) + raw(bb)
+                    rowArr(idx) = availStock(bb)
                 Next bb
+                
+                ' BacklogB:
+                '   = 0            if EndStockB >= 0
+                '   = Abs(EndStockB) if EndStockB < 0
+                For bb = 1 To MAX_BOX
+                    If endStock(bb) >= 0 Then
+                        backlogPerBox(bb) = 0#
+                    Else
+                        backlogPerBox(bb) = Abs(endStock(bb))
+                    End If
+                    idx = idx + 1
+                    rowArr(idx) = backlogPerBox(bb)
+                Next bb
+
 
                 ' SalesTotal_New
                 idx = idx + 1: rowArr(idx) = salesTotalNew
