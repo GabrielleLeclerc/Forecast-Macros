@@ -524,6 +524,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = coreBacklogUnits
                 idx = idx + 1: rowArr(idx) = coreBoxesFail
 
+                Dim gateOK As Boolean
+                gateOK = (coreBacklogUnits = 0#)  ' all core BacklogB are 0
 
                 ' SalesTotal_New
                 idx = idx + 1: rowArr(idx) = salesTotalNew
@@ -549,7 +551,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim needB As Double
                 needB = backlog
                 
-                If needB > 0 And corePass Then
+                If needB > 0 And gateOK Then
                     planL_b = needB: needB = 0#
                 End If
                 If needB > 0 And canP1 Then
@@ -591,7 +593,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     sumSales = salesTotalNew
                 
                     ' Try Local for ALL demanded box types
-                    Dim allLocal As Boolean: allLocal = corePass ' must have passed the gate
+                    Dim allLocal As Boolean: allLocal = gateOK ' must have passed the gate
                     If allLocal Then
                         For b = 1 To MAX_BOX
                             v = raw(b)
