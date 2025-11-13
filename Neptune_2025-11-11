@@ -173,7 +173,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 12 + 3 * MAX_BOX + 17)   ' extra MAX_BOX for EndStock
+    ReDim hdr(1 To 12 + 4 * MAX_BOX + 17)   ' Raw + EligLocal + EndStock + AvailableStock
     
     hdr(1) = "Demand City"
     hdr(2) = "Color"
@@ -203,7 +203,11 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "EndStock B" & iCol
     Next iCol
- 
+    
+    ' NEW: Available stock per box (EndStock - Raw)
+    For iCol = 1 To MAX_BOX
+        k = k + 1: hdr(k) = "AvailableStockB" & iCol
+    Next iCol 
     
     k = k + 1: hdr(k) = "NewSalesTotal"
     k = k + 1: hdr(k) = "Backlog"
@@ -309,10 +313,11 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim colorKey As String: colorKey = NormalizeColor(colorRaw)
 
                 ' ---- Reset per-row state ----
-                Dim raw() As Double, eligLocal() As Double, allowedLocal() As Boolean
+                Dim raw() As Double, eligLocal() As Double, allowedLocal() As Boolean, endStock() As Double
                 ReDim raw(1 To MAX_BOX)
                 ReDim eligLocal(1 To MAX_BOX)
                 ReDim allowedLocal(1 To MAX_BOX)
+                ReDim endStock(1 To MAX_BOX)
                 Dim b As Long, rr As Long, v As Double
                 Dim fromLocal_Total As Double, fromP1_Total As Double, fromP2_Total As Double
                 fromLocal_Total = 0#: fromP1_Total = 0#: fromP2_Total = 0#
@@ -450,18 +455,23 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 ' NEW: Ending Stock B1..B12 for the demand city (local sheet)
                 Dim endVal As Double
                 For bb = 1 To MAX_BOX
-                    ' gateTbl is built from "Ending Stock" for this sheet when GATE_BY = "ENDING"
                     rr = RowForInTable(gateTbl, colorKey, bb)
                     If rr > 0 Then
-                        endVal = ValD(wsDC.Cells(rr, c).Value)  ' value in the Ending Stock section
+                        endVal = ValD(wsDC.Cells(rr, c).Value)
                     Else
                         endVal = 0#
                     End If
+                    endStock(bb) = endVal           ' store for later
                     idx = idx + 1
                     rowArr(idx) = endVal
                 Next bb
 
-                
+                ' NEW: AvailableStockB = EndStockB + RawB
+                For bb = 1 To MAX_BOX
+                    idx = idx + 1
+                    rowArr(idx) = endStock(bb) + raw(bb)
+                Next bb
+
                 ' SalesTotal_New
                 idx = idx + 1: rowArr(idx) = salesTotalNew
                 
