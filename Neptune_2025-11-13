@@ -173,7 +173,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 12 + 5 * MAX_BOX + 20)
+     ReDim hdr(1 To 12 + 5 * MAX_BOX + 30)
 
     hdr(1) = "Demand City"
     hdr(2) = "Color"
@@ -214,12 +214,22 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         k = k + 1: hdr(k) = "BacklogB" & iCol
     Next iCol
 
-    ' NEW: Core-group numeric gating
+    ' NEW: Core-group numeric gating (local)
     k = k + 1: hdr(k) = "CoreBacklogUnits"
     k = k + 1: hdr(k) = "CoreBoxesFail"
     k = k + 1: hdr(k) = "LocalGateOK_New"
     
+    ' NEW: Core-group numeric gating (P1 + P2)
+    k = k + 1: hdr(k) = "P1_CoreBacklogUnits"
+    k = k + 1: hdr(k) = "P1_CoreBoxesFail"
+    k = k + 1: hdr(k) = "P1GateOK_New"
+    
+    k = k + 1: hdr(k) = "P2_CoreBacklogUnits"
+    k = k + 1: hdr(k) = "P2_CoreBoxesFail"
+    k = k + 1: hdr(k) = "P2GateOK_New"
+    
     k = k + 1: hdr(k) = "NewSalesTotal"
+
     k = k + 1: hdr(k) = "Backlog"
     k = k + 1: hdr(k) = "TotalToShip"
     
@@ -330,6 +340,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim coreBoxesFail As Long
                 Dim gateOK As Boolean
                 Dim cg As Variant
+
+                Dim coreBacklogUnits_P1 As Double
+                Dim coreBoxesFail_P1 As Long
+                Dim gateOK_P1 As Boolean
+
+                Dim coreBacklogUnits_P2 As Double
+                Dim coreBoxesFail_P2 As Long
+                Dim gateOK_P2 As Boolean
 
                 ReDim raw(1 To MAX_BOX)
                 ReDim eligLocal(1 To MAX_BOX)
@@ -509,7 +527,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     rowArr(idx) = backlogPerBox(bb)
                 Next bb
                 
-                ' === NEW: core-group numeric gating ===
+                ' === NEW: core-group numeric gating (LOCAL) ===
                 coreBacklogUnits = 0#
                 coreBoxesFail = 0
                 
@@ -525,12 +543,74 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 
                 gateOK = (coreBacklogUnits = 0#)  ' all core BacklogB are 0
                 
+                ' Write local numeric gate
                 idx = idx + 1: rowArr(idx) = coreBacklogUnits
                 idx = idx + 1: rowArr(idx) = coreBoxesFail
-                idx = idx + 1: rowArr(idx) = gateOK          ' <<< this will show as TRUE/FALSE in the debug sheet >>>
-
+                idx = idx + 1: rowArr(idx) = gateOK          ' LocalGateOK_New
+                
+                ' === NEW: core-group numeric gating (P1 / P2) ===
+                coreBacklogUnits_P1 = 0#
+                coreBoxesFail_P1 = 0
+                gateOK_P1 = False
+                
+                coreBacklogUnits_P2 = 0#
+                coreBoxesFail_P2 = 0
+                gateOK_P2 = False
+                
+                ' P1: use partnerGate(pLB) at column p1Col, if partner is usable
+                If canP1 Then
+                    For Each cg In CoreGroup()
+                        b = CLng(cg)
+                        If b >= 1 And b <= MAX_BOX Then
+                            rr = RowForInTable(partnerGate(pLB), colorKey, b)
+                            If rr > 0 Then
+                                endVal = ValD(partners(pLB).Cells(rr, p1Col).Value)
+                            Else
+                                endVal = 0#
+                            End If
+                            
+                            If endVal < 0 Then
+                                coreBacklogUnits_P1 = coreBacklogUnits_P1 + Abs(endVal)
+                                coreBoxesFail_P1 = coreBoxesFail_P1 + 1
+                            End If
+                        End If
+                    Next cg
+                    gateOK_P1 = (coreBacklogUnits_P1 = 0#)
+                End If
+                
+                ' P2: use partnerGate(pLB + 1) at column p2Col, if partner is usable
+                If canP2 Then
+                    For Each cg In CoreGroup()
+                        b = CLng(cg)
+                        If b >= 1 And b <= MAX_BOX Then
+                            rr = RowForInTable(partnerGate(pLB + 1), colorKey, b)
+                            If rr > 0 Then
+                                endVal = ValD(partners(pLB + 1).Cells(rr, p2Col).Value)
+                            Else
+                                endVal = 0#
+                            End If
+                            
+                            If endVal < 0 Then
+                                coreBacklogUnits_P2 = coreBacklogUnits_P2 + Abs(endVal)
+                                coreBoxesFail_P2 = coreBoxesFail_P2 + 1
+                            End If
+                        End If
+                    Next cg
+                    gateOK_P2 = (coreBacklogUnits_P2 = 0#)
+                End If
+                
+                ' Write P1/P2 numeric gates to debug sheet
+                idx = idx + 1: rowArr(idx) = coreBacklogUnits_P1
+                idx = idx + 1: rowArr(idx) = coreBoxesFail_P1
+                idx = idx + 1: rowArr(idx) = gateOK_P1
+        
+                idx = idx + 1: rowArr(idx) = coreBacklogUnits_P2
+                idx = idx + 1: rowArr(idx) = coreBoxesFail_P2
+                idx = idx + 1: rowArr(idx) = gateOK_P2
+                
                 ' SalesTotal_New
                 idx = idx + 1: rowArr(idx) = salesTotalNew
+
 
                 
                 ' Carryover: Backlog, TotalToShip   (week-agnostic carry key)
@@ -557,12 +637,13 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 If needB > 0 And gateOK Then
                     planL_b = needB: needB = 0#
                 End If
-                If needB > 0 And canP1 Then
+                If needB > 0 And gateOK_P1 Then
                     planP1_b = needB: needB = 0#
                 End If
-                If needB > 0 And canP2 Then
+                If needB > 0 And gateOK_P2 Then
                     planP2_b = needB: needB = 0#
                 End If
+
                 
                 Dim backlogSucceeded As Boolean
                 backlogSucceeded = (backlog = 0#) Or (needB <= 0#)
@@ -613,7 +694,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         End If
                     Else
                         ' Try P1 for ALL demanded box types
-                        Dim allP1 As Boolean: allP1 = (canP1 And Not IsEmpty(allowedP1))
+                        Dim allP1 As Boolean: allP1 = (gateOK_P1 And canP1 And Not IsEmpty(allowedP1))
                         If allP1 Then
                             For b = 1 To MAX_BOX
                                 v = raw(b)
@@ -630,7 +711,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             End If
                         Else
                             ' Try P2 for ALL demanded box types
-                            Dim allP2 As Boolean: allP2 = (canP2 And Not IsEmpty(allowedP2))
+                            Dim allP2 As Boolean: allP2 = (gateOK_P2 And canP2 And Not IsEmpty(allowedP2))
                             If allP2 Then
                                 For b = 1 To MAX_BOX
                                     v = raw(b)
