@@ -482,43 +482,78 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 ' ==== Build ending-stock per box for partners (P1/P2) ====
                 Dim bx As Long
 
-                ' P1 ending stock per box
-                If canP1 Then
-                    For bx = 1 To MAX_BOX
-                        rr = RowForInTable(partnerGate(pLB), colorKey, bx)
-                        If rr > 0 Then
-                            endStockP1(bx) = ValD(partners(pLB).Cells(rr, p1Col).Value)
+                ' P1 ending stock per box (raw, regardless of whether P1 passes the gate)
+               If hasPartners Then
+                    If Not partners(pLB) Is Nothing Then
+                        If p1Col >= p1Start And p1Col <= p1End Then
+                            For bx = 1 To MAX_BOX
+                                rr = RowForInTable(partnerGate(pLB), colorKey, bx)
+                                If rr > 0 Then
+                                    endStockP1(bx) = ValD(partners(pLB).Cells(rr, p1Col).Value)
+                                Else
+                                    endStockP1(bx) = 0#
+                                End If
+                            Next bx
                         Else
-                            endStockP1(bx) = 0#
+                            For bx = 1 To MAX_BOX
+                                endStockP1(bx) = 0#
+                            Next bx
                         End If
-                    Next bx
+                    Else
+                        For bx = 1 To MAX_BOX
+                            endStockP1(bx) = 0#
+                        Next bx
+                    End If
                 Else
-                    ' ensure zeros if P1 not usable
                     For bx = 1 To MAX_BOX
                         endStockP1(bx) = 0#
                     Next bx
                 End If
 
+
                 ' Initialize post-backlog P1 B1 stock for numeric gating
                 p1EndStockB1_afterBacklog = endStockP1(1)
 
 
-                ' P2 ending stock per box
-                If canP2 Then
-                    For bx = 1 To MAX_BOX
-                        rr = RowForInTable(partnerGate(pLB + 1), colorKey, bx)
-                        If rr > 0 Then
-                            endStockP2(bx) = ValD(partners(pLB + 1).Cells(rr, p2Col).Value)
+                ' P2 ending stock per box (raw, regardless of whether P2 passes the gate)
+                If hasPartners Then
+                    If pUB >= pLB + 1 Then
+                        If Not partners(pLB + 1) Is Nothing Then
+                            ' Only read if the partner week column is valid
+                            If p2Col >= p2Start And p2Col <= p2End Then
+                                For bx = 1 To MAX_BOX
+                                    rr = RowForInTable(partnerGate(pLB + 1), colorKey, bx)
+                                    If rr > 0 Then
+                                        endStockP2(bx) = ValD(partners(pLB + 1).Cells(rr, p2Col).Value)
+                                    Else
+                                        endStockP2(bx) = 0#
+                                    End If
+                                Next bx
+                            Else
+                                ' Column out of span: default to zeros
+                                For bx = 1 To MAX_BOX
+                                    endStockP2(bx) = 0#
+                                Next bx
+                            End If
                         Else
-                            endStockP2(bx) = 0#
+                            ' No P2 sheet object: default to zeros
+                            For bx = 1 To MAX_BOX
+                                endStockP2(bx) = 0#
+                            Next bx
                         End If
-                    Next bx
+                    Else
+                        ' Only one partner total (no P2): default to zeros
+                        For bx = 1 To MAX_BOX
+                            endStockP2(bx) = 0#
+                        Next bx
+                    End If
                 Else
-                    ' ensure zeros if P2 not usable
+                    ' No partners at all
                     For bx = 1 To MAX_BOX
                         endStockP2(bx) = 0#
                     Next bx
                 End If
+
 
 
                 ' ---- Stash row for later write (after we know OutOfCityTotal) ----
