@@ -202,31 +202,20 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         k = k + 1: hdr(k) = "EligLocal B" & iCol
     Next iCol
 
-   ' NEW: Ending Stock per box (local DC)
+    ' NEW: Ending Stock per box (local DC) - keep full per-box detail
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "EndStock B" & iCol
     Next iCol
     
-    ' NEW: P1 Ending Stock per box
-    For iCol = 1 To MAX_BOX
-        k = k + 1: hdr(k) = "P1_EndStock B" & iCol
-    Next iCol
+    ' NEW: P1 Ending Stock - only show Box 1 in debug
+    k = k + 1: hdr(k) = "P1_EndStock B1"
     
-    ' NEW: P2 Ending Stock per box
-    For iCol = 1 To MAX_BOX
-        k = k + 1: hdr(k) = "P2_EndStock B" & iCol
-    Next iCol
+    ' NEW: P2 Ending Stock - only show Box 1 in debug
+    k = k + 1: hdr(k) = "P2_EndStock B1"
     
-    ' NEW: Available stock per box (EndStock - Raw)
-    For iCol = 1 To MAX_BOX
-        k = k + 1: hdr(k) = "AvailableStockB" & iCol
-    Next iCol 
+    ' NOTE: AvailableStockB1..B12 and BacklogB1..B12 are still computed
+    ' in memory but no longer written as debug columns.
 
-
-    ' NEW: Backlog per box
-    For iCol = 1 To MAX_BOX
-        k = k + 1: hdr(k) = "BacklogB" & iCol
-    Next iCol
 
     ' NEW: Core-group numeric gating (local)
     k = k + 1: hdr(k) = "CoreBacklogUnits"
@@ -559,38 +548,35 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     rowArr(idx) = endVal
                 Next bb
                 
-                ' P1 Ending Stock B1..B12
-                For bb = 1 To MAX_BOX
-                    idx = idx + 1
-                    rowArr(idx) = endStockP1(bb)
-                Next bb
+                ' P1 Ending Stock - only Box 1 shown in debug
+                idx = idx + 1
+                rowArr(idx) = endStockP1(1)
                 
-                ' P2 Ending Stock B1..B12
-                For bb = 1 To MAX_BOX
-                    idx = idx + 1
-                    rowArr(idx) = endStockP2(bb)
-                Next bb
+                ' P2 Ending Stock - only Box 1 shown in debug
+                idx = idx + 1
+                rowArr(idx) = endStockP2(1)
+
                 
                 ' AvailableStockB = EndStockB + RawB   (local only)
+                ' Still computed for logic, but no longer written to debug
                 For bb = 1 To MAX_BOX
                     availStock(bb) = endStock(bb) + raw(bb)
-                    idx = idx + 1
-                    rowArr(idx) = availStock(bb)
                 Next bb
+
 
                 
                 ' BacklogB:
                 '   = 0              if EndStockB >= 0
                 '   = Abs(EndStockB) if EndStockB < 0
+                ' Still computed for logic, but no longer written to debug
                 For bb = 1 To MAX_BOX
                     If endStock(bb) >= 0 Then
                         backlogPerBox(bb) = 0#
                     Else
                         backlogPerBox(bb) = Abs(endStock(bb))
                     End If
-                    idx = idx + 1
-                    rowArr(idx) = backlogPerBox(bb)
                 Next bb
+
                 
                 ' === NEW: core-group numeric gating (LOCAL) ===
                 coreBacklogUnits = 0#
@@ -877,7 +863,7 @@ NextSheet:
         If dbgRow > 2 Then .Range("C2:D" & dbgRow - 1).NumberFormat = "yyyy-mm-dd"
     End With
 
-    MsgBox "Done. P1 and P2 Ending Stock per Box Added.", vbInformation
+    MsgBox "Done. P1 and P2 Ending Stock per Box Added - clean.", vbInformation
 
 cleanup:
     Application.Calculation = prevCalc
