@@ -173,7 +173,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-     ReDim hdr(1 To 12 + 5 * MAX_BOX + 30)
+    ReDim hdr(1 To 12 + 7 * MAX_BOX + 30)
 
     hdr(1) = "Demand City"
     hdr(2) = "Color"
@@ -204,10 +204,21 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         k = k + 1: hdr(k) = "EndStock B" & iCol
     Next iCol
     
+    ' NEW: P1 Ending Stock per box
+    For iCol = 1 To MAX_BOX
+        k = k + 1: hdr(k) = "P1_EndStock B" & iCol
+    Next iCol
+    
+    ' NEW: P2 Ending Stock per box
+    For iCol = 1 To MAX_BOX
+        k = k + 1: hdr(k) = "P2_EndStock B" & iCol
+    Next iCol
+    
     ' NEW: Available stock per box (EndStock - Raw)
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "AvailableStockB" & iCol
     Next iCol 
+
 
     ' NEW: Backlog per box
     For iCol = 1 To MAX_BOX
@@ -335,6 +346,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 ' ---- Reset per-row state ----
                 Dim raw() As Double, eligLocal() As Double, allowedLocal() As Boolean
                 Dim endStock() As Double, availStock() As Double, backlogPerBox() As Double
+                Dim endStockP1() As Double, endStockP2() As Double
 
                 Dim coreBacklogUnits As Double
                 Dim coreBoxesFail As Long
@@ -355,6 +367,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 ReDim endStock(1 To MAX_BOX)
                 ReDim availStock(1 To MAX_BOX)
                 ReDim backlogPerBox(1 To MAX_BOX)
+                ReDim endStockP1(1 To MAX_BOX)
+                ReDim endStockP2(1 To MAX_BOX)
 
 
                 Dim b As Long, rr As Long, v As Double
@@ -461,6 +475,43 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     End If
                 End If
 
+                ' ==== Build ending-stock per box for partners (P1/P2) ====
+                Dim bx As Long
+
+                ' P1 ending stock per box
+                If canP1 Then
+                    For bx = 1 To MAX_BOX
+                        rr = RowForInTable(partnerGate(pLB), colorKey, bx)
+                        If rr > 0 Then
+                            endStockP1(bx) = ValD(partners(pLB).Cells(rr, p1Col).Value)
+                        Else
+                            endStockP1(bx) = 0#
+                        End If
+                    Next bx
+                Else
+                    ' ensure zeros if P1 not usable
+                    For bx = 1 To MAX_BOX
+                        endStockP1(bx) = 0#
+                    Next bx
+                End If
+
+                ' P2 ending stock per box
+                If canP2 Then
+                    For bx = 1 To MAX_BOX
+                        rr = RowForInTable(partnerGate(pLB + 1), colorKey, bx)
+                        If rr > 0 Then
+                            endStockP2(bx) = ValD(partners(pLB + 1).Cells(rr, p2Col).Value)
+                        Else
+                            endStockP2(bx) = 0#
+                        End If
+                    Next bx
+                Else
+                    ' ensure zeros if P2 not usable
+                    For bx = 1 To MAX_BOX
+                        endStockP2(bx) = 0#
+                    Next bx
+                End If
+
 
                 ' ---- Stash row for later write (after we know OutOfCityTotal) ----
                 Dim rowArr() As Variant, idx As Long
@@ -493,7 +544,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     idx = idx + 1: rowArr(idx) = eligLocal(bb)
                 Next bb
                 
-                ' Ending Stock B1..B12
+                ' Ending Stock B1..B12 (local)
                 Dim endVal As Double
                 For bb = 1 To MAX_BOX
                     rr = RowForInTable(gateTbl, colorKey, bb)
@@ -507,12 +558,25 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     rowArr(idx) = endVal
                 Next bb
                 
-                ' AvailableStockB = EndStockB + RawB
+                ' P1 Ending Stock B1..B12
+                For bb = 1 To MAX_BOX
+                    idx = idx + 1
+                    rowArr(idx) = endStockP1(bb)
+                Next bb
+                
+                ' P2 Ending Stock B1..B12
+                For bb = 1 To MAX_BOX
+                    idx = idx + 1
+                    rowArr(idx) = endStockP2(bb)
+                Next bb
+                
+                ' AvailableStockB = EndStockB + RawB   (local only)
                 For bb = 1 To MAX_BOX
                     availStock(bb) = endStock(bb) + raw(bb)
                     idx = idx + 1
                     rowArr(idx) = availStock(bb)
                 Next bb
+
                 
                 ' BacklogB:
                 '   = 0              if EndStockB >= 0
@@ -814,7 +878,7 @@ NextSheet:
         If dbgRow > 2 Then .Range("C2:D" & dbgRow - 1).NumberFormat = "yyyy-mm-dd"
     End With
 
-    MsgBox "Done. New 2-step allocation logic implemented to ship backlog first.", vbInformation
+    MsgBox "Done. P1 and P2 Ending Stock per Box Added.", vbInformation
 
 cleanup:
     Application.Calculation = prevCalc
