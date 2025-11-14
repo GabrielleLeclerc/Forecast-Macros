@@ -9,7 +9,7 @@ Public Const WRITE_DEBUG As Boolean = True
 ' How many boxes do you have total?
 Public Const MAX_BOX As Long = 12                  ' Adjust as needed
 
-'Share of demand/backlog assumed to be Box 1 at P1 and 2
+'Share of new sales/backlog assumed to be Box 1 at P1 and p2
 Public Const BOX1_SHARE As Double = 0.4         ' 40% (changeable)
 
 ' ---------- Per-sheet weekly column spans (letters) ----------
