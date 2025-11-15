@@ -180,7 +180,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 12 + 7 * MAX_BOX + 30)
+    ReDim hdr(1 To 12 + 8 * MAX_BOX + 30)
 
     hdr(1) = "Demand City"
     hdr(2) = "Color"
@@ -207,7 +207,13 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     Next iCol
 
     ' We’ll show P1/P2 Box 1 stocks later next to their city blocks
+
+    ' NEW: Available Stock per box (local DC) = EndStock + Raw
+    For iCol = 1 To MAX_BOX
+        k = k + 1: hdr(k) = "AvailStock B" & iCol
+    Next iCol
     
+
     ' --- Flow + P1 numeric logic, in requested order ---
     k = k + 1: hdr(k) = "NewSalesTotal"
     k = k + 1: hdr(k) = "Backlog"
@@ -621,14 +627,16 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     rowArr(idx) = endVal
                 Next bb
                 
-                
                 ' AvailableStockB = EndStockB + RawB   (local only)
-                ' Still computed for logic, but no longer written to debug
                 For bb = 1 To MAX_BOX
                     availStock(bb) = endStock(bb) + raw(bb)
                 Next bb
-
-
+                
+                ' NEW: write AvailStock B1..Bn to debug
+                For bb = 1 To MAX_BOX
+                    idx = idx + 1
+                    rowArr(idx) = availStock(bb)
+                Next bb
                 
                 ' BacklogB:
                 '   = 0              if EndStockB >= 0
