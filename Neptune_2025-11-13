@@ -237,6 +237,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "P1_SalesB1_Needed"
     k = k + 1: hdr(k) = "FromP1_NewSales"
     k = k + 1: hdr(k) = "FromP1_Total"
+    k = k + 1: hdr(k) = "P1_EndStockB1AfterNewSales"   ' <-- NEW COLUMN
+
     
     ' --- P2 block ---
     k = k + 1: hdr(k) = "P2 City"
@@ -356,6 +358,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim p1BacklogB1Needed As Double
                 Dim p1SalesB1Needed As Double
                 Dim p1EndStockB1_afterBacklog As Double
+                Dim p1EndStockB1_afterNewSales As Double   ' <-- NEW
                 Dim p1BacklogB1_OK As Boolean
                 Dim p1SalesB1_OK As Boolean
 
@@ -521,6 +524,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                 ' Initialize post-backlog P1 B1 stock for numeric gating
                 p1EndStockB1_afterBacklog = endStockP1(1)
+                p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog   ' start equal
+
 
 
                 ' P2 ending stock per box (raw, regardless of whether P2 passes the gate)
@@ -743,12 +748,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     needB = 0#
                 End If
                 
-                ' 2) If Local failed (or had no backlog), try P1 using Box1 numeric logic
-                '    Only relevant when Local did NOT take the backlog.
+                ' 2) If Local failed (or had no backlog), compute P1 need numerically
+                '    We ALWAYS compute the theoretical Box1 need, even if P1 can't ship.
                 If needB > 0 And Not corePass Then
+                    ' Always compute the theoretical Box1 share of backlog
+                    p1BacklogB1Needed = BOX1_SHARE * needB
+                
                     If canP1 Then
-                        ' Assume BOX1_SHARE of backlog is Box 1
-                        p1BacklogB1Needed = BOX1_SHARE * needB
+                        ' Only if P1 is usable do we check its stock and maybe assign backlog
                         p1BacklogB1_OK = (endStockP1(1) >= p1BacklogB1Needed)
                         
                         If p1BacklogB1_OK Then
@@ -757,7 +764,12 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             needB = 0#
                             ' Reduce P1 Box 1 stock by the implied Box1 share of backlog
                             p1EndStockB1_afterBacklog = endStockP1(1) - p1BacklogB1Needed
+                            p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog   ' reset baseline after backlog
                         End If
+
+                    Else
+                        ' P1 not usable at all this week
+                        p1BacklogB1_OK = False
                     End If
                 End If
                 
@@ -799,6 +811,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 If backlogSucceeded Then
                     Dim sumSales As Double
                     sumSales = salesTotalNew
+
+                    ' Default: if no new sales from P1, then "after new sales" = "after backlog"
+                    p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog
                 
                     ' Try Local for ALL demanded box types
                     Dim allLocal As Boolean: allLocal = corePass ' must have passed the gate
@@ -833,10 +848,16 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         
                         If p1CanShipNew Then
                             fromP1_NewSales = sumSales
+
+                            ' P1_EndStockB1AfterNewSales = after-backlog stock - Box1 share of NEW sales
+                            ' (only when P1 actually ships new sales)
+                            p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog - p1SalesB1Needed
+
                             If sumSales > 0 Then
                                 UpdateOriginAgg keys, tot, cnt, cap, p1Name, demandCity, colorKey, p1WkStart, p1WkEnd, sumSales
                             End If
                         Else
+
                             ' Fallback: keep existing P2 all-or-nothing logic
                             Dim allP2 As Boolean: allP2 = (gateOK_P2 And canP2 And Not IsEmpty(allowedP2))
                             If allP2 Then
@@ -879,14 +900,16 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = fromLocal_Total
 
                 ' --- P1 block ---
-                idx = idx + 1: rowArr(idx) = p1Name                 ' P1 City
-                idx = idx + 1: rowArr(idx) = endStockP1(1)          ' P1_EndStockB1
-                idx = idx + 1: rowArr(idx) = p1BacklogB1Needed      ' P1_BacklogB1_Needed
-                idx = idx + 1: rowArr(idx) = fromP1_Backlog         ' FromP1_Backlog
-                idx = idx + 1: rowArr(idx) = p1EndStockB1_afterBacklog ' P1_EndStockB1AfterBacklog
-                idx = idx + 1: rowArr(idx) = p1SalesB1Needed        ' P1_SalesB1_Needed
-                idx = idx + 1: rowArr(idx) = fromP1_NewSales        ' FromP1_NewSales
-                idx = idx + 1: rowArr(idx) = fromP1_Total           ' FromP1_Total
+                idx = idx + 1: rowArr(idx) = p1Name                     ' P1 City
+                idx = idx + 1: rowArr(idx) = endStockP1(1)              ' P1_EndStockB1
+                idx = idx + 1: rowArr(idx) = p1BacklogB1Needed          ' P1_BacklogB1_Needed
+                idx = idx + 1: rowArr(idx) = fromP1_Backlog             ' FromP1_Backlog
+                idx = idx + 1: rowArr(idx) = p1EndStockB1_afterBacklog  ' P1_EndStockB1AfterBacklog
+                idx = idx + 1: rowArr(idx) = p1SalesB1Needed            ' P1_SalesB1_Needed
+                idx = idx + 1: rowArr(idx) = fromP1_NewSales            ' FromP1_NewSales
+                idx = idx + 1: rowArr(idx) = fromP1_Total               ' FromP1_Total
+                idx = idx + 1: rowArr(idx) = p1EndStockB1_afterNewSales ' P1_EndStockB1AfterNewSales  <-- NEW
+
 
                 ' --- P2 block ---
                 idx = idx + 1: rowArr(idx) = p2Name                 ' P2 City
