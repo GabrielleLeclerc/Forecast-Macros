@@ -149,6 +149,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     
     Dim carryRun As Object
     Set carryRun = Map_Create()
+
+    ' Map: P1 city | color | week -> P1_EndStockB1AfterNewSales
+    Dim p1AfterNewMap As Object
+    Set p1AfterNewMap = Map_Create()
     
     ' Seed carryRun with whatever was saved last week
     Dim kKey As Variant, prevKeys As Variant
@@ -243,9 +247,11 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     ' --- P2 block ---
     k = k + 1: hdr(k) = "P2 City"
     k = k + 1: hdr(k) = "P2_EndStockB1"
+    k = k + 1: hdr(k) = "P2_EndStockB1AfterP1"   ' <-- NEW COLUMN
     k = k + 1: hdr(k) = "FromP2_Backlog"
     k = k + 1: hdr(k) = "FromP2_NewSales"
     k = k + 1: hdr(k) = "FromP2_Total"
+
     
     k = k + 1: hdr(k) = "BoxesShipped"
     k = k + 1: hdr(k) = "Unfulfilled"
@@ -358,9 +364,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim p1BacklogB1Needed As Double
                 Dim p1SalesB1Needed As Double
                 Dim p1EndStockB1_afterBacklog As Double
-                Dim p1EndStockB1_afterNewSales As Double   ' <-- NEW
+                Dim p1EndStockB1_afterNewSales As Double  
                 Dim p1BacklogB1_OK As Boolean
                 Dim p1SalesB1_OK As Boolean
+                Dim p2EndStockB1_afterP1 As Double   ' NEW: for P2_EndStockB1AfterP1
 
                 ReDim allowedLocal(1 To MAX_BOX)
                 ReDim endStock(1 To MAX_BOX)
@@ -888,6 +895,31 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 fromP1_Total    = fromP1_Backlog    + fromP1_NewSales
                 fromP2_Total    = fromP2_Backlog    + fromP2_NewSales
 
+                ' Record P1 after-new-sales stock for this origin/week/color
+                ' Only if P1 actually shipped something (backlog or new sales)
+                If fromP1_Total > 0 And Len(p1Name) > 0 Then
+                    Dim keyP1After As String
+                    keyP1After = MakeKey(p1Name, colorKey, p1WkStart, p1WkEnd)
+                    Map_Set p1AfterNewMap, keyP1After, p1EndStockB1_afterNewSales
+                End If
+
+                ' --- Compute P2_EndStockB1AfterP1 ---
+                ' Default = P2 raw ending stock for B1
+                p2EndStockB1_afterP1 = endStockP2(1)
+                
+                If Len(p2Name) > 0 Then
+                    Dim keyP2After As String
+                    keyP2After = MakeKey(p2Name, colorKey, p2WkStart, p2WkEnd)
+                    
+                    ' If this city ever acted as P1 for this week+color,
+                    ' override with its P1_EndStockB1AfterNewSales
+                    If Map_Exists(p1AfterNewMap, keyP2After) Then
+                        p2EndStockB1_afterP1 = Map_Get(p1AfterNewMap, keyP2After)
+                    End If
+                End If
+
+
+
                 ' --- Flow, in the same order as the header ---
 
                 ' Backlog / TotalToShip
@@ -912,11 +944,13 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
 
                 ' --- P2 block ---
-                idx = idx + 1: rowArr(idx) = p2Name                 ' P2 City
-                idx = idx + 1: rowArr(idx) = endStockP2(1)          ' P2_EndStockB1
+                idx = idx + 1: rowArr(idx) = p2Name                       ' P2 City
+                idx = idx + 1: rowArr(idx) = endStockP2(1)                ' P2_EndStockB1
+                idx = idx + 1: rowArr(idx) = p2EndStockB1_afterP1         ' P2_EndStockB1AfterP1
                 idx = idx + 1: rowArr(idx) = fromP2_Backlog
                 idx = idx + 1: rowArr(idx) = fromP2_NewSales
                 idx = idx + 1: rowArr(idx) = fromP2_Total
+
 
                 
                 ' BoxesShipped & Pending
