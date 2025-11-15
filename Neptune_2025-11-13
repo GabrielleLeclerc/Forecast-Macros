@@ -13,7 +13,7 @@ Public Const MAX_BOX As Long = 12                  ' Adjust as needed
 'Share of new sales/backlog assumed to be Box 1, Box 2, and Box 3
 Public Const BOX1_SHARE As Double = 0.4         ' Sealer Seat, ~40% (changeable)
 Public Const BOX2_SHARE As Double = 0.4         ' Sleeper seat Backrest, ~40% (changeable)
-Public Const BOX3_SHARE As Double = 0.015         ' Arms, ~15% (changeable)
+Public Const BOX3_SHARE As Double = 0.15         ' Arms, ~15% (changeable)
 
 ' ---------- Per-sheet weekly column spans (letters) ----------
 Public Const MTL_START_COL As String = "BN"
@@ -223,10 +223,24 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "NewSalesTotal"
     k = k + 1: hdr(k) = "Backlog"
     k = k + 1: hdr(k) = "TotalToShip"
-    
+
+    ' Detailed local B1/B2/B3 metrics
+    k = k + 1: hdr(k) = "Local_BacklogB1_Needed"
+    k = k + 1: hdr(k) = "Local_BacklogB2_Needed"
+    k = k + 1: hdr(k) = "Local_BacklogB3_Needed"
     k = k + 1: hdr(k) = "FromLocal_Backlog"
+    k = k + 1: hdr(k) = "Local_AvailB1_AfterBacklog"
+    k = k + 1: hdr(k) = "Local_AvailB2_AfterBacklog"
+    k = k + 1: hdr(k) = "Local_AvailB3_AfterBacklog"
     k = k + 1: hdr(k) = "FromLocal_NewSales"
+    k = k + 1: hdr(k) = "Local_SalesB1_Needed"
+    k = k + 1: hdr(k) = "Local_SalesB2_Needed"
+    k = k + 1: hdr(k) = "Local_SalesB3_Needed"
     k = k + 1: hdr(k) = "FromLocal_Total"
+    k = k + 1: hdr(k) = "Local_AvailB1_AfterNewSales"
+    k = k + 1: hdr(k) = "Local_AvailB2_AfterNewSales"
+    k = k + 1: hdr(k) = "Local_AvailB3_AfterNewSales"
+
     
     k = k + 1: hdr(k) = "P1 City"
     k = k + 1: hdr(k) = "P1_EndStockB1"
@@ -374,6 +388,27 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim p2SalesB1_OK As Boolean
 
                 Dim p2EndStockB1_afterP1 As Double   ' For P2_EndStockB1AfterP1
+
+                ' --- NEW LOCAL B1/B2/B3 DEBUG + CAPACITY VARS ---
+                Dim Local_BacklogB1_Needed As Double
+                Dim Local_BacklogB2_Needed As Double
+                Dim Local_BacklogB3_Needed As Double
+
+                Dim Local_SalesB1_Needed As Double
+                Dim Local_SalesB2_Needed As Double
+                Dim Local_SalesB3_Needed As Double
+
+                Dim Local_AvailB1 As Double
+                Dim Local_AvailB2 As Double
+                Dim Local_AvailB3 As Double
+
+                Dim Local_AvailB1_AfterBacklog As Double
+                Dim Local_AvailB2_AfterBacklog As Double
+                Dim Local_AvailB3_AfterBacklog As Double
+
+                Dim Local_AvailB1_AfterNewSales As Double
+                Dim Local_AvailB2_AfterNewSales As Double
+                Dim Local_AvailB3_AfterNewSales As Double
 
 
                 ReDim allowedLocal(1 To MAX_BOX)
@@ -647,6 +682,22 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     rowArr(idx) = availStock(bb)
                 Next bb
 
+                ' Snapshot local available B1/B2/B3 before backlog
+                Local_AvailB1 = availStock(1)
+                Local_AvailB2 = availStock(2)
+                Local_AvailB3 = availStock(3)
+
+                ' Default "after backlog" and "after new sales" to pre-backlog values;
+                ' we'll override if Local actually ships backlog and/or new sales.
+                Local_AvailB1_AfterBacklog = Local_AvailB1
+                Local_AvailB2_AfterBacklog = Local_AvailB2
+                Local_AvailB3_AfterBacklog = Local_AvailB3
+
+                Local_AvailB1_AfterNewSales = Local_AvailB1
+                Local_AvailB2_AfterNewSales = Local_AvailB2
+                Local_AvailB3_AfterNewSales = Local_AvailB3
+
+
 
                 
                 ' BacklogB:
@@ -750,6 +801,12 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim totalToShip As Double
                 totalToShip = salesTotalNew + backlog
 
+                ' --- Local backlog box needs (B1/B2/B3) based on backlog ---
+                Local_BacklogB1_Needed = BOX1_SHARE * backlog
+                Local_BacklogB2_Needed = BOX2_SHARE * backlog
+                Local_BacklogB3_Needed = BOX3_SHARE * backlog
+
+
                 ' --- Compute P2_EndStockB1AfterP1 ---
                 ' Default = P2 raw ending stock for B1
                 p2EndStockB1_afterP1 = endStockP2(1)
@@ -775,12 +832,24 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 
                 Dim needB As Double
                 needB = backlog
-                
-                ' 1) Try Local first, using corePass (unchanged)
-                If needB > 0 And corePass Then
-                    planL_b = needB
-                    needB = 0#
+
+                ' 1) Try Local first, using B1/B2/B3 capacity only (no corePass)
+                If needB > 0 Then
+                    If Local_BacklogB1_Needed <= Local_AvailB1 _
+                       And Local_BacklogB2_Needed <= Local_AvailB2 _
+                       And Local_BacklogB3_Needed <= Local_AvailB3 Then
+
+                        ' Local can take ALL backlog
+                        planL_b = needB
+                        needB = 0#
+
+                        ' Reduce local available B1/B2/B3 by implied backlog usage
+                        Local_AvailB1_AfterBacklog = Local_AvailB1 - Local_BacklogB1_Needed
+                        Local_AvailB2_AfterBacklog = Local_AvailB2 - Local_BacklogB2_Needed
+                        Local_AvailB3_AfterBacklog = Local_AvailB3 - Local_BacklogB3_Needed
+                    End If
                 End If
+
                 
                 ' 2) If Local failed (or had no backlog), compute P1 need numerically
                 '    We ALWAYS compute the theoretical Box1 need, even if P1 can't ship.
@@ -858,29 +927,62 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     Dim sumSales As Double
                     sumSales = salesTotalNew
 
+                    ' Local new-sales box needs (B1/B2/B3)
+                    Local_SalesB1_Needed = BOX1_SHARE * sumSales
+                    Local_SalesB2_Needed = BOX2_SHARE * sumSales
+                    Local_SalesB3_Needed = BOX3_SHARE * sumSales
+
+
                     ' Default: if no new sales from P1, then "after new sales" = "after backlog"
                     p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog
                 
                     ' Try Local for ALL demanded box types
-                    Dim allLocal As Boolean: allLocal = corePass ' must have passed the gate
-                    If allLocal Then
-                        For b = 1 To MAX_BOX
-                            v = raw(b)
-                            If v > 0 Then
-                                If Not allowedLocal(b) Then allLocal = False: Exit For
+                    Dim allLocal As Boolean
+                    allLocal = True
+
+                    ' 1) Structural: every demanded box type must be allowed locally
+                    For b = 1 To MAX_BOX
+                        v = raw(b)
+                        If v > 0 Then
+                            If Not allowedLocal(b) Then
+                                allLocal = False
+                                Exit For
                             End If
-                        Next b
+                        End If
+                    Next b
+
+                    ' 2) Numeric: enough B1/B2/B3 AFTER BACKLOG to cover all new sales
+                    If allLocal Then
+                        If Not (Local_SalesB1_Needed <= Local_AvailB1_AfterBacklog _
+                                And Local_SalesB2_Needed <= Local_AvailB2_AfterBacklog _
+                                And Local_SalesB3_Needed <= Local_AvailB3_AfterBacklog) Then
+                            allLocal = False
+                        End If
                     End If
 
                     If allLocal Then
+                        ' Local takes ALL new sales
                         fromLocal_NewSales = sumSales
+
+                        ' Consume B1/B2/B3 and compute post-new-sales availabilities
+                        Local_AvailB1_AfterNewSales = Local_AvailB1_AfterBacklog - Local_SalesB1_Needed
+                        Local_AvailB2_AfterNewSales = Local_AvailB2_AfterBacklog - Local_SalesB2_Needed
+                        Local_AvailB3_AfterNewSales = Local_AvailB3_AfterBacklog - Local_SalesB3_Needed
+
                         If sumSales > 0 Then
                             UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, sumSales
                         End If
                     Else
+                        ' No local new sales; keep "after new sales" = "after backlog" for Local
+                        Local_AvailB1_AfterNewSales = Local_AvailB1_AfterBacklog
+                        Local_AvailB2_AfterNewSales = Local_AvailB2_AfterBacklog
+                        Local_AvailB3_AfterNewSales = Local_AvailB3_AfterBacklog
+
+                        ' --- existing P1/P2 new-sales logic unchanged ---
                         ' NEW: P1 numeric Box1 gate for NEW SALES
                         Dim p1CanShipNew As Boolean
                         p1CanShipNew = False
+
                         
                         If canP1 Then
                             ' Estimate Box1 share of new sales
@@ -954,10 +1056,23 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = backlog
                 idx = idx + 1: rowArr(idx) = totalToShip
 
-                ' Local (backlog/new/total)
+                ' Local detailed B1/B2/B3 metrics
+                idx = idx + 1: rowArr(idx) = Local_BacklogB1_Needed
+                idx = idx + 1: rowArr(idx) = Local_BacklogB2_Needed
+                idx = idx + 1: rowArr(idx) = Local_BacklogB3_Needed
                 idx = idx + 1: rowArr(idx) = fromLocal_Backlog
+                idx = idx + 1: rowArr(idx) = Local_AvailB1_AfterBacklog
+                idx = idx + 1: rowArr(idx) = Local_AvailB2_AfterBacklog
+                idx = idx + 1: rowArr(idx) = Local_AvailB3_AfterBacklog
                 idx = idx + 1: rowArr(idx) = fromLocal_NewSales
+                idx = idx + 1: rowArr(idx) = Local_SalesB1_Needed
+                idx = idx + 1: rowArr(idx) = Local_SalesB2_Needed
+                idx = idx + 1: rowArr(idx) = Local_SalesB3_Needed
                 idx = idx + 1: rowArr(idx) = fromLocal_Total
+                idx = idx + 1: rowArr(idx) = Local_AvailB1_AfterNewSales
+                idx = idx + 1: rowArr(idx) = Local_AvailB2_AfterNewSales
+                idx = idx + 1: rowArr(idx) = Local_AvailB3_AfterNewSales
+
 
                 ' --- P1 block ---
                 idx = idx + 1: rowArr(idx) = p1Name                     ' P1 City
