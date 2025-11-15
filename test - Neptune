@@ -9,7 +9,7 @@ Public Const WRITE_DEBUG As Boolean = True
 ' How many boxes do you have total?
 Public Const MAX_BOX As Long = 12                  ' Adjust as needed
 
-'Share of demand/backlog assumed to be Box 1 at P1 and 2
+'Share of new sales/backlog assumed to be Box 1 at P1 and p2
 Public Const BOX1_SHARE As Double = 0.4         ' 40% (changeable)
 
 ' ---------- Per-sheet weekly column spans (letters) ----------
@@ -149,6 +149,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     
     Dim carryRun As Object
     Set carryRun = Map_Create()
+
+    ' Map: P1 city | color | week -> P1_EndStockB1AfterNewSales
+    Dim p1AfterNewMap As Object
+    Set p1AfterNewMap = Map_Create()
     
     ' Seed carryRun with whatever was saved last week
     Dim kKey As Variant, prevKeys As Variant
@@ -188,12 +192,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     hdr(7) = "LocalCorePass"
     hdr(8) = "Reason"          ' Local reason
     
-    hdr(9)  = "P1CorePass"
-    hdr(10) = "P1Reason"
-    hdr(11) = "P2CorePass"
-    hdr(12) = "P2Reason"
-    
-    k = 12
+    k = 8
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "Raw B" & iCol
     Next iCol
@@ -206,31 +205,11 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "EndStock B" & iCol
     Next iCol
-    
-    ' NEW: P1 Ending Stock - only show Box 1 in debug
-    k = k + 1: hdr(k) = "P1_EndStock B1"
-    
-    ' NEW: P2 Ending Stock - only show Box 1 in debug
-    k = k + 1: hdr(k) = "P2_EndStock B1"
-    
-    ' NOTE: AvailableStockB1..B12 and BacklogB1..B12 are still computed
-    ' in memory but no longer written as debug columns.
 
-
-    ' NEW: Core-group numeric gating (local)
-    k = k + 1: hdr(k) = "CoreBacklogUnits"
+    ' We’ll show P1/P2 Box 1 stocks later next to their city blocks
     
-    ' NEW: Core-group numeric gating (P1 + P2)
-    k = k + 1: hdr(k) = "P1_CoreBacklogUnits"
-    k = k + 1: hdr(k) = "P1_CoreBoxesFail"
-    k = k + 1: hdr(k) = "P1GateOK_New"
-    
-    k = k + 1: hdr(k) = "P2_CoreBacklogUnits"
-    k = k + 1: hdr(k) = "P2_CoreBoxesFail"
-    k = k + 1: hdr(k) = "P2GateOK_New"
-    
+    ' --- Flow + P1 numeric logic, in requested order ---
     k = k + 1: hdr(k) = "NewSalesTotal"
-
     k = k + 1: hdr(k) = "Backlog"
     k = k + 1: hdr(k) = "TotalToShip"
     
@@ -239,18 +218,31 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "FromLocal_Total"
     
     k = k + 1: hdr(k) = "P1 City"
+    k = k + 1: hdr(k) = "P1_EndStockB1"
+    k = k + 1: hdr(k) = "P1_BacklogB1_Needed"
     k = k + 1: hdr(k) = "FromP1_Backlog"
+    k = k + 1: hdr(k) = "P1_EndStockB1AfterBacklog"
+    k = k + 1: hdr(k) = "P1_SalesB1_Needed"
     k = k + 1: hdr(k) = "FromP1_NewSales"
     k = k + 1: hdr(k) = "FromP1_Total"
-    
+    k = k + 1: hdr(k) = "P1_EndStockB1AfterNewSales"   ' <-- NEW COLUMN
+
+    ' --- P2 block ---
     k = k + 1: hdr(k) = "P2 City"
+    k = k + 1: hdr(k) = "P2_EndStockB1AfterP1"
+    k = k + 1: hdr(k) = "P2_BacklogB1_Needed"
     k = k + 1: hdr(k) = "FromP2_Backlog"
+    k = k + 1: hdr(k) = "P2_EndStockB1AfterBacklog"
+    k = k + 1: hdr(k) = "P2_SalesB1_Needed"
     k = k + 1: hdr(k) = "FromP2_NewSales"
     k = k + 1: hdr(k) = "FromP2_Total"
+
+
     
     k = k + 1: hdr(k) = "BoxesShipped"
     k = k + 1: hdr(k) = "Unfulfilled"
     k = k + 1: hdr(k) = "OutOfCityTotal"
+
     
     Dim COL_COUNT As Long
     COL_COUNT = k
@@ -353,12 +345,48 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                 ReDim raw(1 To MAX_BOX)
                 ReDim eligLocal(1 To MAX_BOX)
+
+                ' NEW: P1 numeric Box 1–based gating debug
+                Dim p1BacklogB1Needed As Double
+                Dim p1SalesB1Needed As Double
+                Dim p1EndStockB1_afterBacklog As Double
+                Dim p1EndStockB1_afterNewSales As Double
+                Dim p1BacklogB1_OK As Boolean
+                Dim p1SalesB1_OK As Boolean
+
+                ' NEW: P2 numeric Box 1–based gating debug (same idea as P1)
+                Dim p2BacklogB1Needed As Double
+                Dim p2SalesB1Needed As Double
+                Dim p2EndStockB1_afterBacklog As Double
+                Dim p2EndStockB1_afterNewSales As Double
+                Dim p2BacklogB1_OK As Boolean
+                Dim p2SalesB1_OK As Boolean
+
+                Dim p2EndStockB1_afterP1 As Double   ' For P2_EndStockB1AfterP1
+
+
                 ReDim allowedLocal(1 To MAX_BOX)
                 ReDim endStock(1 To MAX_BOX)
                 ReDim availStock(1 To MAX_BOX)
                 ReDim backlogPerBox(1 To MAX_BOX)
                 ReDim endStockP1(1 To MAX_BOX)
                 ReDim endStockP2(1 To MAX_BOX)
+
+                ' Default P1 numeric gate values
+                p1BacklogB1Needed = 0#
+                p1SalesB1Needed = 0#
+                p1BacklogB1_OK = False
+                p1SalesB1_OK = False
+                ' Start from raw P1 B1 stock; may be reduced if P1 handles backlog
+                p1EndStockB1_afterBacklog = 0#
+
+                ' Default P2 numeric gate values
+                p2BacklogB1Needed = 0#
+                p2SalesB1Needed = 0#
+                p2BacklogB1_OK = False
+                p2SalesB1_OK = False
+                p2EndStockB1_afterBacklog = 0#
+                p2EndStockB1_afterNewSales = 0#
 
 
                 Dim b As Long, rr As Long, v As Double
@@ -424,12 +452,19 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                 ' ---- Cover remaining with partners in order; first eligible wins ----
                 ' PATCH: precompute partner eligibility (no shipping yet)
+
                 Dim p1Start As Long, p1End As Long, p1Col As Long, off1 As Long
                 Dim p2Start As Long, p2End As Long, p2Col As Long, off2 As Long
                 Dim p1Name As String, p2Name As String
                 p1Name = "": p2Name = ""
                 
                 If hasPartners Then
+                    ' Always set display names from partner list, regardless of gating outcome
+                    p1Name = SheetCityName(CStr(partNames(pLB)))
+                    If pUB >= pLB + 1 Then
+                        p2Name = SheetCityName(CStr(partNames(pLB + 1)))
+                    End If
+                
                     ' Partner 1 (if present)
                     If Not partners(pLB) Is Nothing Then
                         GetFixedSpan partners(pLB).Name, p1Start, p1End
@@ -439,7 +474,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             AllowedBoxesForDC_Single partners(pLB), partnerGate(pLB), colorKey, p1Col, CoreGroup(), p1Pass, rz1, allowedP1
                             If p1Pass Then
                                 canP1 = True
-                                p1Name = SheetCityName(partners(pLB).Name)
+                                ' p1Name already set; no need to touch it
                                 If IsDate(partners(pLB).Cells(2, p1Col).Value) Then p1WkStart = CDate(partners(pLB).Cells(2, p1Col).Value)
                                 If IsDate(partners(pLB).Cells(4, p1Col).Value) Then p1WkEnd   = CDate(partners(pLB).Cells(4, p1Col).Value)
                             End If
@@ -456,7 +491,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                                 AllowedBoxesForDC_Single partners(pLB + 1), partnerGate(pLB + 1), colorKey, p2Col, CoreGroup(), p2Pass, rz2, allowedP2
                                 If p2Pass Then
                                     canP2 = True
-                                    p2Name = SheetCityName(partners(pLB + 1).Name)
+                                    ' p2Name already set
                                     If IsDate(partners(pLB + 1).Cells(2, p2Col).Value) Then p2WkStart = CDate(partners(pLB + 1).Cells(2, p2Col).Value)
                                     If IsDate(partners(pLB + 1).Cells(4, p2Col).Value) Then p2WkEnd   = CDate(partners(pLB + 1).Cells(4, p2Col).Value)
                                 End If
@@ -465,42 +500,84 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     End If
                 End If
 
+
                 ' ==== Build ending-stock per box for partners (P1/P2) ====
                 Dim bx As Long
 
-                ' P1 ending stock per box
-                If canP1 Then
-                    For bx = 1 To MAX_BOX
-                        rr = RowForInTable(partnerGate(pLB), colorKey, bx)
-                        If rr > 0 Then
-                            endStockP1(bx) = ValD(partners(pLB).Cells(rr, p1Col).Value)
+                ' P1 ending stock per box (raw, regardless of whether P1 passes the gate)
+               If hasPartners Then
+                    If Not partners(pLB) Is Nothing Then
+                        If p1Col >= p1Start And p1Col <= p1End Then
+                            For bx = 1 To MAX_BOX
+                                rr = RowForInTable(partnerGate(pLB), colorKey, bx)
+                                If rr > 0 Then
+                                    endStockP1(bx) = ValD(partners(pLB).Cells(rr, p1Col).Value)
+                                Else
+                                    endStockP1(bx) = 0#
+                                End If
+                            Next bx
                         Else
-                            endStockP1(bx) = 0#
+                            For bx = 1 To MAX_BOX
+                                endStockP1(bx) = 0#
+                            Next bx
                         End If
-                    Next bx
+                    Else
+                        For bx = 1 To MAX_BOX
+                            endStockP1(bx) = 0#
+                        Next bx
+                    End If
                 Else
-                    ' ensure zeros if P1 not usable
                     For bx = 1 To MAX_BOX
                         endStockP1(bx) = 0#
                     Next bx
                 End If
 
-                ' P2 ending stock per box
-                If canP2 Then
-                    For bx = 1 To MAX_BOX
-                        rr = RowForInTable(partnerGate(pLB + 1), colorKey, bx)
-                        If rr > 0 Then
-                            endStockP2(bx) = ValD(partners(pLB + 1).Cells(rr, p2Col).Value)
+
+                ' Initialize post-backlog P1 B1 stock for numeric gating
+                p1EndStockB1_afterBacklog = endStockP1(1)
+                p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog   ' start equal
+
+
+
+                ' P2 ending stock per box (raw, regardless of whether P2 passes the gate)
+                If hasPartners Then
+                    If pUB >= pLB + 1 Then
+                        If Not partners(pLB + 1) Is Nothing Then
+                            ' Only read if the partner week column is valid
+                            If p2Col >= p2Start And p2Col <= p2End Then
+                                For bx = 1 To MAX_BOX
+                                    rr = RowForInTable(partnerGate(pLB + 1), colorKey, bx)
+                                    If rr > 0 Then
+                                        endStockP2(bx) = ValD(partners(pLB + 1).Cells(rr, p2Col).Value)
+                                    Else
+                                        endStockP2(bx) = 0#
+                                    End If
+                                Next bx
+                            Else
+                                ' Column out of span: default to zeros
+                                For bx = 1 To MAX_BOX
+                                    endStockP2(bx) = 0#
+                                Next bx
+                            End If
                         Else
-                            endStockP2(bx) = 0#
+                            ' No P2 sheet object: default to zeros
+                            For bx = 1 To MAX_BOX
+                                endStockP2(bx) = 0#
+                            Next bx
                         End If
-                    Next bx
+                    Else
+                        ' Only one partner total (no P2): default to zeros
+                        For bx = 1 To MAX_BOX
+                            endStockP2(bx) = 0#
+                        Next bx
+                    End If
                 Else
-                    ' ensure zeros if P2 not usable
+                    ' No partners at all
                     For bx = 1 To MAX_BOX
                         endStockP2(bx) = 0#
                     Next bx
                 End If
+
 
 
                 ' ---- Stash row for later write (after we know OutOfCityTotal) ----
@@ -517,12 +594,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 rowArr(7)  = corePass   ' LocalCorePass
                 rowArr(8)  = reason     ' Local Reason
                 
-                rowArr(9)  = p1Pass     ' P1CorePass
-                rowArr(10) = rz1        ' P1Reason
-                rowArr(11) = p2Pass     ' P2CorePass
-                rowArr(12) = rz2        ' P2Reason
-                
-                idx = 12
+                idx = 8
+
 
                 ' Raw B1..B12
                 For bb = 1 To MAX_BOX
@@ -548,14 +621,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     rowArr(idx) = endVal
                 Next bb
                 
-                ' P1 Ending Stock - only Box 1 shown in debug
-                idx = idx + 1
-                rowArr(idx) = endStockP1(1)
-                
-                ' P2 Ending Stock - only Box 1 shown in debug
-                idx = idx + 1
-                rowArr(idx) = endStockP2(1)
-
                 
                 ' AvailableStockB = EndStockB + RawB   (local only)
                 ' Still computed for logic, but no longer written to debug
@@ -594,8 +659,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 
                 gateOK = (coreBacklogUnits = 0#)  ' all core BacklogB are 0
                 
-                ' Write local numeric gate
-                idx = idx + 1: rowArr(idx) = coreBacklogUnits
                 
                 ' === NEW: core-group numeric gating (P1 / P2) ===
                 coreBacklogUnits_P1 = 0#
@@ -648,22 +711,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     gateOK_P2 = (coreBacklogUnits_P2 = 0#)
                 End If
                 
-                ' Write P1/P2 numeric gates to debug sheet
-                idx = idx + 1: rowArr(idx) = coreBacklogUnits_P1
-                idx = idx + 1: rowArr(idx) = coreBoxesFail_P1
-                idx = idx + 1: rowArr(idx) = gateOK_P1
-        
-                idx = idx + 1: rowArr(idx) = coreBacklogUnits_P2
-                idx = idx + 1: rowArr(idx) = coreBoxesFail_P2
-                idx = idx + 1: rowArr(idx) = gateOK_P2
-                
                 ' SalesTotal_New
                 idx = idx + 1: rowArr(idx) = salesTotalNew
 
 
-                
+
                 ' Carryover: Backlog, TotalToShip   (week-agnostic carry key)
                 Dim carryKey As String
+
                 carryKey = MakeCarryKey(demandCity, colorKey)
                 
                 Dim backlog As Double
@@ -676,6 +731,25 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim totalToShip As Double
                 totalToShip = salesTotalNew + backlog
 
+                ' --- Compute P2_EndStockB1AfterP1 ---
+                ' Default = P2 raw ending stock for B1
+                p2EndStockB1_afterP1 = endStockP2(1)
+                
+                If Len(p2Name) > 0 Then
+                    Dim keyP2After As String
+                    keyP2After = MakeKey(p2Name, colorKey, p2WkStart, p2WkEnd)
+                    
+                    ' If this city ever acted as P1 for this week+color,
+                    ' override with its P1_EndStockB1AfterNewSales
+                    If Map_Exists(p1AfterNewMap, keyP2After) Then
+                        p2EndStockB1_afterP1 = Map_Get(p1AfterNewMap, keyP2After)
+                    End If
+                End If
+
+                ' P2 Box1 stock after P1 effects is our baseline for backlog/new sales
+                p2EndStockB1_afterBacklog = p2EndStockB1_afterP1
+                p2EndStockB1_afterNewSales = p2EndStockB1_afterBacklog
+
                 ''' PATCH: ===== BLOCK A — Backlog (all-or-nothing) =====
                 Dim planL_b As Double, planP1_b As Double, planP2_b As Double
                 planL_b = 0#: planP1_b = 0#: planP2_b = 0#
@@ -683,15 +757,55 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim needB As Double
                 needB = backlog
                 
+                ' 1) Try Local first, using corePass (unchanged)
                 If needB > 0 And corePass Then
-                    planL_b = needB: needB = 0#
+                    planL_b = needB
+                    needB = 0#
                 End If
-                If needB > 0 And gateOK_P1 Then
-                    planP1_b = needB: needB = 0#
+                
+                ' 2) If Local failed (or had no backlog), compute P1 need numerically
+                '    We ALWAYS compute the theoretical Box1 need, even if P1 can't ship.
+                If needB > 0 And Not corePass Then
+                    ' Always compute the theoretical Box1 share of backlog
+                    p1BacklogB1Needed = BOX1_SHARE * needB
+                
+                    If canP1 Then
+                        ' Only if P1 is usable do we check its stock and maybe assign backlog
+                        p1BacklogB1_OK = (p1EndStockB1_afterBacklog >= p1BacklogB1Needed)
+
+                        If p1BacklogB1_OK Then
+                            planP1_b = needB
+                            needB = 0#
+                            p1EndStockB1_afterBacklog = p1EndStockB1_afterBacklog - p1BacklogB1Needed
+                            p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog
+                        End If
+
+
+                    Else
+                        ' P1 not usable at all this week
+                        p1BacklogB1_OK = False
+                    End If
                 End If
-                If needB > 0 And gateOK_P2 Then
-                    planP2_b = needB: needB = 0#
-                End If
+                
+                ' 3) If backlog still remains, try P2 with a Box1-based numeric gate
+                    If needB > 0 And canP2 And gateOK_P2 Then
+                        ' 40% of backlog assumed to be Box 1
+                        p2BacklogB1Needed = BOX1_SHARE * needB
+                        
+                        ' Your rule: if Box1 needed <= Box1 available after P1, P2 can take all backlog
+                        If p2BacklogB1Needed <= p2EndStockB1_afterBacklog Then
+                            p2BacklogB1_OK = True
+                            planP2_b = needB              ' P2 takes ALL remaining backlog
+                            needB = 0#
+                            
+                            ' Reduce P2 Box1 stock by the implied Box1 share of backlog
+                            p2EndStockB1_afterBacklog = p2EndStockB1_afterBacklog - p2BacklogB1Needed
+                            p2EndStockB1_afterNewSales = p2EndStockB1_afterBacklog   ' baseline for new-sales gate
+                        Else
+                            p2BacklogB1_OK = False
+                        End If
+                    End If
+
 
                 
                 Dim backlogSucceeded As Boolean
@@ -724,6 +838,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 If backlogSucceeded Then
                     Dim sumSales As Double
                     sumSales = salesTotalNew
+
+                    ' Default: if no new sales from P1, then "after new sales" = "after backlog"
+                    p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog
                 
                     ' Try Local for ALL demanded box types
                     Dim allLocal As Boolean: allLocal = corePass ' must have passed the gate
@@ -735,43 +852,58 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             End If
                         Next b
                     End If
-                
+
                     If allLocal Then
                         fromLocal_NewSales = sumSales
                         If sumSales > 0 Then
                             UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, sumSales
                         End If
                     Else
-                        ' Try P1 for ALL demanded box types
-                        Dim allP1 As Boolean: allP1 = (gateOK_P1 And canP1 And Not IsEmpty(allowedP1))
-                        If allP1 Then
-                            For b = 1 To MAX_BOX
-                                v = raw(b)
-                                If v > 0 Then
-                                    If Not allowedP1(b) Then allP1 = False: Exit For
-                                End If
-                            Next b
+                        ' NEW: P1 numeric Box1 gate for NEW SALES
+                        Dim p1CanShipNew As Boolean
+                        p1CanShipNew = False
+                        
+                        If canP1 Then
+                            ' Estimate Box1 share of new sales
+                            p1SalesB1Needed = BOX1_SHARE * sumSales
+                            p1SalesB1_OK = (p1EndStockB1_afterBacklog >= p1SalesB1Needed)
+                            
+                            If p1SalesB1_OK Then
+                                p1CanShipNew = True
+                            End If
                         End If
-                
-                        If allP1 Then
+                        
+                        If p1CanShipNew Then
                             fromP1_NewSales = sumSales
+
+                            ' P1_EndStockB1AfterNewSales = after-backlog stock - Box1 share of NEW sales
+                            ' (only when P1 actually ships new sales)
+                            p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog - p1SalesB1Needed
+
                             If sumSales > 0 Then
                                 UpdateOriginAgg keys, tot, cnt, cap, p1Name, demandCity, colorKey, p1WkStart, p1WkEnd, sumSales
                             End If
                         Else
-                            ' Try P2 for ALL demanded box types
-                            Dim allP2 As Boolean: allP2 = (gateOK_P2 And canP2 And Not IsEmpty(allowedP2))
-                            If allP2 Then
-                                For b = 1 To MAX_BOX
-                                    v = raw(b)
-                                    If v > 0 Then
-                                        If Not allowedP2(b) Then allP2 = False: Exit For
-                                    End If
-                                Next b
+                            ' NEW: P2 numeric Box1 gate for NEW SALES (same pattern as P1)
+                            Dim p2CanShipNew As Boolean
+                            p2CanShipNew = False
+                            
+                            If canP2 And gateOK_P2 Then
+                                ' 40% of new sales assumed to be Box 1
+                                p2SalesB1Needed = BOX1_SHARE * sumSales
+                                p2SalesB1_OK = (p2EndStockB1_afterBacklog >= p2SalesB1Needed)
+                                
+                                If p2SalesB1_OK Then
+                                    p2CanShipNew = True
+                                End If
                             End If
-                
-                            If allP2 Then
+                            
+                            If p2CanShipNew Then
                                 fromP2_NewSales = sumSales
+                                
+                                ' P2_EndStockB1AfterNewSales = after-backlog stock - Box1 share of NEW sales
+                                p2EndStockB1_afterNewSales = p2EndStockB1_afterBacklog - p2SalesB1Needed
+                                
                                 If sumSales > 0 Then
                                     UpdateOriginAgg keys, tot, cnt, cap, p2Name, demandCity, colorKey, p2WkStart, p2WkEnd, sumSales
                                 End If
@@ -789,26 +921,48 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 fromP1_Total    = fromP1_Backlog    + fromP1_NewSales
                 fromP2_Total    = fromP2_Backlog    + fromP2_NewSales
 
+                ' Record P1 after-new-sales stock for this origin/week/color
+                ' Only if P1 actually shipped something (backlog or new sales)
+                If fromP1_Total > 0 And Len(p1Name) > 0 Then
+                    Dim keyP1After As String
+                    keyP1After = MakeKey(p1Name, colorKey, p1WkStart, p1WkEnd)
+                    Map_Set p1AfterNewMap, keyP1After, p1EndStockB1_afterNewSales
+                End If
+
+                ' --- Flow, in the same order as the header ---
+
+                ' Backlog / TotalToShip
                 idx = idx + 1: rowArr(idx) = backlog
                 idx = idx + 1: rowArr(idx) = totalToShip
 
-                ' Write in the same order as header
                 ' Local (backlog/new/total)
                 idx = idx + 1: rowArr(idx) = fromLocal_Backlog
                 idx = idx + 1: rowArr(idx) = fromLocal_NewSales
                 idx = idx + 1: rowArr(idx) = fromLocal_Total
-                
-                ' P1 name + numbers
-                idx = idx + 1: rowArr(idx) = p1Name
-                idx = idx + 1: rowArr(idx) = fromP1_Backlog
-                idx = idx + 1: rowArr(idx) = fromP1_NewSales
-                idx = idx + 1: rowArr(idx) = fromP1_Total
-                
-                ' P2 name + numbers
-                idx = idx + 1: rowArr(idx) = p2Name
-                idx = idx + 1: rowArr(idx) = fromP2_Backlog
-                idx = idx + 1: rowArr(idx) = fromP2_NewSales
-                idx = idx + 1: rowArr(idx) = fromP2_Total
+
+                ' --- P1 block ---
+                idx = idx + 1: rowArr(idx) = p1Name                     ' P1 City
+                idx = idx + 1: rowArr(idx) = endStockP1(1)              ' P1_EndStockB1
+                idx = idx + 1: rowArr(idx) = p1BacklogB1Needed          ' P1_BacklogB1_Needed
+                idx = idx + 1: rowArr(idx) = fromP1_Backlog             ' FromP1_Backlog
+                idx = idx + 1: rowArr(idx) = p1EndStockB1_afterBacklog  ' P1_EndStockB1AfterBacklog
+                idx = idx + 1: rowArr(idx) = p1SalesB1Needed            ' P1_SalesB1_Needed
+                idx = idx + 1: rowArr(idx) = fromP1_NewSales            ' FromP1_NewSales
+                idx = idx + 1: rowArr(idx) = fromP1_Total               ' FromP1_Total
+                idx = idx + 1: rowArr(idx) = p1EndStockB1_afterNewSales ' P1_EndStockB1AfterNewSales  <-- NEW
+
+
+                ' --- P2 block ---
+                idx = idx + 1: rowArr(idx) = p2Name                        ' P2 City
+                idx = idx + 1: rowArr(idx) = p2EndStockB1_afterP1          ' P2_EndStockB1AfterP1
+                idx = idx + 1: rowArr(idx) = p2BacklogB1Needed             ' P2_BacklogB1_Needed
+                idx = idx + 1: rowArr(idx) = fromP2_Backlog                ' FromP2_Backlog
+                idx = idx + 1: rowArr(idx) = p2EndStockB1_afterBacklog     ' P2_EndStockB1AfterBacklog
+                idx = idx + 1: rowArr(idx) = p2SalesB1Needed               ' P2_SalesB1_Needed
+                idx = idx + 1: rowArr(idx) = fromP2_NewSales               ' FromP2_NewSales
+                idx = idx + 1: rowArr(idx) = fromP2_Total                  ' FromP2_Total
+
+
                 
                 ' BoxesShipped & Pending
                 boxesShipped = fromLocal_Total + fromP1_Total + fromP2_Total
@@ -863,7 +1017,7 @@ NextSheet:
         If dbgRow > 2 Then .Range("C2:D" & dbgRow - 1).NumberFormat = "yyyy-mm-dd"
     End With
 
-    MsgBox "Done. P1 and P2 Ending Stock per Box Added - clean.", vbInformation
+    MsgBox "Done. P1 & P2 allocation logic updated.", vbInformation
 
 cleanup:
     Application.Calculation = prevCalc
