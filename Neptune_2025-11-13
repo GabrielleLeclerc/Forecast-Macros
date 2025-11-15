@@ -731,6 +731,25 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim totalToShip As Double
                 totalToShip = salesTotalNew + backlog
 
+                ' --- Compute P2_EndStockB1AfterP1 ---
+                ' Default = P2 raw ending stock for B1
+                p2EndStockB1_afterP1 = endStockP2(1)
+                
+                If Len(p2Name) > 0 Then
+                    Dim keyP2After As String
+                    keyP2After = MakeKey(p2Name, colorKey, p2WkStart, p2WkEnd)
+                    
+                    ' If this city ever acted as P1 for this week+color,
+                    ' override with its P1_EndStockB1AfterNewSales
+                    If Map_Exists(p1AfterNewMap, keyP2After) Then
+                        p2EndStockB1_afterP1 = Map_Get(p1AfterNewMap, keyP2After)
+                    End If
+                End If
+
+                ' P2 Box1 stock after P1 effects is our baseline for backlog/new sales
+                p2EndStockB1_afterBacklog = p2EndStockB1_afterP1
+                p2EndStockB1_afterNewSales = p2EndStockB1_afterBacklog
+
                 ''' PATCH: ===== BLOCK A — Backlog (all-or-nothing) =====
                 Dim planL_b As Double, planP1_b As Double, planP2_b As Double
                 planL_b = 0#: planP1_b = 0#: planP2_b = 0#
@@ -752,16 +771,15 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 
                     If canP1 Then
                         ' Only if P1 is usable do we check its stock and maybe assign backlog
-                        p1BacklogB1_OK = (endStockP1(1) >= p1BacklogB1Needed)
-                        
+                        p1BacklogB1_OK = (p1EndStockB1_afterBacklog >= p1BacklogB1Needed)
+
                         If p1BacklogB1_OK Then
-                            ' P1 takes ALL backlog
                             planP1_b = needB
                             needB = 0#
-                            ' Reduce P1 Box 1 stock by the implied Box1 share of backlog
-                            p1EndStockB1_afterBacklog = endStockP1(1) - p1BacklogB1Needed
-                            p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog   ' reset baseline after backlog
+                            p1EndStockB1_afterBacklog = p1EndStockB1_afterBacklog - p1BacklogB1Needed
+                            p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog
                         End If
+
 
                     Else
                         ' P1 not usable at all this week
@@ -770,20 +788,23 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 End If
                 
                 ' 3) If backlog still remains, try P2 with a Box1-based numeric gate
-                If needB > 0 And canP2 And gateOK_P2 Then
-                    ' 40% of backlog assumed to be Box 1
-                    p2BacklogB1Needed = BOX1_SHARE * needB
-                    p2BacklogB1_OK = (p2EndStockB1_afterBacklog >= p2BacklogB1Needed)
-                    
-                    If p2BacklogB1_OK Then
-                        planP2_b = needB
-                        needB = 0#
-                        ' Reduce P2 Box1 stock by the implied Box1 share of backlog
-                        p2EndStockB1_afterBacklog = p2EndStockB1_afterBacklog - p2BacklogB1Needed
-                        p2EndStockB1_afterNewSales = p2EndStockB1_afterBacklog   ' reset baseline after backlog
+                    If needB > 0 And canP2 And gateOK_P2 Then
+                        ' 40% of backlog assumed to be Box 1
+                        p2BacklogB1Needed = BOX1_SHARE * needB
+                        
+                        ' Your rule: if Box1 needed <= Box1 available after P1, P2 can take all backlog
+                        If p2BacklogB1Needed <= p2EndStockB1_afterBacklog Then
+                            p2BacklogB1_OK = True
+                            planP2_b = needB              ' P2 takes ALL remaining backlog
+                            needB = 0#
+                            
+                            ' Reduce P2 Box1 stock by the implied Box1 share of backlog
+                            p2EndStockB1_afterBacklog = p2EndStockB1_afterBacklog - p2BacklogB1Needed
+                            p2EndStockB1_afterNewSales = p2EndStockB1_afterBacklog   ' baseline for new-sales gate
+                        Else
+                            p2BacklogB1_OK = False
+                        End If
                     End If
-                End If
-
 
 
                 
@@ -907,27 +928,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     keyP1After = MakeKey(p1Name, colorKey, p1WkStart, p1WkEnd)
                     Map_Set p1AfterNewMap, keyP1After, p1EndStockB1_afterNewSales
                 End If
-
-                ' --- Compute P2_EndStockB1AfterP1 ---
-                ' Default = P2 raw ending stock for B1
-                p2EndStockB1_afterP1 = endStockP2(1)
-                
-                If Len(p2Name) > 0 Then
-                    Dim keyP2After As String
-                    keyP2After = MakeKey(p2Name, colorKey, p2WkStart, p2WkEnd)
-                    
-                    ' If this city ever acted as P1 for this week+color,
-                    ' override with its P1_EndStockB1AfterNewSales
-                    If Map_Exists(p1AfterNewMap, keyP2After) Then
-                        p2EndStockB1_afterP1 = Map_Get(p1AfterNewMap, keyP2After)
-                    End If
-                End If
-
-                ' P2 Box1 stock after P1 effects is our baseline for backlog/new sales
-                p2EndStockB1_afterBacklog = p2EndStockB1_afterP1
-                p2EndStockB1_afterNewSales = p2EndStockB1_afterBacklog
-
-
 
                 ' --- Flow, in the same order as the header ---
 
