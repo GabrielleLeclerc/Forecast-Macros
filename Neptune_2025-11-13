@@ -438,12 +438,19 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                 ' ---- Cover remaining with partners in order; first eligible wins ----
                 ' PATCH: precompute partner eligibility (no shipping yet)
+
                 Dim p1Start As Long, p1End As Long, p1Col As Long, off1 As Long
                 Dim p2Start As Long, p2End As Long, p2Col As Long, off2 As Long
                 Dim p1Name As String, p2Name As String
                 p1Name = "": p2Name = ""
                 
                 If hasPartners Then
+                    ' Always set display names from partner list, regardless of gating outcome
+                    p1Name = SheetCityName(CStr(partNames(pLB)))
+                    If pUB >= pLB + 1 Then
+                        p2Name = SheetCityName(CStr(partNames(pLB + 1)))
+                    End If
+                
                     ' Partner 1 (if present)
                     If Not partners(pLB) Is Nothing Then
                         GetFixedSpan partners(pLB).Name, p1Start, p1End
@@ -453,7 +460,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             AllowedBoxesForDC_Single partners(pLB), partnerGate(pLB), colorKey, p1Col, CoreGroup(), p1Pass, rz1, allowedP1
                             If p1Pass Then
                                 canP1 = True
-                                p1Name = SheetCityName(partners(pLB).Name)
+                                ' p1Name already set; no need to touch it
                                 If IsDate(partners(pLB).Cells(2, p1Col).Value) Then p1WkStart = CDate(partners(pLB).Cells(2, p1Col).Value)
                                 If IsDate(partners(pLB).Cells(4, p1Col).Value) Then p1WkEnd   = CDate(partners(pLB).Cells(4, p1Col).Value)
                             End If
@@ -470,7 +477,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                                 AllowedBoxesForDC_Single partners(pLB + 1), partnerGate(pLB + 1), colorKey, p2Col, CoreGroup(), p2Pass, rz2, allowedP2
                                 If p2Pass Then
                                     canP2 = True
-                                    p2Name = SheetCityName(partners(pLB + 1).Name)
+                                    ' p2Name already set
                                     If IsDate(partners(pLB + 1).Cells(2, p2Col).Value) Then p2WkStart = CDate(partners(pLB + 1).Cells(2, p2Col).Value)
                                     If IsDate(partners(pLB + 1).Cells(4, p2Col).Value) Then p2WkEnd   = CDate(partners(pLB + 1).Cells(4, p2Col).Value)
                                 End If
@@ -478,6 +485,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         End If
                     End If
                 End If
+
 
                 ' ==== Build ending-stock per box for partners (P1/P2) ====
                 Dim bx As Long
