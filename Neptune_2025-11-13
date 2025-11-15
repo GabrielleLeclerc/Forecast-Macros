@@ -192,12 +192,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     hdr(7) = "LocalCorePass"
     hdr(8) = "Reason"          ' Local reason
     
-    hdr(9)  = "P1CorePass"
-    hdr(10) = "P1Reason"
-    hdr(11) = "P2CorePass"
-    hdr(12) = "P2Reason"
-    
-    k = 12
+    k = 8
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "Raw B" & iCol
     Next iCol
@@ -212,17 +207,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     Next iCol
 
     ' We’ll show P1/P2 Box 1 stocks later next to their city blocks
-
-    ' --- Numeric gating metrics ---
-    k = k + 1: hdr(k) = "CoreBacklogUnits"
-    
-    k = k + 1: hdr(k) = "P1_CoreBacklogUnits"
-    k = k + 1: hdr(k) = "P1_CoreBoxesFail"
-    k = k + 1: hdr(k) = "P1GateOK_New"
-    
-    k = k + 1: hdr(k) = "P2_CoreBacklogUnits"
-    k = k + 1: hdr(k) = "P2_CoreBoxesFail"
-    k = k + 1: hdr(k) = "P2GateOK_New"
     
     ' --- Flow + P1 numeric logic, in requested order ---
     k = k + 1: hdr(k) = "NewSalesTotal"
@@ -246,7 +230,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     
     ' --- P2 block ---
     k = k + 1: hdr(k) = "P2 City"
-    k = k + 1: hdr(k) = "P2_EndStockB1"
     k = k + 1: hdr(k) = "P2_EndStockB1AfterP1"   ' <-- NEW COLUMN
     k = k + 1: hdr(k) = "FromP2_Backlog"
     k = k + 1: hdr(k) = "FromP2_NewSales"
@@ -590,12 +573,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 rowArr(7)  = corePass   ' LocalCorePass
                 rowArr(8)  = reason     ' Local Reason
                 
-                rowArr(9)  = p1Pass     ' P1CorePass
-                rowArr(10) = rz1        ' P1Reason
-                rowArr(11) = p2Pass     ' P2CorePass
-                rowArr(12) = rz2        ' P2Reason
-                
-                idx = 12
+                idx = 8
+
 
                 ' Raw B1..B12
                 For bb = 1 To MAX_BOX
@@ -659,8 +638,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 
                 gateOK = (coreBacklogUnits = 0#)  ' all core BacklogB are 0
                 
-                ' Write local numeric gate
-                idx = idx + 1: rowArr(idx) = coreBacklogUnits
                 
                 ' === NEW: core-group numeric gating (P1 / P2) ===
                 coreBacklogUnits_P1 = 0#
@@ -712,15 +689,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     Next cg
                     gateOK_P2 = (coreBacklogUnits_P2 = 0#)
                 End If
-                
-                ' Write P1/P2 numeric gates to debug sheet
-                idx = idx + 1: rowArr(idx) = coreBacklogUnits_P1
-                idx = idx + 1: rowArr(idx) = coreBoxesFail_P1
-                idx = idx + 1: rowArr(idx) = gateOK_P1
-        
-                idx = idx + 1: rowArr(idx) = coreBacklogUnits_P2
-                idx = idx + 1: rowArr(idx) = coreBoxesFail_P2
-                idx = idx + 1: rowArr(idx) = gateOK_P2
                 
                 ' SalesTotal_New
                 idx = idx + 1: rowArr(idx) = salesTotalNew
@@ -945,12 +913,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                 ' --- P2 block ---
                 idx = idx + 1: rowArr(idx) = p2Name                       ' P2 City
-                idx = idx + 1: rowArr(idx) = endStockP2(1)                ' P2_EndStockB1
                 idx = idx + 1: rowArr(idx) = p2EndStockB1_afterP1         ' P2_EndStockB1AfterP1
                 idx = idx + 1: rowArr(idx) = fromP2_Backlog
                 idx = idx + 1: rowArr(idx) = fromP2_NewSales
                 idx = idx + 1: rowArr(idx) = fromP2_Total
-
 
                 
                 ' BoxesShipped & Pending
