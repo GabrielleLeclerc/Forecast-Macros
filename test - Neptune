@@ -141,27 +141,21 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     Dim wb As Workbook: Set wb = ThisWorkbook
 
-    ' Load last run's carryover (keyed by City|Color) and make a run-time rolling map
-    Dim carryPrev As Object
-    Set carryPrev = LoadCarryMap(wb)
-    ' Hide the carry sheet every run
-    ThisWorkbook.Worksheets(CARRY_SHEET).Visible = xlSheetHidden
-    
+    ' Run-time rolling map: backlog within THIS macro run only
     Dim carryRun As Object
     Set carryRun = Map_Create()
-
+    
     ' Map: P1 city | color | week -> P1_EndStockB1AfterNewSales
     Dim p1AfterNewMap As Object
     Set p1AfterNewMap = Map_Create()
     
-    ' Seed carryRun with whatever was saved last week
-    Dim kKey As Variant, prevKeys As Variant
-    prevKeys = Map_Keys(carryPrev)
-    If Not IsEmpty(prevKeys) Then
-        For Each kKey In prevKeys
-            Map_Set carryRun, CStr(kKey), Map_Get(carryPrev, CStr(kKey))
-        Next kKey
-    End If
+    ' Maps for "after-local" availability per city/color/week (B1–B3)
+    Dim afterLocalB1 As Object
+    Dim afterLocalB2 As Object
+    Dim afterLocalB3 As Object
+    Set afterLocalB1 = Map_Create()
+    Set afterLocalB2 = Map_Create()
+    Set afterLocalB3 = Map_Create()
 
     ' ===== Speed up =====
     Dim prevCalc As XlCalculation, prevScr As Boolean, prevEvt As Boolean
@@ -1008,8 +1002,8 @@ NextSheet:
     Next it
 
     ' --- Persist the rolled carry map (City|Color -> latest pending) ---
-    SaveCarryMap wb, carryRun
-    ThisWorkbook.Worksheets(CARRY_SHEET).Visible = xlSheetHidden
+    ' SaveCarryMap wb, carryRun
+    ' ThisWorkbook.Worksheets(CARRY_SHEET).Visible = xlSheetHidden
 
     ' Format
     With wsDbg
