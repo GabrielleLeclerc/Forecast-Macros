@@ -1355,7 +1355,7 @@ NextSheet:
         If dbgRow > 2 Then .Range("C2:D" & dbgRow - 1).NumberFormat = "yyyy-mm-dd"
     End With
 
-    MsgBox "Done. P1 & P2 allocation logic updated.", vbInformation
+    MsgBox "Done. Start week: Nov 10th 2025.", vbInformation
 
 cleanup:
     Application.Calculation = prevCalc
