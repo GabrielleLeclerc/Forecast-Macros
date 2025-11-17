@@ -1,3 +1,4 @@
+
 Option Explicit
 
 '========================= SETTINGS =========================
@@ -16,15 +17,15 @@ Public Const BOX2_SHARE As Double = 0         ' Sleeper seat Backrest, ~40% (cha
 Public Const BOX3_SHARE As Double = 0         ' Arms, ~15% (changeable)
 
 ' ---------- Per-sheet weekly column spans (letters) ----------
-Public Const MTL_START_COL As String = "BN"
+Public Const MTL_START_COL As String = "CB"
 Public Const MTL_END_COL   As String = "EL"
-Public Const TO_START_COL  As String = "BM"
+Public Const TO_START_COL  As String = "CA"
 Public Const TO_END_COL    As String = "EJ"
-Public Const VAN_START_COL As String = "BN"
+Public Const VAN_START_COL As String = "CB"
 Public Const VAN_END_COL   As String = "EO"
-Public Const IRN_START_COL As String = "BP"
+Public Const IRN_START_COL As String = "CD"
 Public Const IRN_END_COL   As String = "EU"
-Public Const MOR_START_COL As String = "BP"
+Public Const MOR_START_COL As String = "CD"
 Public Const MOR_END_COL   As String = "EN"
 Private Const CARRY_SHEET As String = "Boxes_Shipped_CARRY" ' Persist previous run's pending here
 
