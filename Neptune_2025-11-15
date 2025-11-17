@@ -426,6 +426,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim P1_AvailB2_AfterNewSales As Double
                 Dim P1_AvailB3_AfterNewSales As Double
 
+                ' Reset them explicitly so they don’t carry over between rows
+                P1_BacklogB1_Needed = 0#: P1_BacklogB2_Needed = 0#: P1_BacklogB3_Needed = 0#
+                P1_SalesB1_Needed   = 0#: P1_SalesB2_Needed   = 0#: P1_SalesB3_Needed   = 0#
+
                 ' --- P2 B1/B2/B3 detailed metrics ---
                 Dim P2_AvailB1_AfterP1 As Double
                 Dim P2_AvailB2_AfterP1 As Double
@@ -447,7 +451,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim P2_AvailB2_AfterNewSales As Double
                 Dim P2_AvailB3_AfterNewSales As Double
 
-
+                ' Reset
+                P2_BacklogB1_Needed = 0#: P2_BacklogB2_Needed = 0#: P2_BacklogB3_Needed = 0#
+                P2_SalesB1_Needed   = 0#: P2_SalesB2_Needed   = 0#: P2_SalesB3_Needed   = 0#
+                
 
 
                 ' --- NEW LOCAL B1/B2/B3 DEBUG + CAPACITY VARS ---
