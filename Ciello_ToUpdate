@@ -206,19 +206,24 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         k = k + 1: hdr(k) = "EligLocal B" & iCol
     Next iCol
 
-    ' NEW: Ending Stock per box (local DC) - only B1..B3 in debug
+    ' NEW: Ending Stock per box (local DC) - B1,B2,B3,B9,B10 in debug
     For iCol = 1 To 3
         k = k + 1: hdr(k) = "EndStock B" & iCol
     Next iCol
+    k = k + 1: hdr(k) = "EndStock B9"
+    k = k + 1: hdr(k) = "EndStock B10"
 
 
     ' We’ll show P1/P2 Box 1 stocks later next to their city blocks
 
     ' NEW: Available Stock per box (local DC) = EndStock + Raw
-    ' Only keep B1, B2, B3 in the debug sheet
+    ' Keep B1,B2,B3,B9,B10 in the debug sheet
     For iCol = 1 To 3
         k = k + 1: hdr(k) = "AvailStock B" & iCol
     Next iCol
+    k = k + 1: hdr(k) = "AvailStock B9"
+    k = k + 1: hdr(k) = "AvailStock B10"
+
 
     ' --- Also track EndStock and AvailStock for Box 9 and 10 ---
     k = k + 1: hdr(k) = "EndStock B9"
@@ -236,26 +241,24 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "Local_BacklogB1_Needed"
     k = k + 1: hdr(k) = "Local_BacklogB2_Needed"
     k = k + 1: hdr(k) = "Local_BacklogB3_Needed"
+    k = k + 1: hdr(k) = "Local_BacklogB9_Needed"
+    k = k + 1: hdr(k) = "Local_BacklogB10_Needed"
     k = k + 1: hdr(k) = "FromLocal_Backlog"
     k = k + 1: hdr(k) = "Local_AvailB1_AfterBacklog"
     k = k + 1: hdr(k) = "Local_AvailB2_AfterBacklog"
     k = k + 1: hdr(k) = "Local_AvailB3_AfterBacklog"
+     k = k + 1: hdr(k) = "Local_AvailB9_AfterBacklog"
+    k = k + 1: hdr(k) = "Local_AvailB10_AfterBacklog"
     k = k + 1: hdr(k) = "FromLocal_NewSales"
     k = k + 1: hdr(k) = "Local_SalesB1_Needed"
     k = k + 1: hdr(k) = "Local_SalesB2_Needed"
     k = k + 1: hdr(k) = "Local_SalesB3_Needed"
+    k = k + 1: hdr(k) = "Local_SalesB9_Needed"
+    k = k + 1: hdr(k) = "Local_SalesB10_Needed"
     k = k + 1: hdr(k) = "FromLocal_Total"
     k = k + 1: hdr(k) = "Local_AvailB1_AfterNewSales"
     k = k + 1: hdr(k) = "Local_AvailB2_AfterNewSales"
-    k = k + 1: hdr(k) = "Local_AvailB3_AfterNewSales"
-
-    ' Local HAA (Box 9 & 10) metrics
-    k = k + 1: hdr(k) = "Local_BacklogB9_Needed"
-    k = k + 1: hdr(k) = "Local_BacklogB10_Needed"
-    k = k + 1: hdr(k) = "Local_AvailB9_AfterBacklog"
-    k = k + 1: hdr(k) = "Local_AvailB10_AfterBacklog"
-    k = k + 1: hdr(k) = "Local_SalesB9_Needed"
-    k = k + 1: hdr(k) = "Local_SalesB10_Needed"
+    k = k + 1: hdr(k) = "Local_AvailB3_AfterNewSales"  
     k = k + 1: hdr(k) = "Local_AvailB9_AfterNewSales"
     k = k + 1: hdr(k) = "Local_AvailB10_AfterNewSales"
     
@@ -265,31 +268,29 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "P1_AvailStockB1_afterLocal"
     k = k + 1: hdr(k) = "P1_AvailStockB2_afterLocal"
     k = k + 1: hdr(k) = "P1_AvailStockB3_afterLocal"
+    k = k + 1: hdr(k) = "P1_AvailStockB9_afterLocal"
+    k = k + 1: hdr(k) = "P1_AvailStockB10_afterLocal"
     k = k + 1: hdr(k) = "P1_BacklogB1_Needed"
     k = k + 1: hdr(k) = "P1_BacklogB2_Needed"
     k = k + 1: hdr(k) = "P1_BacklogB3_Needed"
+    k = k + 1: hdr(k) = "P1_BacklogB9_Needed"
+    k = k + 1: hdr(k) = "P1_BacklogB10_Needed"
     k = k + 1: hdr(k) = "FromP1_Backlog"
     k = k + 1: hdr(k) = "P1_AvailB1_AfterBacklog"
     k = k + 1: hdr(k) = "P1_AvailB2_AfterBacklog"
     k = k + 1: hdr(k) = "P1_AvailB3_AfterBacklog"
+    k = k + 1: hdr(k) = "P1_AvailB9_AfterBacklog"
+    k = k + 1: hdr(k) = "P1_AvailB10_AfterBacklog"
     k = k + 1: hdr(k) = "P1_SalesB1_Needed"
     k = k + 1: hdr(k) = "P1_SalesB2_Needed"
     k = k + 1: hdr(k) = "P1_SalesB3_Needed"
+    k = k + 1: hdr(k) = "P1_SalesB9_Needed"
+    k = k + 1: hdr(k) = "P1_SalesB10_Needed"
     k = k + 1: hdr(k) = "FromP1_NewSales"
     k = k + 1: hdr(k) = "FromP1_Total"
     k = k + 1: hdr(k) = "P1_AvailB1_AfterNewSales"
     k = k + 1: hdr(k) = "P1_AvailB2_AfterNewSales"
     k = k + 1: hdr(k) = "P1_AvailB3_AfterNewSales"
-
-    ' P1 HAA (Box 9 & 10) metrics
-    k = k + 1: hdr(k) = "P1_AvailStockB9_afterLocal"
-    k = k + 1: hdr(k) = "P1_AvailStockB10_afterLocal"
-    k = k + 1: hdr(k) = "P1_BacklogB9_Needed"
-    k = k + 1: hdr(k) = "P1_BacklogB10_Needed"
-    k = k + 1: hdr(k) = "P1_AvailB9_AfterBacklog"
-    k = k + 1: hdr(k) = "P1_AvailB10_AfterBacklog"
-    k = k + 1: hdr(k) = "P1_SalesB9_Needed"
-    k = k + 1: hdr(k) = "P1_SalesB10_Needed"
     k = k + 1: hdr(k) = "P1_AvailB9_AfterNewSales"
     k = k + 1: hdr(k) = "P1_AvailB10_AfterNewSales"
 
@@ -299,31 +300,29 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "P2_AvailB1_AfterP1"
     k = k + 1: hdr(k) = "P2_AvailB2_AfterP1"
     k = k + 1: hdr(k) = "P2_AvailB3_AfterP1"
+    k = k + 1: hdr(k) = "P2_AvailB9_AfterP1"
+    k = k + 1: hdr(k) = "P2_AvailB10_AfterP1"
     k = k + 1: hdr(k) = "P2_BacklogB1_Needed"
     k = k + 1: hdr(k) = "P2_BacklogB2_Needed"
     k = k + 1: hdr(k) = "P2_BacklogB3_Needed"
+    k = k + 1: hdr(k) = "P2_BacklogB9_Needed"
+    k = k + 1: hdr(k) = "P2_BacklogB10_Needed"
     k = k + 1: hdr(k) = "FromP2_Backlog"
     k = k + 1: hdr(k) = "P2_AvailB1_AfterBacklog"
     k = k + 1: hdr(k) = "P2_AvailB2_AfterBacklog"
     k = k + 1: hdr(k) = "P2_AvailB3_AfterBacklog"
+    k = k + 1: hdr(k) = "P2_AvailB9_AfterBacklog"
+    k = k + 1: hdr(k) = "P2_AvailB10_AfterBacklog"
     k = k + 1: hdr(k) = "P2_SalesB1_Needed"
     k = k + 1: hdr(k) = "P2_SalesB2_Needed"
     k = k + 1: hdr(k) = "P2_SalesB3_Needed"
+    k = k + 1: hdr(k) = "P2_SalesB9_Needed"
+    k = k + 1: hdr(k) = "P2_SalesB10_Needed"
     k = k + 1: hdr(k) = "FromP2_NewSales"
     k = k + 1: hdr(k) = "FromP2_Total"
     k = k + 1: hdr(k) = "P2_AvailB1_AfterNewSales"
     k = k + 1: hdr(k) = "P2_AvailB2_AfterNewSales"
     k = k + 1: hdr(k) = "P2_AvailB3_AfterNewSales"
-
-    ' P2 HAA (Box 9 & 10) metrics
-    k = k + 1: hdr(k) = "P2_AvailB9_AfterP1"
-    k = k + 1: hdr(k) = "P2_AvailB10_AfterP1"
-    k = k + 1: hdr(k) = "P2_BacklogB9_Needed"
-    k = k + 1: hdr(k) = "P2_BacklogB10_Needed"
-    k = k + 1: hdr(k) = "P2_AvailB9_AfterBacklog"
-    k = k + 1: hdr(k) = "P2_AvailB10_AfterBacklog"
-    k = k + 1: hdr(k) = "P2_SalesB9_Needed"
-    k = k + 1: hdr(k) = "P2_SalesB10_Needed"
     k = k + 1: hdr(k) = "P2_AvailB9_AfterNewSales"
     k = k + 1: hdr(k) = "P2_AvailB10_AfterNewSales"
     
@@ -877,22 +876,28 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     endStock(bb) = endVal
                 Next bb
                 
-                ' Only write EndStock B1..B3 to debug
+                ' Write EndStock B1,B2,B3,B9,B10 to debug
                 For bb = 1 To 3
                     idx = idx + 1
                     rowArr(idx) = endStock(bb)
                 Next bb
-                
+                idx = idx + 1: rowArr(idx) = endStock(9)
+                idx = idx + 1: rowArr(idx) = endStock(10)
+
+
                 ' AvailableStockB = EndStockB + RawB   (local only, for all boxes)
                 For bb = 1 To MAX_BOX
                     availStock(bb) = endStock(bb) + raw(bb)
                 Next bb
                 
-                ' NEW: write AvailStock B1..B3 to debug
+                ' NEW: write AvailStock B1,B2,B3,B9,B10 to debug
                 For bb = 1 To 3
                     idx = idx + 1
                     rowArr(idx) = availStock(bb)
                 Next bb
+                idx = idx + 1: rowArr(idx) = availStock(9)
+                idx = idx + 1: rowArr(idx) = availStock(10)
+
 
                 ' Also write EndStock/AvailStock for Box 9 and 10
                 idx = idx + 1: rowArr(idx) = endStock(9)
@@ -1392,28 +1397,26 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = Local_BacklogB1_Needed
                 idx = idx + 1: rowArr(idx) = Local_BacklogB2_Needed
                 idx = idx + 1: rowArr(idx) = Local_BacklogB3_Needed
+                idx = idx + 1: rowArr(idx) = Local_BacklogB9_Needed
+                idx = idx + 1: rowArr(idx) = Local_BacklogB10_Needed
                 idx = idx + 1: rowArr(idx) = fromLocal_Backlog
                 idx = idx + 1: rowArr(idx) = Local_AvailB1_AfterBacklog
                 idx = idx + 1: rowArr(idx) = Local_AvailB2_AfterBacklog
                 idx = idx + 1: rowArr(idx) = Local_AvailB3_AfterBacklog
+                idx = idx + 1: rowArr(idx) = Local_AvailB9_AfterBacklog
+                idx = idx + 1: rowArr(idx) = Local_AvailB10_AfterBacklog
                 idx = idx + 1: rowArr(idx) = fromLocal_NewSales
                 idx = idx + 1: rowArr(idx) = Local_SalesB1_Needed
                 idx = idx + 1: rowArr(idx) = Local_SalesB2_Needed
                 idx = idx + 1: rowArr(idx) = Local_SalesB3_Needed
+                idx = idx + 1: rowArr(idx) = Local_SalesB9_Needed
+                idx = idx + 1: rowArr(idx) = Local_SalesB10_Needed
                 idx = idx + 1: rowArr(idx) = fromLocal_Total
                 idx = idx + 1: rowArr(idx) = Local_AvailB1_AfterNewSales
                 idx = idx + 1: rowArr(idx) = Local_AvailB2_AfterNewSales
                 idx = idx + 1: rowArr(idx) = Local_AvailB3_AfterNewSales
-                ' Local HAA (Box 9 & 10) metrics
-                idx = idx + 1: rowArr(idx) = Local_BacklogB9_Needed
-                idx = idx + 1: rowArr(idx) = Local_BacklogB10_Needed
-                idx = idx + 1: rowArr(idx) = Local_AvailB9_AfterBacklog
-                idx = idx + 1: rowArr(idx) = Local_AvailB10_AfterBacklog
-                idx = idx + 1: rowArr(idx) = Local_SalesB9_Needed
-                idx = idx + 1: rowArr(idx) = Local_SalesB10_Needed
                 idx = idx + 1: rowArr(idx) = Local_AvailB9_AfterNewSales
                 idx = idx + 1: rowArr(idx) = Local_AvailB10_AfterNewSales
-
 
 
                 ' --- P1 block ---
@@ -1422,34 +1425,31 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = P1_AvailB1_afterLocal
                 idx = idx + 1: rowArr(idx) = P1_AvailB2_afterLocal
                 idx = idx + 1: rowArr(idx) = P1_AvailB3_afterLocal
+                idx = idx + 1: rowArr(idx) = P1_AvailB9_afterLocal
+                idx = idx + 1: rowArr(idx) = P1_AvailB10_afterLocal
                 idx = idx + 1: rowArr(idx) = P1_BacklogB1_Needed
                 idx = idx + 1: rowArr(idx) = P1_BacklogB2_Needed
                 idx = idx + 1: rowArr(idx) = P1_BacklogB3_Needed
+                idx = idx + 1: rowArr(idx) = P1_BacklogB9_Needed
+                idx = idx + 1: rowArr(idx) = P1_BacklogB10_Needed
                 idx = idx + 1: rowArr(idx) = fromP1_Backlog
                 idx = idx + 1: rowArr(idx) = P1_AvailB1_AfterBacklog
                 idx = idx + 1: rowArr(idx) = P1_AvailB2_AfterBacklog
                 idx = idx + 1: rowArr(idx) = P1_AvailB3_AfterBacklog
+                idx = idx + 1: rowArr(idx) = P1_AvailB9_AfterBacklog
+                idx = idx + 1: rowArr(idx) = P1_AvailB10_AfterBacklog
                 idx = idx + 1: rowArr(idx) = P1_SalesB1_Needed
                 idx = idx + 1: rowArr(idx) = P1_SalesB2_Needed
                 idx = idx + 1: rowArr(idx) = P1_SalesB3_Needed
+                idx = idx + 1: rowArr(idx) = P1_SalesB9_Needed
+                idx = idx + 1: rowArr(idx) = P1_SalesB10_Needed
                 idx = idx + 1: rowArr(idx) = fromP1_NewSales
                 idx = idx + 1: rowArr(idx) = fromP1_Total
                 idx = idx + 1: rowArr(idx) = P1_AvailB1_AfterNewSales
                 idx = idx + 1: rowArr(idx) = P1_AvailB2_AfterNewSales
                 idx = idx + 1: rowArr(idx) = P1_AvailB3_AfterNewSales
-                ' P1 HAA (Box 9 & 10)
-                idx = idx + 1: rowArr(idx) = P1_AvailB9_afterLocal
-                idx = idx + 1: rowArr(idx) = P1_AvailB10_afterLocal
-                idx = idx + 1: rowArr(idx) = P1_BacklogB9_Needed
-                idx = idx + 1: rowArr(idx) = P1_BacklogB10_Needed
-                idx = idx + 1: rowArr(idx) = P1_AvailB9_AfterBacklog
-                idx = idx + 1: rowArr(idx) = P1_AvailB10_AfterBacklog
-                idx = idx + 1: rowArr(idx) = P1_SalesB9_Needed
-                idx = idx + 1: rowArr(idx) = P1_SalesB10_Needed
                 idx = idx + 1: rowArr(idx) = P1_AvailB9_AfterNewSales
                 idx = idx + 1: rowArr(idx) = P1_AvailB10_AfterNewSales
-
-
 
 
                 ' --- P2 block ---
@@ -1457,30 +1457,29 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = P2_AvailB1_AfterP1
                 idx = idx + 1: rowArr(idx) = P2_AvailB2_AfterP1
                 idx = idx + 1: rowArr(idx) = P2_AvailB3_AfterP1
+                idx = idx + 1: rowArr(idx) = P2_AvailB9_AfterP1
+                idx = idx + 1: rowArr(idx) = P2_AvailB10_AfterP1
                 idx = idx + 1: rowArr(idx) = P2_BacklogB1_Needed
                 idx = idx + 1: rowArr(idx) = P2_BacklogB2_Needed
                 idx = idx + 1: rowArr(idx) = P2_BacklogB3_Needed
+                idx = idx + 1: rowArr(idx) = P2_BacklogB9_Needed
+                idx = idx + 1: rowArr(idx) = P2_BacklogB10_Needed
                 idx = idx + 1: rowArr(idx) = fromP2_Backlog
                 idx = idx + 1: rowArr(idx) = P2_AvailB1_AfterBacklog
                 idx = idx + 1: rowArr(idx) = P2_AvailB2_AfterBacklog
                 idx = idx + 1: rowArr(idx) = P2_AvailB3_AfterBacklog
+                idx = idx + 1: rowArr(idx) = P2_AvailB9_AfterBacklog
+                idx = idx + 1: rowArr(idx) = P2_AvailB10_AfterBacklog
                 idx = idx + 1: rowArr(idx) = P2_SalesB1_Needed
                 idx = idx + 1: rowArr(idx) = P2_SalesB2_Needed
                 idx = idx + 1: rowArr(idx) = P2_SalesB3_Needed
+                idx = idx + 1: rowArr(idx) = P2_SalesB9_Needed
+                idx = idx + 1: rowArr(idx) = P2_SalesB10_Needed
                 idx = idx + 1: rowArr(idx) = fromP2_NewSales
                 idx = idx + 1: rowArr(idx) = fromP2_Total
                 idx = idx + 1: rowArr(idx) = P2_AvailB1_AfterNewSales
                 idx = idx + 1: rowArr(idx) = P2_AvailB2_AfterNewSales
                 idx = idx + 1: rowArr(idx) = P2_AvailB3_AfterNewSales
-                ' P2 HAA (Box 9 & 10)
-                idx = idx + 1: rowArr(idx) = P2_AvailB9_AfterP1
-                idx = idx + 1: rowArr(idx) = P2_AvailB10_AfterP1
-                idx = idx + 1: rowArr(idx) = P2_BacklogB9_Needed
-                idx = idx + 1: rowArr(idx) = P2_BacklogB10_Needed
-                idx = idx + 1: rowArr(idx) = P2_AvailB9_AfterBacklog
-                idx = idx + 1: rowArr(idx) = P2_AvailB10_AfterBacklog
-                idx = idx + 1: rowArr(idx) = P2_SalesB9_Needed
-                idx = idx + 1: rowArr(idx) = P2_SalesB10_Needed
                 idx = idx + 1: rowArr(idx) = P2_AvailB9_AfterNewSales
                 idx = idx + 1: rowArr(idx) = P2_AvailB10_AfterNewSales
 
