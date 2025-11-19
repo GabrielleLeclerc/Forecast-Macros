@@ -1,4 +1,5 @@
 
+
 Option Explicit
 
 '========================= SETTINGS =========================
@@ -985,7 +986,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 
                 ' 2) If Local failed (or had no backlog), compute P1 need numerically
                 '    We ALWAYS compute the theoretical Box1 need, even if P1 can't ship.
-                If needB > 0 And Not corePass Then
+                If needB > 0 Then
                     ' P1 box needs for backlog
                     P1_BacklogB1_Needed = BOX1_SHARE * needB
                     P1_BacklogB2_Needed = BOX2_SHARE * needB
@@ -1082,51 +1083,32 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     Local_SalesB2_Needed = BOX2_SHARE * sumSales
                     Local_SalesB3_Needed = BOX3_SHARE * sumSales
 
-
-                    ' Default: if no new sales from P1, then "after new sales" = "after backlog"
-                    p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog
-                
-                    ' Try Local for ALL demanded box types
-                    Dim allLocal As Boolean
-                    allLocal = True
-
-                    ' 1) Structural: every demanded box type must be allowed locally
-                    For b = 1 To MAX_BOX
-                        v = raw(b)
-                        If v > 0 Then
-                            If Not allowedLocal(b) Then
-                                allLocal = False
-                                Exit For
+                        ' Default: if no new sales from P1, then "after new sales" = "after backlog"
+                        p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog
+                    
+                        ' === NEW: Local numeric-only gating for new sales ===
+                        Dim allLocal As Boolean
+                        allLocal = (Local_SalesB1_Needed <= Local_AvailB1_AfterBacklog _
+                                    And Local_SalesB2_Needed <= Local_AvailB2_AfterBacklog _
+                                    And Local_SalesB3_Needed <= Local_AvailB3_AfterBacklog)
+                    
+                        If allLocal Then
+                            ' Local takes ALL new sales
+                            fromLocal_NewSales = sumSales
+                    
+                            ' Consume B1/B2/B3 and compute post-new-sales availabilities
+                            Local_AvailB1_AfterNewSales = Local_AvailB1_AfterBacklog - Local_SalesB1_Needed
+                            Local_AvailB2_AfterNewSales = Local_AvailB2_AfterBacklog - Local_SalesB2_Needed
+                            Local_AvailB3_AfterNewSales = Local_AvailB3_AfterBacklog - Local_SalesB3_Needed
+                    
+                            If sumSales > 0 Then
+                                UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, sumSales
                             End If
-                        End If
-                    Next b
-
-                    ' 2) Numeric: enough B1/B2/B3 AFTER BACKLOG to cover all new sales
-                    If allLocal Then
-                        If Not (Local_SalesB1_Needed <= Local_AvailB1_AfterBacklog _
-                                And Local_SalesB2_Needed <= Local_AvailB2_AfterBacklog _
-                                And Local_SalesB3_Needed <= Local_AvailB3_AfterBacklog) Then
-                            allLocal = False
-                        End If
-                    End If
-
-                    If allLocal Then
-                        ' Local takes ALL new sales
-                        fromLocal_NewSales = sumSales
-
-                        ' Consume B1/B2/B3 and compute post-new-sales availabilities
-                        Local_AvailB1_AfterNewSales = Local_AvailB1_AfterBacklog - Local_SalesB1_Needed
-                        Local_AvailB2_AfterNewSales = Local_AvailB2_AfterBacklog - Local_SalesB2_Needed
-                        Local_AvailB3_AfterNewSales = Local_AvailB3_AfterBacklog - Local_SalesB3_Needed
-
-                        If sumSales > 0 Then
-                            UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, sumSales
-                        End If
-                    Else
-                        ' No local new sales; keep "after new sales" = "after backlog" for Local
-                        Local_AvailB1_AfterNewSales = Local_AvailB1_AfterBacklog
-                        Local_AvailB2_AfterNewSales = Local_AvailB2_AfterBacklog
-                        Local_AvailB3_AfterNewSales = Local_AvailB3_AfterBacklog
+                        Else
+                            ' No local new sales; keep "after new sales" = "after backlog" for Local
+                            Local_AvailB1_AfterNewSales = Local_AvailB1_AfterBacklog
+                            Local_AvailB2_AfterNewSales = Local_AvailB2_AfterBacklog
+                            Local_AvailB3_AfterNewSales = Local_AvailB3_AfterBacklog
 
                         ' NEW: P1 numeric gate for NEW SALES on B1/B2/B3
                         Dim p1CanShipNew As Boolean
