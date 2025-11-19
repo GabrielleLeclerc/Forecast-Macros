@@ -220,7 +220,13 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         k = k + 1: hdr(k) = "AvailStock B" & iCol
     Next iCol
 
-
+    ' --- Also track EndStock and AvailStock for Box 9 and 10 ---
+    k = k + 1: hdr(k) = "EndStock B9"
+    k = k + 1: hdr(k) = "EndStock B10"
+    
+    k = k + 1: hdr(k) = "AvailStock B9"
+    k = k + 1: hdr(k) = "AvailStock B10"
+    
     ' --- Flow + P1 numeric logic, in requested order ---
     k = k + 1: hdr(k) = "NewSalesTotal"
     k = k + 1: hdr(k) = "Backlog"
@@ -243,6 +249,17 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "Local_AvailB2_AfterNewSales"
     k = k + 1: hdr(k) = "Local_AvailB3_AfterNewSales"
 
+    ' Local HAA (Box 9 & 10) metrics
+    k = k + 1: hdr(k) = "Local_BacklogB9_Needed"
+    k = k + 1: hdr(k) = "Local_BacklogB10_Needed"
+    k = k + 1: hdr(k) = "Local_AvailB9_AfterBacklog"
+    k = k + 1: hdr(k) = "Local_AvailB10_AfterBacklog"
+    k = k + 1: hdr(k) = "Local_SalesB9_Needed"
+    k = k + 1: hdr(k) = "Local_SalesB10_Needed"
+    k = k + 1: hdr(k) = "Local_AvailB9_AfterNewSales"
+    k = k + 1: hdr(k) = "Local_AvailB10_AfterNewSales"
+    
+
     ' --- P1 block (B1/B2/B3, same structure as Local) ---
     k = k + 1: hdr(k) = "P1 City"
     k = k + 1: hdr(k) = "P1_AvailStockB1_afterLocal"
@@ -263,6 +280,19 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "P1_AvailB1_AfterNewSales"
     k = k + 1: hdr(k) = "P1_AvailB2_AfterNewSales"
     k = k + 1: hdr(k) = "P1_AvailB3_AfterNewSales"
+
+    ' P1 HAA (Box 9 & 10) metrics
+    k = k + 1: hdr(k) = "P1_AvailStockB9_afterLocal"
+    k = k + 1: hdr(k) = "P1_AvailStockB10_afterLocal"
+    k = k + 1: hdr(k) = "P1_BacklogB9_Needed"
+    k = k + 1: hdr(k) = "P1_BacklogB10_Needed"
+    k = k + 1: hdr(k) = "P1_AvailB9_AfterBacklog"
+    k = k + 1: hdr(k) = "P1_AvailB10_AfterBacklog"
+    k = k + 1: hdr(k) = "P1_SalesB9_Needed"
+    k = k + 1: hdr(k) = "P1_SalesB10_Needed"
+    k = k + 1: hdr(k) = "P1_AvailB9_AfterNewSales"
+    k = k + 1: hdr(k) = "P1_AvailB10_AfterNewSales"
+
 
     ' --- P2 block (B1/B2/B3, same structure as Local) ---
     k = k + 1: hdr(k) = "P2 City"
@@ -285,7 +315,17 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1: hdr(k) = "P2_AvailB2_AfterNewSales"
     k = k + 1: hdr(k) = "P2_AvailB3_AfterNewSales"
 
-
+    ' P2 HAA (Box 9 & 10) metrics
+    k = k + 1: hdr(k) = "P2_AvailB9_AfterP1"
+    k = k + 1: hdr(k) = "P2_AvailB10_AfterP1"
+    k = k + 1: hdr(k) = "P2_BacklogB9_Needed"
+    k = k + 1: hdr(k) = "P2_BacklogB10_Needed"
+    k = k + 1: hdr(k) = "P2_AvailB9_AfterBacklog"
+    k = k + 1: hdr(k) = "P2_AvailB10_AfterBacklog"
+    k = k + 1: hdr(k) = "P2_SalesB9_Needed"
+    k = k + 1: hdr(k) = "P2_SalesB10_Needed"
+    k = k + 1: hdr(k) = "P2_AvailB9_AfterNewSales"
+    k = k + 1: hdr(k) = "P2_AvailB10_AfterNewSales"
     
     k = k + 1: hdr(k) = "BoxesShipped"
     k = k + 1: hdr(k) = "Unfulfilled"
@@ -433,6 +473,23 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim P1_AvailB2_AfterNewSales As Double
                 Dim P1_AvailB3_AfterNewSales As Double
 
+                ' --- P1 HAA (Box 9 & 10) detailed metrics ---
+                Dim P1_AvailB9_afterLocal As Double
+                Dim P1_AvailB10_afterLocal As Double
+                
+                Dim P1_BacklogB9_Needed As Double
+                Dim P1_BacklogB10_Needed As Double
+                
+                Dim P1_AvailB9_AfterBacklog As Double
+                Dim P1_AvailB10_AfterBacklog As Double
+                
+                Dim P1_SalesB9_Needed As Double
+                Dim P1_SalesB10_Needed As Double
+                
+                Dim P1_AvailB9_AfterNewSales As Double
+                Dim P1_AvailB10_AfterNewSales As Double
+
+
                 ' Reset them explicitly so they don’t carry over between rows
                 P1_BacklogB1_Needed = 0#: P1_BacklogB2_Needed = 0#: P1_BacklogB3_Needed = 0#
                 P1_SalesB1_Needed   = 0#: P1_SalesB2_Needed   = 0#: P1_SalesB3_Needed   = 0#
@@ -457,6 +514,23 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim P2_AvailB1_AfterNewSales As Double
                 Dim P2_AvailB2_AfterNewSales As Double
                 Dim P2_AvailB3_AfterNewSales As Double
+
+                ' --- P2 HAA (Box 9 & 10) detailed metrics ---
+                Dim P2_AvailB9_AfterP1 As Double
+                Dim P2_AvailB10_AfterP1 As Double
+                
+                Dim P2_BacklogB9_Needed As Double
+                Dim P2_BacklogB10_Needed As Double
+                
+                Dim P2_AvailB9_AfterBacklog As Double
+                Dim P2_AvailB10_AfterBacklog As Double
+                
+                Dim P2_SalesB9_Needed As Double
+                Dim P2_SalesB10_Needed As Double
+                
+                Dim P2_AvailB9_AfterNewSales As Double
+                Dim P2_AvailB10_AfterNewSales As Double
+
 
                 ' Reset
                 P2_BacklogB1_Needed = 0#: P2_BacklogB2_Needed = 0#: P2_BacklogB3_Needed = 0#
@@ -484,6 +558,23 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim Local_AvailB1_AfterNewSales As Double
                 Dim Local_AvailB2_AfterNewSales As Double
                 Dim Local_AvailB3_AfterNewSales As Double
+
+                ' --- NEW LOCAL HAA (Box 9 & 10) VARS ---
+                Dim Local_BacklogB9_Needed As Double
+                Dim Local_BacklogB10_Needed As Double
+                
+                Dim Local_SalesB9_Needed As Double
+                Dim Local_SalesB10_Needed As Double
+                
+                Dim Local_AvailB9 As Double
+                Dim Local_AvailB10 As Double
+                
+                Dim Local_AvailB9_AfterBacklog As Double
+                Dim Local_AvailB10_AfterBacklog As Double
+                
+                Dim Local_AvailB9_AfterNewSales As Double
+                Dim Local_AvailB10_AfterNewSales As Double
+                
 
 
                 ReDim allowedLocal(1 To MAX_BOX)
@@ -692,10 +783,19 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 P1_AvailB1_AfterNewSales = P1_AvailB1_AfterBacklog
                 P1_AvailB2_AfterNewSales = P1_AvailB2_AfterBacklog
                 P1_AvailB3_AfterNewSales = P1_AvailB3_AfterBacklog
+                P1_AvailB9_AfterNewSales = P1_AvailB9_AfterBacklog
+                P1_AvailB10_AfterNewSales = P1_AvailB10_AfterBacklog
 
 
-
-
+                ' P1 HAA baseline using raw partner end-stock for B9/B10
+                P1_AvailB9_afterLocal = endStockP1(9)
+                P1_AvailB10_afterLocal = endStockP1(10)
+                
+                P1_AvailB9_AfterBacklog = P1_AvailB9_afterLocal
+                P1_AvailB10_AfterBacklog = P1_AvailB10_afterLocal
+                
+                P1_AvailB9_AfterNewSales = P1_AvailB9_AfterBacklog
+                P1_AvailB10_AfterNewSales = P1_AvailB10_AfterBacklog
 
                 ' P2 ending stock per box (raw, regardless of whether P2 passes the gate)
                 If hasPartners Then
@@ -794,6 +894,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     rowArr(idx) = availStock(bb)
                 Next bb
 
+                ' Also write EndStock/AvailStock for Box 9 and 10
+                idx = idx + 1: rowArr(idx) = endStock(9)
+                idx = idx + 1: rowArr(idx) = endStock(10)
+                
+                idx = idx + 1: rowArr(idx) = availStock(9)
+                idx = idx + 1: rowArr(idx) = availStock(10)
+
+
                 ' Snapshot local available B1/B2/B3 before backlog
                 Local_AvailB1 = availStock(1)
                 Local_AvailB2 = availStock(2)
@@ -809,9 +917,17 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Local_AvailB2_AfterNewSales = Local_AvailB2
                 Local_AvailB3_AfterNewSales = Local_AvailB3
 
-
-
+                ' Snapshot local available B9/B10 before backlog (HAA)
+                Local_AvailB9 = availStock(9)
+                Local_AvailB10 = availStock(10)
                 
+                Local_AvailB9_AfterBacklog = Local_AvailB9
+                Local_AvailB10_AfterBacklog = Local_AvailB10
+                
+                Local_AvailB9_AfterNewSales = Local_AvailB9
+                Local_AvailB10_AfterNewSales = Local_AvailB10
+
+
                 ' BacklogB:
                 '   = 0              if EndStockB >= 0
                 '   = Abs(EndStockB) if EndStockB < 0
@@ -917,6 +1033,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Local_BacklogB1_Needed = BOX1_SHARE * backlog
                 Local_BacklogB2_Needed = BOX2_SHARE * backlog
                 Local_BacklogB3_Needed = BOX3_SHARE * backlog
+                ' Local backlog needs for HAA boxes (9 & 10)
+                Local_BacklogB9_Needed = BOX9_SHARE * backlog
+                Local_BacklogB10_Needed = BOX10_SHARE * backlog
+                
 
 
                 ' --- Compute P2_EndStockB1AfterP1 ---
@@ -964,6 +1084,17 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 P2_AvailB2_AfterNewSales = P2_AvailB2_AfterBacklog
                 P2_AvailB3_AfterNewSales = P2_AvailB3_AfterBacklog
 
+                ' --- P2 HAA (Box 9 & 10) baseline using raw partner end-stock ---
+                P2_AvailB9_AfterP1 = endStockP2(9)
+                P2_AvailB10_AfterP1 = endStockP2(10)
+                
+                P2_AvailB9_AfterBacklog = P2_AvailB9_AfterP1
+                P2_AvailB10_AfterBacklog = P2_AvailB10_AfterP1
+                
+                P2_AvailB9_AfterNewSales = P2_AvailB9_AfterBacklog
+                P2_AvailB10_AfterNewSales = P2_AvailB10_AfterBacklog
+
+
                 ''' PATCH: ===== BLOCK A — Backlog (all-or-nothing) =====
                 Dim planL_b As Double, planP1_b As Double, planP2_b As Double
                 planL_b = 0#: planP1_b = 0#: planP2_b = 0#
@@ -985,6 +1116,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         Local_AvailB1_AfterBacklog = Local_AvailB1 - Local_BacklogB1_Needed
                         Local_AvailB2_AfterBacklog = Local_AvailB2 - Local_BacklogB2_Needed
                         Local_AvailB3_AfterBacklog = Local_AvailB3 - Local_BacklogB3_Needed
+                        Local_AvailB9_AfterBacklog = Local_AvailB9 - Local_BacklogB9_Needed
+                        Local_AvailB10_AfterBacklog = Local_AvailB10 - Local_BacklogB10_Needed
                     End If
                 End If
 
@@ -996,6 +1129,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     P1_BacklogB1_Needed = BOX1_SHARE * needB
                     P1_BacklogB2_Needed = BOX2_SHARE * needB
                     P1_BacklogB3_Needed = BOX3_SHARE * needB
+                    P1_BacklogB9_Needed = BOX9_SHARE * needB
+                    P1_BacklogB10_Needed = BOX10_SHARE * needB
+
 
                     If canP1 Then
                         ' Capacity gate: must have enough B1/B2/B3 after-local
@@ -1010,6 +1146,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             P1_AvailB1_AfterBacklog = P1_AvailB1_AfterBacklog - P1_BacklogB1_Needed
                             P1_AvailB2_AfterBacklog = P1_AvailB2_AfterBacklog - P1_BacklogB2_Needed
                             P1_AvailB3_AfterBacklog = P1_AvailB3_AfterBacklog - P1_BacklogB3_Needed
+                            P1_AvailB9_AfterBacklog = P1_AvailB9_AfterBacklog - P1_BacklogB9_Needed
+                            P1_AvailB10_AfterBacklog = P1_AvailB10_AfterBacklog - P1_BacklogB10_Needed
+
 
                             p1BacklogB1Needed = P1_BacklogB1_Needed ' keep old B1 var if you still use it
                             p1EndStockB1_afterBacklog = P1_AvailB1_AfterBacklog
@@ -1025,6 +1164,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     P2_BacklogB1_Needed = BOX1_SHARE * needB
                     P2_BacklogB2_Needed = BOX2_SHARE * needB
                     P2_BacklogB3_Needed = BOX3_SHARE * needB
+                    P2_BacklogB9_Needed = BOX9_SHARE * needB
+                    P2_BacklogB10_Needed = BOX10_SHARE * needB
 
                     If P2_BacklogB1_Needed <= P2_AvailB1_AfterBacklog _
                        And P2_BacklogB2_Needed <= P2_AvailB2_AfterBacklog _
@@ -1040,6 +1181,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         P2_AvailB1_AfterBacklog = P2_AvailB1_AfterBacklog - P2_BacklogB1_Needed
                         P2_AvailB2_AfterBacklog = P2_AvailB2_AfterBacklog - P2_BacklogB2_Needed
                         P2_AvailB3_AfterBacklog = P2_AvailB3_AfterBacklog - P2_BacklogB3_Needed
+                        P2_AvailB9_AfterBacklog = P2_AvailB9_AfterBacklog - P2_BacklogB9_Needed
+                        P2_AvailB10_AfterBacklog = P2_AvailB10_AfterBacklog - P2_BacklogB10_Needed
 
                         ' Keep B1 scalar in sync
                         p2EndStockB1_afterBacklog = P2_AvailB1_AfterBacklog
@@ -1087,6 +1230,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     Local_SalesB1_Needed = BOX1_SHARE * sumSales
                     Local_SalesB2_Needed = BOX2_SHARE * sumSales
                     Local_SalesB3_Needed = BOX3_SHARE * sumSales
+                    ' Local new-sales needs for HAA (Box 9 & 10)
+                    Local_SalesB9_Needed = BOX9_SHARE * sumSales
+                    Local_SalesB10_Needed = BOX10_SHARE * sumSales
 
                         ' Default: if no new sales from P1, then "after new sales" = "after backlog"
                         p1EndStockB1_afterNewSales = p1EndStockB1_afterBacklog
@@ -1105,6 +1251,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             Local_AvailB1_AfterNewSales = Local_AvailB1_AfterBacklog - Local_SalesB1_Needed
                             Local_AvailB2_AfterNewSales = Local_AvailB2_AfterBacklog - Local_SalesB2_Needed
                             Local_AvailB3_AfterNewSales = Local_AvailB3_AfterBacklog - Local_SalesB3_Needed
+                            Local_AvailB9_AfterNewSales = Local_AvailB9_AfterBacklog - Local_SalesB9_Needed
+                            Local_AvailB10_AfterNewSales = Local_AvailB10_AfterBacklog - Local_SalesB10_Needed
+
                     
                             If sumSales > 0 Then
                                 UpdateOriginAgg keys, tot, cnt, cap, demandCity, demandCity, colorKey, wkStart, wkEnd, sumSales
@@ -1114,6 +1263,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             Local_AvailB1_AfterNewSales = Local_AvailB1_AfterBacklog
                             Local_AvailB2_AfterNewSales = Local_AvailB2_AfterBacklog
                             Local_AvailB3_AfterNewSales = Local_AvailB3_AfterBacklog
+                            Local_AvailB9_AfterNewSales = Local_AvailB9_AfterBacklog
+                            Local_AvailB10_AfterNewSales = Local_AvailB10_AfterBacklog
+
 
                         ' NEW: P1 numeric gate for NEW SALES on B1/B2/B3
                         Dim p1CanShipNew As Boolean
@@ -1123,6 +1275,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             P1_SalesB1_Needed = BOX1_SHARE * sumSales
                             P1_SalesB2_Needed = BOX2_SHARE * sumSales
                             P1_SalesB3_Needed = BOX3_SHARE * sumSales
+                            P1_SalesB9_Needed = BOX9_SHARE * sumSales
+                            P1_SalesB10_Needed = BOX10_SHARE * sumSales
+
 
                             If P1_SalesB1_Needed <= P1_AvailB1_AfterBacklog _
                                And P1_SalesB2_Needed <= P1_AvailB2_AfterBacklog _
@@ -1139,6 +1294,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             P1_AvailB1_AfterNewSales = P1_AvailB1_AfterBacklog - P1_SalesB1_Needed
                             P1_AvailB2_AfterNewSales = P1_AvailB2_AfterBacklog - P1_SalesB2_Needed
                             P1_AvailB3_AfterNewSales = P1_AvailB3_AfterBacklog - P1_SalesB3_Needed
+                            P1_AvailB9_AfterNewSales = P1_AvailB9_AfterBacklog - P1_SalesB9_Needed
+                            P1_AvailB10_AfterNewSales = P1_AvailB10_AfterBacklog - P1_SalesB10_Needed
+
 
                             ' Keep the old scalar in sync
                             p1EndStockB1_afterNewSales = P1_AvailB1_AfterNewSales
@@ -1154,17 +1312,20 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             p2CanShipNew = False
                             
                             If canP2 And gateOK_P2 Then
-                                P2_SalesB1_Needed = BOX1_SHARE * sumSales
-                                P2_SalesB2_Needed = BOX2_SHARE * sumSales
-                                P2_SalesB3_Needed = BOX3_SHARE * sumSales
-
-                                If P2_SalesB1_Needed <= P2_AvailB1_AfterBacklog _
-                                   And P2_SalesB2_Needed <= P2_AvailB2_AfterBacklog _
-                                   And P2_SalesB3_Needed <= P2_AvailB3_AfterBacklog Then
-
-                                    p2CanShipNew = True
-                                End If
+                            P2_SalesB1_Needed = BOX1_SHARE * sumSales
+                            P2_SalesB2_Needed = BOX2_SHARE * sumSales
+                            P2_SalesB3_Needed = BOX3_SHARE * sumSales
+                            P2_SalesB9_Needed = BOX9_SHARE * sumSales
+                            P2_SalesB10_Needed = BOX10_SHARE * sumSales
+                        
+                            If P2_SalesB1_Needed <= P2_AvailB1_AfterBacklog _
+                               And P2_SalesB2_Needed <= P2_AvailB2_AfterBacklog _
+                               And P2_SalesB3_Needed <= P2_AvailB3_AfterBacklog Then
+                        
+                                p2CanShipNew = True
                             End If
+                        End If
+
                             
                             If p2CanShipNew Then
                                 fromP2_NewSales = sumSales
@@ -1173,6 +1334,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                                 P2_AvailB1_AfterNewSales = P2_AvailB1_AfterBacklog - P2_SalesB1_Needed
                                 P2_AvailB2_AfterNewSales = P2_AvailB2_AfterBacklog - P2_SalesB2_Needed
                                 P2_AvailB3_AfterNewSales = P2_AvailB3_AfterBacklog - P2_SalesB3_Needed
+                                P2_AvailB9_AfterNewSales = P2_AvailB9_AfterBacklog - P2_SalesB9_Needed
+                                P2_AvailB10_AfterNewSales = P2_AvailB10_AfterBacklog - P2_SalesB10_Needed
 
                                 ' Keep the old scalar in sync
                                 p2EndStockB1_afterNewSales = P2_AvailB1_AfterNewSales
@@ -1241,6 +1404,16 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = Local_AvailB1_AfterNewSales
                 idx = idx + 1: rowArr(idx) = Local_AvailB2_AfterNewSales
                 idx = idx + 1: rowArr(idx) = Local_AvailB3_AfterNewSales
+                ' Local HAA (Box 9 & 10) metrics
+                idx = idx + 1: rowArr(idx) = Local_BacklogB9_Needed
+                idx = idx + 1: rowArr(idx) = Local_BacklogB10_Needed
+                idx = idx + 1: rowArr(idx) = Local_AvailB9_AfterBacklog
+                idx = idx + 1: rowArr(idx) = Local_AvailB10_AfterBacklog
+                idx = idx + 1: rowArr(idx) = Local_SalesB9_Needed
+                idx = idx + 1: rowArr(idx) = Local_SalesB10_Needed
+                idx = idx + 1: rowArr(idx) = Local_AvailB9_AfterNewSales
+                idx = idx + 1: rowArr(idx) = Local_AvailB10_AfterNewSales
+
 
 
                 ' --- P1 block ---
@@ -1264,6 +1437,18 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = P1_AvailB1_AfterNewSales
                 idx = idx + 1: rowArr(idx) = P1_AvailB2_AfterNewSales
                 idx = idx + 1: rowArr(idx) = P1_AvailB3_AfterNewSales
+                ' P1 HAA (Box 9 & 10)
+                idx = idx + 1: rowArr(idx) = P1_AvailB9_afterLocal
+                idx = idx + 1: rowArr(idx) = P1_AvailB10_afterLocal
+                idx = idx + 1: rowArr(idx) = P1_BacklogB9_Needed
+                idx = idx + 1: rowArr(idx) = P1_BacklogB10_Needed
+                idx = idx + 1: rowArr(idx) = P1_AvailB9_AfterBacklog
+                idx = idx + 1: rowArr(idx) = P1_AvailB10_AfterBacklog
+                idx = idx + 1: rowArr(idx) = P1_SalesB9_Needed
+                idx = idx + 1: rowArr(idx) = P1_SalesB10_Needed
+                idx = idx + 1: rowArr(idx) = P1_AvailB9_AfterNewSales
+                idx = idx + 1: rowArr(idx) = P1_AvailB10_AfterNewSales
+
 
 
 
@@ -1287,8 +1472,18 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = P2_AvailB1_AfterNewSales
                 idx = idx + 1: rowArr(idx) = P2_AvailB2_AfterNewSales
                 idx = idx + 1: rowArr(idx) = P2_AvailB3_AfterNewSales
+                ' P2 HAA (Box 9 & 10)
+                idx = idx + 1: rowArr(idx) = P2_AvailB9_AfterP1
+                idx = idx + 1: rowArr(idx) = P2_AvailB10_AfterP1
+                idx = idx + 1: rowArr(idx) = P2_BacklogB9_Needed
+                idx = idx + 1: rowArr(idx) = P2_BacklogB10_Needed
+                idx = idx + 1: rowArr(idx) = P2_AvailB9_AfterBacklog
+                idx = idx + 1: rowArr(idx) = P2_AvailB10_AfterBacklog
+                idx = idx + 1: rowArr(idx) = P2_SalesB9_Needed
+                idx = idx + 1: rowArr(idx) = P2_SalesB10_Needed
+                idx = idx + 1: rowArr(idx) = P2_AvailB9_AfterNewSales
+                idx = idx + 1: rowArr(idx) = P2_AvailB10_AfterNewSales
 
-                
                 ' BoxesShipped & Pending
                 boxesShipped = fromLocal_Total + fromP1_Total + fromP2_Total
                 Dim pendingThisWeek As Double
