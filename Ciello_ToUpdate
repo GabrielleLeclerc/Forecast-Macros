@@ -11,15 +11,15 @@ Public Const MAX_BOX As Long = 12                  ' Adjust as needed
 
 ' ---------- Per-sheet weekly column spans (letters) ----------
 ' Edit these if your weekly blocks move
-Public Const MTL_START_COL As String = "DL"
+Public Const MTL_START_COL As String = "DZ"  'Week of November 10th
 Public Const MTL_END_COL   As String = "GH"
-Public Const TO_START_COL  As String = "CK"
+Public Const TO_START_COL  As String = "CY"  'Week of November 10th
 Public Const TO_END_COL    As String = "FG"
-Public Const VAN_START_COL As String = "DM"
+Public Const VAN_START_COL As String = "EA"  'Week of November 10th
 Public Const VAN_END_COL   As String = "GN"
-Public Const IRN_START_COL As String = "BQ"
+Public Const IRN_START_COL As String = "CE"  'Week of November 10th
 Public Const IRN_END_COL   As String = "EN"
-Public Const MOR_START_COL As String = "BZ"
+Public Const MOR_START_COL As String = "CN"  'Week of November 10th
 Public Const MOR_END_COL   As String = "EY"
 
 ' ---------- Gating groups ----------
