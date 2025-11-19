@@ -1575,48 +1575,86 @@ Private Function NormalizeColor(ByVal s As String) As String
 End Function
 
 Private Function BuildSectionTable_Block(ws As Worksheet, ByVal sectionName As String) As Variant
-    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
+    ' Layout assumed:
+    '   Col B : section headers ("Sales", "Beginning Stock", "Ending Stock", etc.)
+    '   Col C : box number (or text like "Box 1 - Arms")
+    '   Col D : color
+
+    Dim lastRow As Long
     Dim r As Long, rStart As Long, rEnd As Long
 
+    ' Use column B (where the headers live) to find the last used row
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+
+    ' 1) Find the section header row in column B
     For r = 1 To lastRow
-        If UCase$(Trim$(CStr(ws.Cells(r, "C").Value))) = UCase$(sectionName) Then
-            rStart = r + 1
+        If UCase$(Trim$(CStr(ws.Cells(r, "B").Value))) = UCase$(sectionName) Then
+            rStart = r + 1          ' data starts on the next row
             Exit For
         End If
     Next r
-    If rStart = 0 Then BuildSectionTable_Block = Empty: Exit Function
 
+    If rStart = 0 Then
+        BuildSectionTable_Block = Empty
+        Exit Function
+    End If
+
+    ' 2) Find the end of this section: next header in column B
     rEnd = lastRow
     For r = rStart To lastRow
-        Dim hdr As String: hdr = UCase$(Trim$(CStr(ws.Cells(r, "C").Value)))
-        If (hdr = "BEGINNING STOCK") Or (hdr = "ENDING STOCK") Or (hdr = "SALES") Or (hdr = "EXISTING") Or (hdr = "TO BE RECEIVED") Then
+        Dim hdr As String
+        hdr = UCase$(Trim$(CStr(ws.Cells(r, "B").Value)))
+        If (hdr = "BEGINNING STOCK") Or (hdr = "ENDING STOCK") Or (hdr = "SALES") _
+           Or (hdr = "EXISTING") Or (hdr = "TO BE RECEIVED") Then
             If r > rStart Then rEnd = r - 1
             Exit For
         End If
     Next r
 
-    Dim tmp() As Variant, cnt As Long: ReDim tmp(1 To 3, 1 To 1)
-    Dim lastColorKey As String: lastColorKey = ""
+    ' 3) Build mapping [colorKey, boxNum, row]
+    '    tmp(1, i) = colorKey
+    '    tmp(2, i) = box number
+    '    tmp(3, i) = row index
+    Dim tmp() As Variant, cnt As Long
+    Dim lastColorKey As String
+    ReDim tmp(1 To 3, 1 To 1)
+    lastColorKey = ""
 
     For r = rStart To rEnd
-        Dim desc As String: desc = CStr(ws.Cells(r, "D").Value)
-        Dim bx As Long: bx = ParseBoxNum(desc)
+        Dim bx As Long
+        Dim rawBox As String
+
+        ' --- BOX NUMBER IN COLUMN C ---
+        rawBox = CStr(ws.Cells(r, "C").Value)
+        If IsNumeric(rawBox) Then
+            bx = CLng(rawBox)
+        Else
+            ' fallback if someone types "Box 1 - Arms" in col C
+            bx = ParseBoxNum(rawBox)
+        End If
         If bx = 0 Then GoTo NextRow
 
-        ' ignore "Box 8 - NEW ARMS/SRMS"
+        ' (optional) If you still need the special rule for "Box 8 - NEW ARMS/SRMS"
         If bx = 8 Then
-            Dim U8 As String: U8 = UCase$(desc)
-            If (InStr(1, U8, "NEW") > 0) And (InStr(1, U8, "ARMS") > 0 Or InStr(1, U8, "SRMS") > 0) Then GoTo NextRow
+            Dim U8 As String
+            U8 = UCase$(rawBox)
+            If (InStr(1, U8, "NEW") > 0) And (InStr(1, U8, "ARMS") > 0 Or InStr(1, U8, "SRMS") > 0) Then
+                GoTo NextRow
+            End If
         End If
 
+        ' --- COLOR IN COLUMN D ---
         Dim colorRaw As String, colorKey As String
-        colorRaw = CStr(ws.Cells(r, "E").Value)
+        colorRaw = CStr(ws.Cells(r, "D").Value)
         colorKey = ""
         If IsLikelyColor(colorRaw) Then colorKey = NormalizeColor(colorRaw)
+
+        ' carry down last color if blank
         If Len(colorKey) = 0 And Len(lastColorKey) > 0 Then colorKey = lastColorKey
         If Len(colorKey) = 0 Then GoTo NextRow
         lastColorKey = colorKey
 
+        ' Store [colorKey, boxNum, row]
         cnt = cnt + 1
         If cnt > UBound(tmp, 2) Then ReDim Preserve tmp(1 To 3, 1 To cnt)
         tmp(1, cnt) = colorKey
@@ -1625,7 +1663,11 @@ Private Function BuildSectionTable_Block(ws As Worksheet, ByVal sectionName As S
 NextRow:
     Next r
 
-    If cnt = 0 Then BuildSectionTable_Block = Empty Else BuildSectionTable_Block = tmp
+    If cnt = 0 Then
+        BuildSectionTable_Block = Empty
+    Else
+        BuildSectionTable_Block = tmp
+    End If
 End Function
 
 Private Function IsLikelyColor(ByVal v As Variant) As Boolean
