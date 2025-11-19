@@ -9,6 +9,18 @@ Public Const WRITE_DEBUG As Boolean = True
 ' How many boxes do you have total?
 Public Const MAX_BOX As Long = 12                  ' Adjust as needed
 
+'Assuming the average order is a 3-seater sofa. 7 boxes total, 1 box of arms, 3 boxes of seats, 3 boxes of Seat cushions
+'Share of new sales/backlog assumed to be Box 1, Box 2, and Box 3
+Public Const BOX1_SHARE As Double = 0         ' Regular Arms, ~40% (changeable)
+Public Const BOX2_SHARE As Double = 0.4         ' Regular Seat, ~40% (changeable)
+Public Const BOX3_SHARE As Double = 0         ' Seat Cushion, ~15% (changeable)
+
+'Assuming the average order is a 3-seater HAA sofa. 7 boxes total, 1 box of HA arms, 3 boxes of HA seats, 3 boxes of Seat cushions
+'Share of new sales/backlog assumed to be Box 1, Box 2, and Box 3
+Public Const BOX9_SHARE As Double = 0         ' HA Arms, ~40% (changeable)
+Public Const BOX10_SHARE As Double = 0.4         ' HA Seat, ~40% (changeable)
+
+
 ' ---------- Per-sheet weekly column spans (letters) ----------
 ' Edit these if your weekly blocks move
 Public Const MTL_START_COL As String = "DZ"  'Week of November 10th
