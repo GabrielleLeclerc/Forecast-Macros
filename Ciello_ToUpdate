@@ -450,86 +450,76 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim P1_AvailB1_afterLocal As Double
                 Dim P1_AvailB2_afterLocal As Double
                 Dim P1_AvailB3_afterLocal As Double
+                Dim P1_AvailB9_afterLocal As Double
+                Dim P1_AvailB10_afterLocal As Double
 
                 Dim P1_BacklogB1_Needed As Double
                 Dim P1_BacklogB2_Needed As Double
                 Dim P1_BacklogB3_Needed As Double
+                Dim P1_BacklogB9_Needed As Double
+                Dim P1_BacklogB10_Needed As Double
+
 
                 Dim P1_AvailB1_AfterBacklog As Double
                 Dim P1_AvailB2_AfterBacklog As Double
                 Dim P1_AvailB3_AfterBacklog As Double
+                Dim P1_AvailB9_AfterBacklog As Double
+                Dim P1_AvailB10_AfterBacklog As Double
 
                 Dim P1_SalesB1_Needed As Double
                 Dim P1_SalesB2_Needed As Double
                 Dim P1_SalesB3_Needed As Double
+                Dim P1_SalesB9_Needed As Double
+                Dim P1_SalesB10_Needed As Double
 
                 Dim P1_AvailB1_AfterNewSales As Double
                 Dim P1_AvailB2_AfterNewSales As Double
                 Dim P1_AvailB3_AfterNewSales As Double
-
-                ' --- P1 HAA (Box 9 & 10) detailed metrics ---
-                Dim P1_AvailB9_afterLocal As Double
-                Dim P1_AvailB10_afterLocal As Double
-                
-                Dim P1_BacklogB9_Needed As Double
-                Dim P1_BacklogB10_Needed As Double
-                
-                Dim P1_AvailB9_AfterBacklog As Double
-                Dim P1_AvailB10_AfterBacklog As Double
-                
-                Dim P1_SalesB9_Needed As Double
-                Dim P1_SalesB10_Needed As Double
-                
                 Dim P1_AvailB9_AfterNewSales As Double
                 Dim P1_AvailB10_AfterNewSales As Double
 
-
                 ' Reset them explicitly so they don’t carry over between rows
-                P1_BacklogB1_Needed = 0#: P1_BacklogB2_Needed = 0#: P1_BacklogB3_Needed = 0#
-                P1_SalesB1_Needed = 0#: P1_SalesB2_Needed = 0#: P1_SalesB3_Needed = 0#
+                P1_BacklogB1_Needed  = 0#: P1_BacklogB2_Needed  = 0#: P1_BacklogB3_Needed  = 0#
+                P1_BacklogB9_Needed  = 0#: P1_BacklogB10_Needed = 0#
+                P1_SalesB1_Needed    = 0#: P1_SalesB2_Needed    = 0#: P1_SalesB3_Needed    = 0#
+                P1_SalesB9_Needed    = 0#: P1_SalesB10_Needed   = 0#
 
                 ' --- P2 B1/B2/B3 detailed metrics ---
                 Dim P2_AvailB1_AfterP1 As Double
                 Dim P2_AvailB2_AfterP1 As Double
                 Dim P2_AvailB3_AfterP1 As Double
+                Dim P2_AvailB9_AfterP1 As Double
+                Dim P2_AvailB10_AfterP1 As Double
 
                 Dim P2_BacklogB1_Needed As Double
                 Dim P2_BacklogB2_Needed As Double
                 Dim P2_BacklogB3_Needed As Double
+                Dim P2_BacklogB9_Needed As Double
+                Dim P2_BacklogB10_Needed As Double
 
                 Dim P2_AvailB1_AfterBacklog As Double
                 Dim P2_AvailB2_AfterBacklog As Double
                 Dim P2_AvailB3_AfterBacklog As Double
+                Dim P2_AvailB9_AfterBacklog As Double
+                Dim P2_AvailB10_AfterBacklog As Double
 
                 Dim P2_SalesB1_Needed As Double
                 Dim P2_SalesB2_Needed As Double
                 Dim P2_SalesB3_Needed As Double
+                Dim P2_SalesB9_Needed As Double
+                Dim P2_SalesB10_Needed As Double
 
                 Dim P2_AvailB1_AfterNewSales As Double
                 Dim P2_AvailB2_AfterNewSales As Double
                 Dim P2_AvailB3_AfterNewSales As Double
-
-                ' --- P2 HAA (Box 9 & 10) detailed metrics ---
-                Dim P2_AvailB9_AfterP1 As Double
-                Dim P2_AvailB10_AfterP1 As Double
-                
-                Dim P2_BacklogB9_Needed As Double
-                Dim P2_BacklogB10_Needed As Double
-                
-                Dim P2_AvailB9_AfterBacklog As Double
-                Dim P2_AvailB10_AfterBacklog As Double
-                
-                Dim P2_SalesB9_Needed As Double
-                Dim P2_SalesB10_Needed As Double
-                
                 Dim P2_AvailB9_AfterNewSales As Double
                 Dim P2_AvailB10_AfterNewSales As Double
 
-
                 ' Reset
-                P2_BacklogB1_Needed = 0#: P2_BacklogB2_Needed = 0#: P2_BacklogB3_Needed = 0#
-                P2_SalesB1_Needed = 0#: P2_SalesB2_Needed = 0#: P2_SalesB3_Needed = 0#
-                
+                P2_BacklogB1_Needed  = 0#: P2_BacklogB2_Needed  = 0#: P2_BacklogB3_Needed  = 0#
+                P2_BacklogB9_Needed  = 0#: P2_BacklogB10_Needed = 0#
+                P2_SalesB1_Needed    = 0#: P2_SalesB2_Needed    = 0#: P2_SalesB3_Needed    = 0#
+                P2_SalesB9_Needed    = 0#: P2_SalesB10_Needed   = 0#
 
 
                 ' --- NEW LOCAL B1/B2/B3 DEBUG + CAPACITY VARS ---
@@ -1025,13 +1015,12 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 totalToShip = salesTotalNew + backlog
 
                 ' --- Local backlog box needs (B1/B2/B3) based on backlog ---
-                Local_BacklogB1_Needed = BOX1_SHARE * backlog
-                Local_BacklogB2_Needed = BOX2_SHARE * backlog
-                Local_BacklogB3_Needed = BOX3_SHARE * backlog
-                ' Local backlog needs for HAA boxes (9 & 10)
-                Local_BacklogB9_Needed = BOX9_SHARE * backlog
+                Local_BacklogB1_Needed  = BOX1_SHARE  * backlog
+                Local_BacklogB2_Needed  = BOX2_SHARE  * backlog
+                Local_BacklogB3_Needed  = BOX3_SHARE  * backlog
+                Local_BacklogB9_Needed  = BOX9_SHARE  * backlog
                 Local_BacklogB10_Needed = BOX10_SHARE * backlog
-                
+
 
 
                 ' --- Compute P2_EndStockB1AfterP1 ---
