@@ -159,13 +159,17 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     Dim p1AfterNewMap As Object
     Set p1AfterNewMap = Map_Create()
     
-    ' Maps for "after-local" availability per city/color/week (B1–B3)
+    ' Maps for "after-local" availability per city/color/week (B1/B2/B3/B9/B10)
     Dim afterLocalB1 As Object
     Dim afterLocalB2 As Object
     Dim afterLocalB3 As Object
+    Dim afterLocalB9 As Object
+    Dim afterLocalB10 As Object
     Set afterLocalB1 = Map_Create()
     Set afterLocalB2 = Map_Create()
     Set afterLocalB3 = Map_Create()
+    Set afterLocalB9 = Map_Create()
+    Set afterLocalB10 = Map_Create()
 
 
     ' ===== Speed up =====
@@ -1086,11 +1090,13 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim needB As Double
                 needB = backlog
 
-                ' 1) Try Local first, using B1/B2/B3 capacity only (no corePass)
+                ' 1) Try Local first, using B1/B2/B3/B9/B10 capacity only (no corePass)
                 If needB > 0 Then
                     If Local_BacklogB1_Needed <= Local_AvailB1 _
                        And Local_BacklogB2_Needed <= Local_AvailB2 _
-                       And Local_BacklogB3_Needed <= Local_AvailB3 Then
+                       And Local_BacklogB3_Needed <= Local_AvailB3 _
+                       And Local_BacklogB9_Needed <= Local_AvailB9 _
+                       And Local_BacklogB10_Needed <= Local_AvailB10 Then
 
                         ' Local can take ALL backlog
                         planL_b = needB
@@ -1118,10 +1124,12 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
 
                     If canP1 Then
-                        ' Capacity gate: must have enough B1/B2/B3 after-local
+                        ' Capacity gate: must have enough B1/B2/B3/B9/B10 after-local
                         If P1_BacklogB1_Needed <= P1_AvailB1_AfterBacklog _
                            And P1_BacklogB2_Needed <= P1_AvailB2_AfterBacklog _
-                           And P1_BacklogB3_Needed <= P1_AvailB3_AfterBacklog Then
+                           And P1_BacklogB3_Needed <= P1_AvailB3_AfterBacklog _
+                           And P1_BacklogB9_Needed <= P1_AvailB9_AfterBacklog _
+                           And P1_BacklogB10_Needed <= P1_AvailB10_AfterBacklog Then
 
                             planP1_b = needB
                             needB = 0#
@@ -1142,7 +1150,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 End If
 
                 
-                ' 3) If backlog still remains, try P2 with full B1/B2/B3 gate
+                ' 3) If backlog still remains, try P2 with full B1/B2/B3/B9/B10 gate
                 If needB > 0 And canP2 And gateOK_P2 Then
                     ' P2 box needs for backlog
                     P2_BacklogB1_Needed = BOX1_SHARE * needB
@@ -1153,7 +1161,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                     If P2_BacklogB1_Needed <= P2_AvailB1_AfterBacklog _
                        And P2_BacklogB2_Needed <= P2_AvailB2_AfterBacklog _
-                       And P2_BacklogB3_Needed <= P2_AvailB3_AfterBacklog Then
+                       And P2_BacklogB3_Needed <= P2_AvailB3_AfterBacklog _
+                       And P2_BacklogB9_Needed <= P2_AvailB9_AfterBacklog _
+                       And P2_BacklogB10_Needed <= P2_AvailB10_AfterBacklog Then
 
                         p2BacklogB1Needed = P2_BacklogB1_Needed   ' keep old scalar if you still inspect it
                         p2BacklogB1_OK = True
@@ -1210,11 +1220,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     Dim sumSales As Double
                     sumSales = salesTotalNew
 
-                    ' Local new-sales box needs (B1/B2/B3)
+                    ' Local new-sales box needs (B1/B2/B3/B9/B10)
                     Local_SalesB1_Needed = BOX1_SHARE * sumSales
                     Local_SalesB2_Needed = BOX2_SHARE * sumSales
                     Local_SalesB3_Needed = BOX3_SHARE * sumSales
-                    ' Local new-sales needs for HAA (Box 9 & 10)
                     Local_SalesB9_Needed = BOX9_SHARE * sumSales
                     Local_SalesB10_Needed = BOX10_SHARE * sumSales
 
@@ -1225,7 +1234,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         Dim allLocal As Boolean
                         allLocal = (Local_SalesB1_Needed <= Local_AvailB1_AfterBacklog _
                                     And Local_SalesB2_Needed <= Local_AvailB2_AfterBacklog _
-                                    And Local_SalesB3_Needed <= Local_AvailB3_AfterBacklog)
+                                    And Local_SalesB3_Needed <= Local_AvailB3_AfterBacklog _
+                                    And Local_SalesB9_Needed <= Local_AvailB9_AfterBacklog _
+                                    And Local_SalesB10_Needed <= Local_AvailB10_AfterBacklog)
                     
                         If allLocal Then
                             ' Local takes ALL new sales
@@ -1265,7 +1276,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                             If P1_SalesB1_Needed <= P1_AvailB1_AfterBacklog _
                                And P1_SalesB2_Needed <= P1_AvailB2_AfterBacklog _
-                               And P1_SalesB3_Needed <= P1_AvailB3_AfterBacklog Then
+                               And P1_SalesB3_Needed <= P1_AvailB3_AfterBacklog _
+                               And P1_SalesB9_Needed <= P1_AvailB9_AfterBacklog _
+                               And P1_SalesB10_Needed <= P1_AvailB10_AfterBacklog Then
 
                                 p1CanShipNew = True
                             End If
@@ -1304,7 +1317,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         
                             If P2_SalesB1_Needed <= P2_AvailB1_AfterBacklog _
                                And P2_SalesB2_Needed <= P2_AvailB2_AfterBacklog _
-                               And P2_SalesB3_Needed <= P2_AvailB3_AfterBacklog Then
+                               And P2_SalesB3_Needed <= P2_AvailB3_AfterBacklog _
+                               And P2_SalesB9_Needed <= P2_AvailB9_AfterBacklog _
+                               And P2_SalesB10_Needed <= P2_AvailB10_AfterBacklog Then
                         
                                 p2CanShipNew = True
                             End If
@@ -1345,11 +1360,15 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     Map_Set afterLocalB1, keyAfterLocal, Local_AvailB1_AfterNewSales
                     Map_Set afterLocalB2, keyAfterLocal, Local_AvailB2_AfterNewSales
                     Map_Set afterLocalB3, keyAfterLocal, Local_AvailB3_AfterNewSales
+                    Map_Set afterLocalB9, keyAfterLocal, Local_AvailB9_AfterNewSales
+                    Map_Set afterLocalB10, keyAfterLocal, Local_AvailB10_AfterNewSales
                 Else
                     ' Conservative: if backlog not fully covered, treat as no export capacity
                     Map_Set afterLocalB1, keyAfterLocal, 0#
                     Map_Set afterLocalB2, keyAfterLocal, 0#
                     Map_Set afterLocalB3, keyAfterLocal, 0#
+                    Map_Set afterLocalB9, keyAfterLocal, 0#
+                    Map_Set afterLocalB10, keyAfterLocal, 0#
                 End If
 
 
