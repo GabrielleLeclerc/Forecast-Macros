@@ -224,7 +224,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     Next iCol
 
 
-    ' --- Also track EndStock and AvailStock for Box 9 and 10 ---
+    ' --- Also track EndStock and AvailStock for Box 8 and 9 ---
     k = k + 1: hdr(k) = "EndStock B8"
     k = k + 1: hdr(k) = "EndStock B9"
     
@@ -547,7 +547,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim Local_AvailB2_AfterNewSales As Double
                 Dim Local_AvailB3_AfterNewSales As Double
 
-                ' --- NEW LOCAL HAA (Box 9 & 10) VARS ---
+                ' --- NEW LOCAL HAA (Box 8 & 9) VARS ---
                 Dim Local_BacklogB8_Needed As Double
                 Dim Local_BacklogB9_Needed As Double
                 
@@ -776,8 +776,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
 
                 ' P1 HAA baseline using raw partner end-stock for B8/B9
-                P1_AvailB8_afterLocal = endStockP1(9)
-                P1_AvailB9_afterLocal = endStockP1(10)
+                P1_AvailB8_afterLocal = endStockP1(8)
+                P1_AvailB9_afterLocal = endStockP1(9)
                 
                 P1_AvailB8_AfterBacklog = P1_AvailB8_afterLocal
                 P1_AvailB9_AfterBacklog = P1_AvailB9_afterLocal
@@ -883,12 +883,12 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Next bb
 
 
-                ' Also write EndStock/AvailStock for Box 9 and 10
+                ' Also write EndStock/AvailStock for Box 8 and 9
+                idx = idx + 1: rowArr(idx) = endStock(8)
                 idx = idx + 1: rowArr(idx) = endStock(9)
-                idx = idx + 1: rowArr(idx) = endStock(10)
                 
+                idx = idx + 1: rowArr(idx) = availStock(8)
                 idx = idx + 1: rowArr(idx) = availStock(9)
-                idx = idx + 1: rowArr(idx) = availStock(10)
 
 
                 ' Snapshot local available B1/B2/B3 before backlog
@@ -907,8 +907,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Local_AvailB3_AfterNewSales = Local_AvailB3
 
                 ' Snapshot local available B8/B9 before backlog (HAA)
-                Local_AvailB8 = availStock(9)
-                Local_AvailB9 = availStock(10)
+                Local_AvailB8 = availStock(8)
+                Local_AvailB9 = availStock(9)
                 
                 Local_AvailB8_AfterBacklog = Local_AvailB8
                 Local_AvailB9_AfterBacklog = Local_AvailB9
@@ -1072,9 +1072,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 P2_AvailB2_AfterNewSales = P2_AvailB2_AfterBacklog
                 P2_AvailB3_AfterNewSales = P2_AvailB3_AfterBacklog
 
-                ' --- P2 HAA (Box 9 & 10) baseline using raw partner end-stock ---
-                P2_AvailB8_AfterP1 = endStockP2(9)
-                P2_AvailB9_AfterP1 = endStockP2(10)
+                ' --- P2 HAA (Box 8 & 9) baseline using raw partner end-stock ---
+                P2_AvailB8_AfterP1 = endStockP2(8)
+                P2_AvailB9_AfterP1 = endStockP2(9)
                 
                 P2_AvailB8_AfterBacklog = P2_AvailB8_AfterP1
                 P2_AvailB9_AfterBacklog = P2_AvailB9_AfterP1
