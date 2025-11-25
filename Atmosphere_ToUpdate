@@ -12,6 +12,105 @@ Public Const DEF_START_COL As String = "BR"
 Public Const DEF_END_COL   As String = "EL"
 Public Const IRN_START_COL As String = "BO"
 Public Const IRN_END_COL   As String = "EL"
+Private Const CARRY_SHEET As String = "Boxes_Shipped_CARRY"
+
+'==================== CROSS-PLATFORM MAP ====================
+Public Function Map_Create() As Object
+    On Error Resume Next
+    Dim d As Object
+    Set d = CreateObject("Scripting.Dictionary")
+    On Error GoTo 0
+    If d Is Nothing Then
+        Dim c As Collection
+        Set c = New Collection
+        Set Map_Create = c
+    Else
+        Set Map_Create = d
+    End If
+End Function
+
+Public Sub Map_Set(ByVal m As Object, ByVal key As String, ByVal value As Double)
+    If TypeName(m) = "Dictionary" Or TypeName(m) = "Scripting.Dictionary" Then
+        m(key) = value
+    Else
+        On Error Resume Next
+        m.Remove CStr(key)
+        Err.Clear
+        m.Add Array(CStr(key), CDbl(value)), CStr(key)
+        On Error GoTo 0
+    End If
+End Sub
+
+Public Function Map_Get(ByVal m As Object, ByVal key As String, Optional ByVal defaultValue As Double = 0#) As Double
+    If TypeName(m) = "Dictionary" Or TypeName(m) = "Scripting.Dictionary" Then
+        If m.Exists(CStr(key)) Then
+            Map_Get = CDbl(m(CStr(key)))
+        Else
+            Map_Get = defaultValue
+        End If
+    Else
+        On Error Resume Next
+        Dim itm As Variant
+        itm = m.Item(CStr(key))
+        If Err.Number <> 0 Then
+            Err.Clear
+            Map_Get = defaultValue
+        Else
+            If IsArray(itm) Then
+                If UBound(itm) >= 1 Then
+                    Map_Get = CDbl(itm(1))
+                Else
+                    Map_Get = defaultValue
+                End If
+            Else
+                Map_Get = CDbl(itm)
+            End If
+        End If
+        On Error GoTo 0
+    End If
+End Function
+
+Public Function Map_Exists(ByVal m As Object, ByVal key As String) As Boolean
+    If TypeName(m) = "Dictionary" Or TypeName(m) = "Scripting.Dictionary" Then
+        Map_Exists = m.Exists(CStr(key))
+    Else
+        On Error Resume Next
+        Dim tmp As Variant
+        tmp = m.Item(CStr(key))
+        Map_Exists = (Err.Number = 0)
+        Err.Clear
+        On Error GoTo 0
+    End If
+End Function
+
+Public Function Map_Keys(ByVal m As Object) As Variant
+    If TypeName(m) = "Dictionary" Or TypeName(m) = "Scripting.Dictionary" Then
+        Map_Keys = m.Keys
+    Else
+        Dim n As Long, i As Long
+        n = m.Count
+        If n = 0 Then
+            Map_Keys = Empty
+            Exit Function
+        End If
+        Dim arr() As String, v As Variant
+        ReDim arr(1 To n)
+        For i = 1 To n
+            v = m.Item(i)
+            If IsArray(v) Then
+                arr(i) = CStr(v(0))
+            Else
+                arr(i) = ""
+            End If
+        Next i
+        Map_Keys = arr
+    End If
+End Function
+
+Public Function Map_Count(ByVal m As Object) As Long
+    Map_Count = m.Count
+End Function
+
 
 ' ---- fixed row boundaries (SAME FOR ALL CITIES) ----
 ' FRAMES Ending (capacity / gate)
