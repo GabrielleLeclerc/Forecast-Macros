@@ -116,15 +116,16 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     '   shipped frames (all boxes) +
     '   shipped covers (all boxes) +
     '   3 totals
-    ReDim hdr(1 To 12 + 2 * (nFrRaw + nCovRaw) + 2 * MAX_BOX + 3)
+    ReDim hdr(1 To 12 + 3 * (nFrRaw + nCovRaw) + 2 * MAX_BOX + 3)
+
     
     hdr(1) = "City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "FramesGate": hdr(7) = "CoversGate"
     hdr(8) = "FramePass": hdr(9) = "CoverPass"
     hdr(10) = "Group": hdr(11) = "Reason": hdr(12) = "FramesCapUsed"
     
-    k = 12
-    
+   k = 12
+
     ' 1) Raw frame sales (only selected boxes)
     For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
         k = k + 1
@@ -149,12 +150,24 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         hdr(k) = "EndCovers B" & dbgCoversRaw(iCol)
     Next iCol
     
-    ' 5) Shipped frames per box (all boxes 1..MAX_BOX)
+    ' 5) Available frame stock (only selected boxes) = EndFrames + RawFrames
+    For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        k = k + 1
+        hdr(k) = "AvailFrames B" & dbgFramesRaw(iCol)
+    Next iCol
+    
+    ' 6) Available cover stock (only selected boxes) = EndCovers + RawCovers
+    For iCol = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
+        k = k + 1
+        hdr(k) = "AvailCovers B" & dbgCoversRaw(iCol)
+    Next iCol
+    
+    ' 7) Shipped frames per box (all boxes 1..MAX_BOX)
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "ShipFrames B" & iCol
     Next iCol
     
-    ' 6) Shipped covers per box (all boxes 1..MAX_BOX)
+    ' 8) Shipped covers per box (all boxes 1..MAX_BOX)
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "ShipCovers B" & iCol
     Next iCol
@@ -395,9 +408,7 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
     nFrRaw = UBound(dbgFramesRaw) - LBound(dbgFramesRaw) + 1
     nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1
     
-    ReDim rowArr(1 To 12 + 2 * (nFrRaw + nCovRaw) + 2 * MAX_BOX + 3)
-
-
+    ReDim rowArr(1 To 12 + 3 * (nFrRaw + nCovRaw) + 2 * MAX_BOX + 3)
 
     rowArr(1) = city
     rowArr(2) = color
@@ -444,13 +455,27 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
         rowArr(idx) = SafeArrGet(coversEndRaw, bb)
     Next i
     
-    ' 5) Shipped frames per box (all boxes)
+    ' 5) Available frame stock (subset) = EndFrames + RawFrames
+    For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        bb = dbgFramesRaw(i)
+        idx = idx + 1
+        rowArr(idx) = SafeArrGet(framesEndRaw, bb) + SafeArrGet(framesRaw, bb)
+    Next i
+    
+    ' 6) Available cover stock (subset) = EndCovers + RawCovers
+    For i = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
+        bb = dbgCoversRaw(i)
+        idx = idx + 1
+        rowArr(idx) = SafeArrGet(coversEndRaw, bb) + SafeArrGet(coversRaw, bb)
+    Next i
+    
+    ' 7) Shipped frames per box (all boxes)
     For bb = 1 To MAX_BOX
         idx = idx + 1
         rowArr(idx) = SafeArrGet(shipFrames, bb)
     Next bb
     
-    ' 6) Shipped covers per box (all boxes)
+    ' 8) Shipped covers per box (all boxes)
     For bb = 1 To MAX_BOX
         idx = idx + 1
         rowArr(idx) = SafeArrGet(shipCovers, bb)
