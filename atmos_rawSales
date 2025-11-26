@@ -101,15 +101,22 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     Dim dbgFramesRaw As Variant, dbgCoversRaw As Variant
     Dim nFrRaw As Long, nCovRaw As Long
     
-    ' NEW: use our filtered lists of boxes
+    ' Use our filtered lists of boxes
     dbgFramesRaw = DebugFramesRawList()
     dbgCoversRaw = DebugCoversRawList()
     
     nFrRaw = UBound(dbgFramesRaw) - LBound(dbgFramesRaw) + 1   ' 12
     nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1  ' 13
     
-    ' 12 base cols + selected raw frames + selected raw covers + full ship frames + full ship covers + 3 totals
-    ReDim hdr(1 To 12 + nFrRaw + nCovRaw + 2 * MAX_BOX + 3)
+    ' 12 base cols +
+    '   raw frames (subset) +
+    '   raw covers (subset) +
+    '   ending frames (subset) +
+    '   ending covers (subset) +
+    '   shipped frames (all boxes) +
+    '   shipped covers (all boxes) +
+    '   3 totals
+    ReDim hdr(1 To 12 + 2 * (nFrRaw + nCovRaw) + 2 * MAX_BOX + 3)
     
     hdr(1) = "City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "FramesGate": hdr(7) = "CoversGate"
@@ -118,27 +125,40 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     
     k = 12
     
-    ' Raw frame sales (only selected boxes)
+    ' 1) Raw frame sales (only selected boxes)
     For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
         k = k + 1
         hdr(k) = "RawFrames B" & dbgFramesRaw(iCol)
     Next iCol
     
-    ' Raw cover sales (only selected boxes)
+    ' 2) Raw cover sales (only selected boxes)
     For iCol = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
         k = k + 1
         hdr(k) = "RawCovers B" & dbgCoversRaw(iCol)
     Next iCol
     
-    ' Shipped frames per box (still all boxes 1..MAX_BOX)
+    ' 3) Ending frame stock (only selected boxes)
+    For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        k = k + 1
+        hdr(k) = "EndFrames B" & dbgFramesRaw(iCol)
+    Next iCol
+    
+    ' 4) Ending cover stock (only selected boxes)
+    For iCol = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
+        k = k + 1
+        hdr(k) = "EndCovers B" & dbgCoversRaw(iCol)
+    Next iCol
+    
+    ' 5) Shipped frames per box (all boxes 1..MAX_BOX)
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "ShipFrames B" & iCol
     Next iCol
     
-    ' Shipped covers per box (still all boxes 1..MAX_BOX)
+    ' 6) Shipped covers per box (all boxes 1..MAX_BOX)
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "ShipCovers B" & iCol
     Next iCol
+
 
     k = k + 1: hdr(k) = "SalesTotal"
     k = k + 1: hdr(k) = "FramesShipTotal"
@@ -182,7 +202,12 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
             wkEnd = CoerceDate(wsDC.Cells(4, c).Value, wsDC.Cells(5, c).Value, wsDC.Cells(48, c).Value)
 
             ' ---- Frames capacity (from ENDING) by group + arrays of available frames
-            Dim framesLeft() As Double: framesLeft = ReadRawForKey(wsDC, framesEndTbl, "*FRAMES*", c)
+            Dim framesEndRaw() As Double
+            framesEndRaw = ReadRawForKey(wsDC, framesEndTbl, "*FRAMES*", c, True)   ' keepNegative:=True for debug
+            
+            Dim framesLeft() As Double
+            framesLeft = ReadRawForKey(wsDC, framesEndTbl, "*FRAMES*", c)  ' this one will be depleted as we ship
+
 
             Dim allowF_Reg() As Boolean, allowF_Sto() As Boolean
             Dim passF_Reg As Boolean, passF_Sto As Boolean
@@ -249,6 +274,11 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim rawCovers() As Double
                 rawCovers = ReadRawForKey(wsDC, coversSalesTbl, NormalizeColor(colorRaw), c)
 
+            ' NEW: ending cover stock for this color this week
+            Dim coversEndRaw() As Double
+            coversEndRaw = ReadRawForKey(wsDC, coversEndTbl, NormalizeColor(colorRaw), c, True)   ' keepNegative:=True
+
+
                 Dim wantReg As Double, wantSto As Double, salesTotal As Double
                 salesTotal = baseDem(x)    ' this color's demand ceiling
 
@@ -264,6 +294,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                           0, 0, 0, 0, _
                           Empty, Empty, _
                           fsRaw, rawCovers, _
+                          framesEndRaw, coversEndRaw, _
                           weightArr(x), WEIGHT_BOX
                     GoTo NextColor
                 End If
@@ -319,8 +350,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     groupChosen, reason, framesCapUsed, salesTotal, framesShipTotal, coversShipTotal, _
                     shipFrames, shipCovers, _
                     fsRaw, rawCovers, _
+                    framesEndRaw, coversEndRaw, _
                     weightArr(x), WEIGHT_BOX
-                End If
+            End If
+
 
 NextColor:
             Next clr
@@ -350,8 +383,8 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
     ByVal framesCapUsed As Double, ByVal salesTotal As Double, ByVal framesShipTotal As Double, ByVal coversShipTotal As Double, _
     Optional shipFrames As Variant, Optional shipCovers As Variant, _
     Optional framesRaw As Variant, Optional coversRaw As Variant, _
+    Optional framesEndRaw As Variant, Optional coversEndRaw As Variant, _
     Optional ByVal weight As Double = 0, Optional ByVal weightBox As Long = 16)
-
 
     Dim rowArr() As Variant, idx As Long, bb As Long
     Dim dbgFramesRaw As Variant, dbgCoversRaw As Variant
@@ -362,7 +395,8 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
     nFrRaw = UBound(dbgFramesRaw) - LBound(dbgFramesRaw) + 1
     nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1
     
-    ReDim rowArr(1 To 12 + nFrRaw + nCovRaw + 2 * MAX_BOX + 3)
+    ReDim rowArr(1 To 12 + 2 * (nFrRaw + nCovRaw) + 2 * MAX_BOX + 3)
+
 
 
     rowArr(1) = city
@@ -380,28 +414,43 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
     
     idx = 12
     
-    ' 1) Raw frame sales (only selected boxes)
     Dim i As Long
+    
+    ' 1) Raw frame sales (subset)
     For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
         bb = dbgFramesRaw(i)
         idx = idx + 1
         rowArr(idx) = SafeArrGet(framesRaw, bb)
     Next i
     
-    ' 2) Raw cover sales (only selected boxes)
+    ' 2) Raw cover sales (subset)
     For i = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
         bb = dbgCoversRaw(i)
         idx = idx + 1
         rowArr(idx) = SafeArrGet(coversRaw, bb)
     Next i
     
-    ' 3) Shipped frames per box (all boxes)
+    ' 3) Ending frame stock (subset)
+    For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        bb = dbgFramesRaw(i)
+        idx = idx + 1
+        rowArr(idx) = SafeArrGet(framesEndRaw, bb)
+    Next i
+    
+    ' 4) Ending cover stock (subset)
+    For i = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
+        bb = dbgCoversRaw(i)
+        idx = idx + 1
+        rowArr(idx) = SafeArrGet(coversEndRaw, bb)
+    Next i
+    
+    ' 5) Shipped frames per box (all boxes)
     For bb = 1 To MAX_BOX
         idx = idx + 1
         rowArr(idx) = SafeArrGet(shipFrames, bb)
     Next bb
     
-    ' 4) Shipped covers per box (all boxes)
+    ' 6) Shipped covers per box (all boxes)
     For bb = 1 To MAX_BOX
         idx = idx + 1
         rowArr(idx) = SafeArrGet(shipCovers, bb)
@@ -768,7 +817,9 @@ End Function
 
 ' Read raw values for a given key (e.g., "*FRAMES*" or color name) in column c
 ' from a pre-built table: tbl(1, i)=key, tbl(2, i)=box#, tbl(3, i)=row#
-Private Function ReadRawForKey(ws As Worksheet, tbl As Variant, ByVal key As String, ByVal c As Long) As Double()
+Private Function ReadRawForKey(ws As Worksheet, tbl As Variant, ByVal key As String, _
+                               ByVal c As Long, Optional ByVal keepNegative As Boolean = False) As Double()
+
     Dim raw() As Double: ReDim raw(1 To MAX_BOX)
     If IsEmpty(tbl) Then
         ReadRawForKey = raw
@@ -782,7 +833,13 @@ Private Function ReadRawForKey(ws As Worksheet, tbl As Variant, ByVal key As Str
             If b >= 1 And b <= MAX_BOX Then
                 r = CLng(tbl(3, i))
                 v = ValD(ws.Cells(r, c).Value)
-                If v > 0 Then raw(b) = v
+                If keepNegative Then
+                    ' Keep the exact numeric value, including negatives and zero
+                    raw(b) = v
+                Else
+                    ' Original behavior: only store strictly positive values
+                    If v > 0 Then raw(b) = v
+                End If
             End If
         End If
     Next i
