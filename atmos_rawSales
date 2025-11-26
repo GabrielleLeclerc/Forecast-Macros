@@ -8,9 +8,9 @@ Public Const MAX_BOX As Long = 30
 Public Const SALES_ARE_CUMULATIVE As Boolean = False
 
 ' Fixed column spans (Ironlink different start)
-Public Const DEF_START_COL As String = "BR"
+Public Const DEF_START_COL As String = "CF"  ' Week of Nov 10th, 2025
 Public Const DEF_END_COL   As String = "EL"
-Public Const IRN_START_COL As String = "BO"
+Public Const IRN_START_COL As String = "CC"  ' Week of Nov 10th, 2025 
 Public Const IRN_END_COL   As String = "EL"
 
 ' ---- fixed row boundaries (SAME FOR ALL CITIES) ----
