@@ -126,14 +126,11 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     nFrRaw = UBound(dbgFramesRaw) - LBound(dbgFramesRaw) + 1   ' 12
     nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1  ' 13
     
-    ' 12 base cols +
+   ' 12 base cols +
     '   frames:  Raw + End + Avail + AvailByCover  (4 * nFrRaw)
     '   covers:  Raw + End + Avail                 (3 * nCovRaw)
-    '   shipped frames (all boxes) +
-    '   shipped covers (all boxes) +
     '   3 totals
-    ReDim hdr(1 To 12 + 4 * nFrRaw + 3 * nCovRaw + 2 * MAX_BOX + 3)
-
+    ReDim hdr(1 To 12 + 4 * nFrRaw + 3 * nCovRaw + 3)
 
     
     hdr(1) = "City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
@@ -185,16 +182,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         hdr(k) = "AvailFramesByCov B" & dbgFramesRaw(iCol)
     Next iCol
     
-    ' 8) Shipped frames per box (all boxes 1..MAX_BOX)
-    For iCol = 1 To MAX_BOX
-        k = k + 1: hdr(k) = "ShipFrames B" & iCol
-    Next iCol
-    
-    ' 9) Shipped covers per box (all boxes 1..MAX_BOX)
-    For iCol = 1 To MAX_BOX
-        k = k + 1: hdr(k) = "ShipCovers B" & iCol
-    Next iCol
-
 
     k = k + 1: hdr(k) = "SalesTotal"
     k = k + 1: hdr(k) = "FramesShipTotal"
@@ -431,8 +418,7 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
     nFrRaw = UBound(dbgFramesRaw) - LBound(dbgFramesRaw) + 1
     nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1
     
-    ReDim rowArr(1 To 12 + 4 * nFrRaw + 3 * nCovRaw + 2 * MAX_BOX + 3)
-
+    ReDim rowArr(1 To 12 + 4 * nFrRaw + 3 * nCovRaw + 3)
 
     rowArr(1) = city
     rowArr(2) = color
@@ -521,20 +507,6 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
             rowArr(idx) = vbNullString
         End If
     Next i
-
-    
-    ' 8) Shipped frames per box (all boxes)
-    For bb = 1 To MAX_BOX
-        idx = idx + 1
-        rowArr(idx) = SafeArrGet(shipFrames, bb)
-    Next bb
-    
-    ' 9) Shipped covers per box (all boxes)
-    For bb = 1 To MAX_BOX
-        idx = idx + 1
-        rowArr(idx) = SafeArrGet(shipCovers, bb)
-    Next bb
-
     
     ' Totals
     idx = idx + 1: rowArr(idx) = salesTotal
