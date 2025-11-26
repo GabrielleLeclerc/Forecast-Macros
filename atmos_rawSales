@@ -50,6 +50,24 @@ Private Function DebugCoversRawList() As Variant
     DebugCoversRawList = VBA.Array(7, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 27, 28)
 End Function
 
+' Map each frame box to its matching cover box
+Private Function CoverForFrameBox(ByVal frameBox As Long) As Long
+    Select Case frameBox
+        Case 1, 2:  CoverForFrameBox = 16
+        Case 3:     CoverForFrameBox = 17
+        Case 4:     CoverForFrameBox = 18
+        Case 5:     CoverForFrameBox = 19
+        Case 6:     CoverForFrameBox = 20
+        Case 11:    CoverForFrameBox = 21
+        Case 12:    CoverForFrameBox = 22
+        Case 13:    CoverForFrameBox = 23
+        Case 14:    CoverForFrameBox = 24
+        Case 25:    CoverForFrameBox = 27
+        Case 26:    CoverForFrameBox = 28
+        Case Else:  CoverForFrameBox = 0   ' no mapping
+    End Select
+End Function
+
 
 '=========================== SHEETS =========================
 Private Function AtmosSheets() As Variant
@@ -109,14 +127,13 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1  ' 13
     
     ' 12 base cols +
-    '   raw frames (subset) +
-    '   raw covers (subset) +
-    '   ending frames (subset) +
-    '   ending covers (subset) +
+    '   frames:  Raw + End + Avail + AvailByCover  (4 * nFrRaw)
+    '   covers:  Raw + End + Avail                 (3 * nCovRaw)
     '   shipped frames (all boxes) +
     '   shipped covers (all boxes) +
     '   3 totals
-    ReDim hdr(1 To 12 + 3 * (nFrRaw + nCovRaw) + 2 * MAX_BOX + 3)
+    ReDim hdr(1 To 12 + 4 * nFrRaw + 3 * nCovRaw + 2 * MAX_BOX + 3)
+
 
     
     hdr(1) = "City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
@@ -161,13 +178,19 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         k = k + 1
         hdr(k) = "AvailCovers B" & dbgCoversRaw(iCol)
     Next iCol
+
+    ' 7) Available frames limited by covers (Frame–Cover mapping)
+    For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        k = k + 1
+        hdr(k) = "AvailFramesByCov B" & dbgFramesRaw(iCol)
+    Next iCol
     
-    ' 7) Shipped frames per box (all boxes 1..MAX_BOX)
+    ' 8) Shipped frames per box (all boxes 1..MAX_BOX)
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "ShipFrames B" & iCol
     Next iCol
     
-    ' 8) Shipped covers per box (all boxes 1..MAX_BOX)
+    ' 9) Shipped covers per box (all boxes 1..MAX_BOX)
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "ShipCovers B" & iCol
     Next iCol
@@ -408,7 +431,8 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
     nFrRaw = UBound(dbgFramesRaw) - LBound(dbgFramesRaw) + 1
     nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1
     
-    ReDim rowArr(1 To 12 + 3 * (nFrRaw + nCovRaw) + 2 * MAX_BOX + 3)
+    ReDim rowArr(1 To 12 + 4 * nFrRaw + 3 * nCovRaw + 2 * MAX_BOX + 3)
+
 
     rowArr(1) = city
     rowArr(2) = color
@@ -468,14 +492,44 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
         idx = idx + 1
         rowArr(idx) = SafeArrGet(coversEndRaw, bb) + SafeArrGet(coversRaw, bb)
     Next i
+
+    ' 7) Available frames limited by matching covers (per color)
+    '    For each frame box, find its cover box, then
+    '    AvailFramesByCov = MIN( max(0, availFrames), max(0, availCoversForThatCoverBox) )
+    Dim frameBox As Long, coverBox As Long
+    Dim availF As Double, availC As Double
     
-    ' 7) Shipped frames per box (all boxes)
+    For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        frameBox = dbgFramesRaw(i)
+        coverBox = CoverForFrameBox(frameBox)
+        idx = idx + 1
+        
+        If coverBox > 0 Then
+            ' Available frames for this box in this color
+            availF = SafeArrGet(framesEndRaw, frameBox) + SafeArrGet(framesRaw, frameBox)
+            ' Available covers for the matching cover box in this color
+            availC = SafeArrGet(coversEndRaw, coverBox) + SafeArrGet(coversRaw, coverBox)
+            
+            ' We don't let "available" go below zero, even if End stock is negative
+            If availF < 0 Then availF = 0
+            If availC < 0 Then availC = 0
+            
+            ' Limiting factor: whichever is smaller
+            rowArr(idx) = IIf(availF < availC, availF, availC)
+        Else
+            ' No mapping for this frame box – leave blank / 0
+            rowArr(idx) = vbNullString
+        End If
+    Next i
+
+    
+    ' 8) Shipped frames per box (all boxes)
     For bb = 1 To MAX_BOX
         idx = idx + 1
         rowArr(idx) = SafeArrGet(shipFrames, bb)
     Next bb
     
-    ' 8) Shipped covers per box (all boxes)
+    ' 9) Shipped covers per box (all boxes)
     For bb = 1 To MAX_BOX
         idx = idx + 1
         rowArr(idx) = SafeArrGet(shipCovers, bb)
