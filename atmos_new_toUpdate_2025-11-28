@@ -1,0 +1,936 @@
+Option Explicit
+
+'========================= SETTINGS =========================
+Public Const WRITE_DEBUG As Boolean = True
+Public Const MAX_BOX As Long = 30
+
+' Sales are NOT cumulative across columns
+Public Const SALES_ARE_CUMULATIVE As Boolean = False
+
+' Fixed column spans (Ironlink different start)
+Public Const DEF_START_COL As String = "CF"  ' Week of Nov 10th, 2025
+Public Const DEF_END_COL   As String = "EL"
+Public Const IRN_START_COL As String = "CC"  ' Week of Nov 10th, 2025 
+Public Const IRN_END_COL   As String = "EL"
+
+' ---- fixed row boundaries (SAME FOR ALL CITIES) ----
+' FRAMES Ending (capacity / gate)
+Public Const ROW_FRAMES_END_START As Long = 348
+Public Const ROW_FRAMES_END_END   As Long = 359
+
+' FRAMES Sales (DEMAND SOURCE)
+Public Const ROW_FRAMES_SALES_START As Long = 690
+Public Const ROW_FRAMES_SALES_END   As Long = 701
+
+' COVERS Sales (only used to weight colors for BOX 16)
+Public Const ROW_COVERS_SALES_START As Long = 702
+Public Const ROW_COVERS_SALES_END   As Long = 1030
+
+' COVERS Ending (cover gate)
+Public Const ROW_COVERS_END_START As Long = 360
+Public Const ROW_COVERS_END_END   As Long = 688
+
+' Weighting box to split frame sales by color
+Public Const WEIGHT_BOX As Long = 16
+
+'===================== BOX LISTS ============================
+Private Function FramesCore_Regular() As Variant: FramesCore_Regular = VBA.Array(1, 2, 3, 4, 5): End Function
+Private Function FramesCore_Storage() As Variant: FramesCore_Storage = VBA.Array(1, 2, 11, 4, 12): End Function
+Private Function CoversCore_Regular() As Variant: CoversCore_Regular = VBA.Array(16, 17, 18, 19): End Function
+Private Function CoversCore_Storage() As Variant: CoversCore_Storage = VBA.Array(21, 22, 18, 16): End Function
+' add-ons: placement only (no extra qty)
+Private Function FramesAddOns() As Variant: FramesAddOns = VBA.Array(6, 13, 14, 25, 26): End Function
+
+' *** NEW: which boxes to show in debug for raw frames and raw covers ***
+Private Function DebugFramesRawList() As Variant
+    DebugFramesRawList = VBA.Array(1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 25, 26)
+End Function
+
+Private Function DebugCoversRawList() As Variant
+    DebugCoversRawList = VBA.Array(7, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 27, 28)
+End Function
+
+' Map each frame box to its matching cover box
+Private Function CoverForFrameBox(ByVal frameBox As Long) As Long
+    Select Case frameBox
+        Case 1, 2:  CoverForFrameBox = 16
+        Case 3:     CoverForFrameBox = 17
+        Case 4:     CoverForFrameBox = 18
+        Case 5:     CoverForFrameBox = 19
+        Case 6:     CoverForFrameBox = 20
+        Case 11:    CoverForFrameBox = 21
+        Case 12:    CoverForFrameBox = 22
+        Case 13:    CoverForFrameBox = 23
+        Case 14:    CoverForFrameBox = 24
+        Case 25:    CoverForFrameBox = 27
+        Case 26:    CoverForFrameBox = 28
+        Case Else:  CoverForFrameBox = 0   ' no mapping
+    End Select
+End Function
+
+
+'=========================== SHEETS =========================
+Private Function AtmosSheets() As Variant
+    AtmosSheets = VBA.Array( _
+        "Atmosphere-Montreal", _
+        "Atmosphere-Toronto", _
+        "Atmosphere-Vancouver", _
+        "Atmosphere-Ironlink", _
+        "Atmosphere-Moreno")
+End Function
+
+Private Function AtmosCity(ByVal sheetName As String) As String
+    Select Case sheetName
+        Case "Atmosphere-Montreal":  AtmosCity = "Montreal"
+        Case "Atmosphere-Toronto":   AtmosCity = "Toronto"
+        Case "Atmosphere-Vancouver": AtmosCity = "Vancouver"
+        Case "Atmosphere-Ironlink":  AtmosCity = "Ironlink"
+        Case "Atmosphere-Moreno":    AtmosCity = "Moreno"
+        Case Else:                   AtmosCity = sheetName
+    End Select
+End Function
+
+'==================== COLOR ALLOW LIST (STRICT) =============
+Private Function LoadAllowColors() As Collection
+    Dim c As New Collection, x As Variant
+    Dim arr As Variant
+    arr = Array( _
+        "WHITE SAND", "DESERT", "WHEAT", "COPPER", "CORAL", "MIDNIGHT BLUE", "SILVER", "SMOKE", "NIGHT", _
+        "SAGE", "FROST", "CLOUD", "CYPRESS GREEN", "DUNE", "BORDEAUX", "HARBOR BLUE", "PLATINUM", "COBBLESTONE", _
+        "CARBON", "ASH", "LEMON ZEST", "TANGERINE", "CERULEAN", "MOCHA", "PARCHMENT", "NIGHTFALL")
+    On Error Resume Next
+    For Each x In arr: c.Add x, x: Next x
+    On Error GoTo 0
+    Set LoadAllowColors = c
+End Function
+
+'============================ ENTRY =========================
+Public Sub BuildWeeklyBoxesShipped_ColsOnly()
+    Const DBG_SHEET As String = "Boxes_Shipped_DEBUG"
+    Const OUT_SHIP  As String = "Boxes_Shipped"
+
+    Dim wb As Workbook: Set wb = ThisWorkbook
+
+    ' Debug sheet
+    Dim wsDbg As Worksheet: Set wsDbg = EnsureOutputSheet(wb, DBG_SHEET)
+    wsDbg.Cells.Clear
+
+    Dim hdr() As Variant, k As Long, iCol As Long
+    Dim dbgFramesRaw As Variant, dbgCoversRaw As Variant
+    Dim nFrRaw As Long, nCovRaw As Long
+    
+    ' Use our filtered lists of boxes
+    dbgFramesRaw = DebugFramesRawList()
+    dbgCoversRaw = DebugCoversRawList()
+    
+    nFrRaw = UBound(dbgFramesRaw) - LBound(dbgFramesRaw) + 1   ' 12
+    nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1  ' 13
+    
+   ' 12 base cols +
+    '   frames:  Raw + End + Avail + AvailByCover  (4 * nFrRaw)
+    '   covers:  Raw + End + Avail                 (3 * nCovRaw)
+    '   3 totals
+    ReDim hdr(1 To 12 + 4 * nFrRaw + 3 * nCovRaw + 3)
+    
+    hdr(1) = "City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
+    hdr(5) = "Col":  hdr(6) = "FramesGate": hdr(7) = "CoversGate"
+    hdr(8) = "FramePass": hdr(9) = "CoverPass"
+    hdr(10) = "Group": hdr(11) = "Reason": hdr(12) = "FramesCapUsed"
+    
+   k = 12
+
+    ' 1) Raw frame sales (only selected boxes)
+    For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        k = k + 1
+        hdr(k) = "RawFrames B" & dbgFramesRaw(iCol)
+    Next iCol
+    
+    ' 2) Raw cover sales (only selected boxes)
+    For iCol = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
+        k = k + 1
+        hdr(k) = "RawCovers B" & dbgCoversRaw(iCol)
+    Next iCol
+    
+    ' 3) Ending frame stock (only selected boxes)
+    For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        k = k + 1
+        hdr(k) = "EndFrames B" & dbgFramesRaw(iCol)
+    Next iCol
+    
+    ' 4) Ending cover stock (only selected boxes)
+    For iCol = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
+        k = k + 1
+        hdr(k) = "EndCovers B" & dbgCoversRaw(iCol)
+    Next iCol
+    
+    ' 5) Available frame stock (subset) = EndFrames + RawFrames
+    For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        k = k + 1
+        hdr(k) = "AvailFrames B" & dbgFramesRaw(iCol)
+    Next iCol
+    
+    ' 6) Available cover stock (subset) = EndCovers + RawCovers
+    For iCol = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
+        k = k + 1
+        hdr(k) = "AvailCovers B" & dbgCoversRaw(iCol)
+    Next iCol
+    
+    ' 7) Available frames BY COLOR via YTD mix
+    For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        k = k + 1
+        hdr(k) = "AvailFramesColor B" & dbgFramesRaw(iCol)
+    Next iCol
+  
+    k = k + 1: hdr(k) = "SalesTotal"
+    k = k + 1: hdr(k) = "FramesShipTotal"
+    k = k + 1: hdr(k) = "CoversShipTotal"
+    wsDbg.Cells(1, 1).Resize(1, UBound(hdr)).Value = hdr
+
+    Dim dbgRow As Long: dbgRow = 2
+
+    ' Summary sheet
+    Dim wsShip As Worksheet: Set wsShip = EnsureOutputSheet(wb, OUT_SHIP)
+    wsShip.Cells.Clear
+    wsShip.Range("A1:E1").Value = VBA.Array("City", "Color", "Week Start", "Week End", "Boxes Shipped")
+    Dim shipRow As Long: shipRow = 2
+
+    Dim allowColors As Collection: Set allowColors = LoadAllowColors()
+
+    Dim dcSheets As Variant: dcSheets = AtmosSheets()
+    Dim i As Long
+    For i = LBound(dcSheets) To UBound(dcSheets)
+
+        Dim citySheet As String: citySheet = CStr(dcSheets(i))
+        If Not SheetExists(citySheet) Then GoTo NextSheet
+        Dim wsDC As Worksheet: Set wsDC = wb.Worksheets(citySheet)
+        Dim city As String: city = AtmosCity(citySheet)
+
+        ' Column span
+        Dim cStart As Long, cEnd As Long
+        If Not GetSpanBySheet(citySheet, cStart, cEnd) Then GoTo NextSheet
+
+        ' ---- Build tables once per sheet
+        Dim framesEndTbl As Variant:   framesEndTbl = BuildFramesEndTable(wsDC)          ' Ending 348..359
+        Dim framesSalesTbl As Variant: framesSalesTbl = BuildFramesSalesTable(wsDC)      ' Sales  690..701
+        Dim coversSalesTbl As Variant: coversSalesTbl = BuildCoversTable_Fixed(wsDC, True, allowColors)  ' for weights
+        Dim coversEndTbl As Variant:   coversEndTbl = BuildCoversTable_Fixed(wsDC, False, allowColors)   ' cover gate
+
+        ' per week/column
+        Dim c As Long
+        For c = cStart To cEnd
+            Dim wkStart As Date, wkEnd As Date
+            wkStart = CoerceDate(wsDC.Cells(2, c).Value, wsDC.Cells(3, c).Value, wsDC.Cells(47, c).Value)
+            wkEnd = CoerceDate(wsDC.Cells(4, c).Value, wsDC.Cells(5, c).Value, wsDC.Cells(48, c).Value)
+
+            ' ---- Frames capacity (from ENDING) by group + arrays of available frames
+            Dim framesEndRaw() As Double
+            framesEndRaw = ReadRawForKey(wsDC, framesEndTbl, "*FRAMES*", c, True)   ' keepNegative:=True for debug
+            
+            Dim framesLeft() As Double
+            framesLeft = ReadRawForKey(wsDC, framesEndTbl, "*FRAMES*", c)  ' this one will be depleted as we ship
+
+
+            Dim allowF_Reg() As Boolean, allowF_Sto() As Boolean
+            Dim passF_Reg As Boolean, passF_Sto As Boolean
+            Dim rzR As String, rzS As String
+            AllowedBoxesForDC_Single wsDC, framesEndTbl, "*FRAMES*", c, FramesCore_Regular(), passF_Reg, rzR, allowF_Reg
+            AllowedBoxesForDC_Single wsDC, framesEndTbl, "*FRAMES*", c, FramesCore_Storage(), passF_Sto, rzS, allowF_Sto
+
+            Dim capReg As Double, capSto As Double
+            capReg = SumOverBoxesFiltered(framesLeft, FramesCore_Regular(), allowF_Reg)
+            capSto = SumOverBoxesFiltered(framesLeft, FramesCore_Storage(), allowF_Sto)
+
+            ' ---- Frames SALES (all boxes) for the week (this is the demand to be split by colors)
+            Dim fsRaw() As Double: fsRaw = ReadRawForKey(wsDC, framesSalesTbl, "*FRAMES*", c)
+            Dim fsTotal As Double, bSum As Long
+            For bSum = 1 To MAX_BOX: fsTotal = fsTotal + SafeArrGet(fsRaw, bSum): Next bSum
+            If fsTotal <= 0# Then GoTo NextWeek  ' nothing to ship this week
+
+            ' ---- Allowed colors with positive weight on BOX 16 this week
+            Dim colors As Collection: Set colors = ColorsFromBoxWeight(wsDC, coversSalesTbl, allowColors, WEIGHT_BOX, c)
+            If colors Is Nothing Or colors.Count = 0 Then GoTo NextWeek
+
+            ' ---- Build weights and gates per color
+            Dim n As Long: n = colors.Count
+            Dim weightArr() As Double: ReDim weightArr(1 To n)
+            Dim passCovRegArr() As Boolean, passCovStoArr() As Boolean
+            ReDim passCovRegArr(1 To n): ReDim passCovStoArr(1 To n)
+
+            Dim totW As Double, x As Long, clr As Variant, colorKey As String
+            x = 0
+            For Each clr In colors
+                x = x + 1
+                colorKey = NormalizeColor(CStr(clr))
+                weightArr(x) = WeightFromBox(wsDC, coversSalesTbl, colorKey, WEIGHT_BOX, c)
+                totW = totW + weightArr(x)
+
+                ' Cover gates by group
+                Dim tmpAllow() As Boolean, pR As Boolean, pS As Boolean, rz1 As String, rz2 As String
+                AllowedBoxesForDC_Single wsDC, coversEndTbl, colorKey, c, CoversCore_Regular(), pR, rz1, tmpAllow
+                AllowedBoxesForDC_Single wsDC, coversEndTbl, colorKey, c, CoversCore_Storage(), pS, rz2, tmpAllow
+                passCovRegArr(x) = pR
+                passCovStoArr(x) = pS
+            Next clr
+
+            If totW <= 0# Then GoTo NextWeek   ' no weights ? no color split
+
+            ' ---- Per-color base demand from TOTAL frame sales (by weight on box 16)
+            Dim baseDem() As Double: ReDim baseDem(1 To n)
+            For x = 1 To n: baseDem(x) = fsTotal * (weightArr(x) / totW): Next x
+
+            ' ---- Totals for groups (used to apportion limited capacity)
+            Dim totWantReg As Double, totWantSto As Double
+            For x = 1 To n
+                If passCovRegArr(x) Then totWantReg = totWantReg + baseDem(x)
+                If passCovStoArr(x) Then totWantSto = totWantSto + baseDem(x)
+            Next x
+
+            ' ---- Allocate by color, respecting group capacity and clamps
+            x = 0
+            For Each clr In colors
+                x = x + 1
+                Dim colorRaw As String: colorRaw = CStr(clr)
+
+            ' NEW: raw cover sales for this color this week
+                Dim rawCovers() As Double
+                rawCovers = ReadRawForKey(wsDC, coversSalesTbl, NormalizeColor(colorRaw), c)
+
+            ' NEW: ending cover stock for this color this week
+            Dim coversEndRaw() As Double
+            coversEndRaw = ReadRawForKey(wsDC, coversEndTbl, NormalizeColor(colorRaw), c, True)   ' keepNegative:=True
+
+
+                Dim wantReg As Double, wantSto As Double, salesTotal As Double
+                salesTotal = baseDem(x)    ' this color's demand ceiling
+
+                ' Split this color’s demand across groups by capacity / competing demand
+                If passCovRegArr(x) And capReg > 0# And totWantReg > 0# Then _
+                    wantReg = WorksheetFunction.Min(capReg * (baseDem(x) / totWantReg), salesTotal)
+                If passCovStoArr(x) And capSto > 0# And totWantSto > 0# Then _
+                    wantSto = WorksheetFunction.Min(capSto * (baseDem(x) / totWantSto), salesTotal - wantReg)
+
+                If wantReg + wantSto <= 0# Then
+                    If WRITE_DEBUG Then WriteDebug wsDbg, dbgRow, city, colorRaw, wkStart, wkEnd, c, _
+                          False, False, "", "No demand or cover gates off", _
+                          0, 0, 0, 0, _
+                          Empty, Empty, _
+                          fsRaw, rawCovers, _
+                          framesEndRaw, coversEndRaw, _
+                          weightArr(x), WEIGHT_BOX
+                    GoTo NextColor
+                End If
+
+                ' Pull frames for this color
+                Dim shipFrames() As Double, shipCovers() As Double
+                ReDim shipFrames(1 To MAX_BOX)
+                ReDim shipCovers(1 To MAX_BOX)
+                Dim framesCapUsed As Double, framesShipTotal As Double, coversShipTotal As Double
+                Dim groupChosen As String, reason As String
+
+                If wantReg > 0# Then
+                    framesCapUsed = framesCapUsed + Distribute(shipFrames, framesLeft, FramesCore_Regular(), allowF_Reg, wantReg)
+                    Dim fakeRawR(1 To MAX_BOX) As Double: fakeRawR(WEIGHT_BOX) = weightArr(x)
+                    DistributeProportional fakeRawR, CoversCore_Regular(), wantReg, shipCovers
+                    groupChosen = "Regular": capReg = capReg - wantReg
+                End If
+                If wantSto > 0# Then
+                    framesCapUsed = framesCapUsed + Distribute(shipFrames, framesLeft, FramesCore_Storage(), allowF_Sto, wantSto)
+                    Dim fakeRawS(1 To MAX_BOX) As Double: fakeRawS(WEIGHT_BOX) = weightArr(x)
+                    DistributeProportional fakeRawS, CoversCore_Storage(), wantSto, shipCovers
+                    If Len(groupChosen) > 0 Then groupChosen = groupChosen & "+Storage" Else groupChosen = "Storage"
+                    capSto = capSto - wantSto
+                End If
+
+                CopyAddOnShip FramesAddOns(), shipFrames   ' placement only
+
+                Dim bb As Long
+                For bb = 1 To MAX_BOX
+                    framesShipTotal = framesShipTotal + SafeArrGet(shipFrames, bb)
+                    coversShipTotal = coversShipTotal + SafeArrGet(shipCovers, bb)
+                Next bb
+
+                If framesShipTotal = 0# Then
+                    If (passF_Reg Or passF_Sto) = False Then
+                        reason = "Frames gate failed"
+                    ElseIf (passCovRegArr(x) Or passCovStoArr(x)) = False Then
+                        reason = "Covers gate failed"
+                    Else
+                        reason = "Insufficient frame capacity"
+                    End If
+                End If
+
+                ' safety clamp
+                If framesShipTotal > salesTotal Then framesShipTotal = salesTotal
+
+                If framesShipTotal > 0# Then _
+                    AppendOut wsShip, shipRow, city, colorRaw, wkStart, wkEnd, framesShipTotal
+
+                If WRITE_DEBUG Then
+                WriteDebug wsDbg, dbgRow, city, colorRaw, wkStart, wkEnd, c, _
+                    (passF_Reg Or passF_Sto), (passCovRegArr(x) Or passCovStoArr(x)), _
+                    groupChosen, reason, framesCapUsed, salesTotal, framesShipTotal, coversShipTotal, _
+                    shipFrames, shipCovers, _
+                    fsRaw, rawCovers, _
+                    framesEndRaw, coversEndRaw, _
+                    weightArr(x), WEIGHT_BOX
+            End If
+
+
+NextColor:
+            Next clr
+
+NextWeek:
+        Next c
+
+NextSheet:
+    Next i
+
+    With wsShip
+        .Columns("A:E").AutoFit
+        If shipRow > 2 Then .Range("C2:D" & shipRow - 1).NumberFormat = "yyyy-mm-dd"
+    End With
+    With wsDbg
+        .Columns("A:ZZ").AutoFit
+        .Range("C2:D" & .Cells(.Rows.Count, "A").End(xlUp).Row).NumberFormat = "yyyy-mm-dd"
+    End With
+
+    MsgBox "Done. See 'Boxes_Shipped' and 'Boxes_Shipped_DEBUG'.", vbInformation
+End Sub
+
+' helper to write one debug row
+Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
+    ByVal city As String, ByVal color As String, ByVal wkStart As Date, ByVal wkEnd As Date, ByVal c As Long, _
+    ByVal framePass As Boolean, ByVal coverPass As Boolean, ByVal groupChosen As String, ByVal reason As String, _
+    ByVal framesCapUsed As Double, ByVal salesTotal As Double, ByVal framesShipTotal As Double, ByVal coversShipTotal As Double, _
+    Optional shipFrames As Variant, Optional shipCovers As Variant, _
+    Optional framesRaw As Variant, Optional coversRaw As Variant, _
+    Optional framesEndRaw As Variant, Optional coversEndRaw As Variant, _
+    Optional ByVal weight As Double = 0, Optional ByVal weightBox As Long = 16)
+
+    Dim rowArr() As Variant, idx As Long, bb As Long
+    Dim dbgFramesRaw As Variant, dbgCoversRaw As Variant
+    Dim nFrRaw As Long, nCovRaw As Long
+    
+    dbgFramesRaw = DebugFramesRawList()
+    dbgCoversRaw = DebugCoversRawList()
+    nFrRaw = UBound(dbgFramesRaw) - LBound(dbgFramesRaw) + 1
+    nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1
+    
+    ReDim rowArr(1 To 12 + 4 * nFrRaw + 3 * nCovRaw + 3)
+
+    rowArr(1) = city
+    rowArr(2) = color
+    rowArr(3) = IIf(wkStart > 0, wkStart, vbNullString)
+    rowArr(4) = IIf(wkEnd > 0, wkEnd, vbNullString)
+    rowArr(5) = ColN2L(c)
+    rowArr(6) = "FRAMES: Ending"
+    rowArr(7) = "COVERS: Ending"
+    rowArr(8) = framePass
+    rowArr(9) = coverPass
+    rowArr(10) = groupChosen
+    rowArr(11) = reason
+    rowArr(12) = framesCapUsed
+    
+    idx = 12
+    
+    Dim i As Long
+    
+    ' 1) Raw frame sales (subset)
+    For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        bb = dbgFramesRaw(i)
+        idx = idx + 1
+        rowArr(idx) = SafeArrGet(framesRaw, bb)
+    Next i
+    
+    ' 2) Raw cover sales (subset)
+    For i = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
+        bb = dbgCoversRaw(i)
+        idx = idx + 1
+        rowArr(idx) = SafeArrGet(coversRaw, bb)
+    Next i
+    
+    ' 3) Ending frame stock (subset)
+    For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        bb = dbgFramesRaw(i)
+        idx = idx + 1
+        rowArr(idx) = SafeArrGet(framesEndRaw, bb)
+    Next i
+    
+    ' 4) Ending cover stock (subset)
+    For i = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
+        bb = dbgCoversRaw(i)
+        idx = idx + 1
+        rowArr(idx) = SafeArrGet(coversEndRaw, bb)
+    Next i
+    
+    ' 5) Available frame stock (subset) = EndFrames + RawFrames
+    For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        bb = dbgFramesRaw(i)
+        idx = idx + 1
+        rowArr(idx) = SafeArrGet(framesEndRaw, bb) + SafeArrGet(framesRaw, bb)
+    Next i
+    
+    ' 6) Available cover stock (subset) = EndCovers + RawCovers
+    For i = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
+        bb = dbgCoversRaw(i)
+        idx = idx + 1
+        rowArr(idx) = SafeArrGet(coversEndRaw, bb) + SafeArrGet(coversRaw, bb)
+    Next i
+
+    ' 7) Available frame stock BY COLOR (subset) = AvailFrames * YTD mix
+    Dim colorMix As Double
+    colorMix = GetColorMixPercent("Atmosphere", NormalizeColor(color))  ' collection fixed = Atmosphere
+
+    For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        bb = dbgFramesRaw(i)
+        idx = idx + 1
+
+        Dim availFramesTotal As Double
+        availFramesTotal = SafeArrGet(framesEndRaw, bb) + SafeArrGet(framesRaw, bb)
+
+        rowArr(idx) = availFramesTotal * colorMix   ' AvailFramesColor B#
+    Next i
+
+
+    ' Totals
+    idx = idx + 1: rowArr(idx) = salesTotal
+    idx = idx + 1: rowArr(idx) = framesShipTotal
+    idx = idx + 1: rowArr(idx) = coversShipTotal
+
+
+    wsDbg.Cells(dbgRow, 1).Resize(1, UBound(rowArr)).Value = rowArr
+    dbgRow = dbgRow + 1
+End Sub
+
+'=========================== BUILDERS =======================
+Private Function BuildFramesEndTable(ws As Worksheet) As Variant
+    BuildFramesEndTable = CollectBoxRows(ws, ROW_FRAMES_END_START, ROW_FRAMES_END_END, True)
+End Function
+
+Private Function BuildFramesSalesTable(ws As Worksheet) As Variant
+    BuildFramesSalesTable = CollectBoxRows(ws, ROW_FRAMES_SALES_START, ROW_FRAMES_SALES_END, True)
+End Function
+
+Private Function BuildCoversTable_Fixed(ws As Worksheet, ByVal isSales As Boolean, _
+                                        allowColors As Collection) As Variant
+    Dim r1 As Long, r2 As Long
+    If isSales Then
+        r1 = ROW_COVERS_SALES_START: r2 = ROW_COVERS_SALES_END
+    Else
+        r1 = ROW_COVERS_END_START:   r2 = ROW_COVERS_END_END
+    End If
+    BuildCoversTable_Fixed = CollectCoversRows(ws, r1, r2, allowColors)
+End Function
+
+Private Function CollectBoxRows(ws As Worksheet, ByVal rStart As Long, ByVal rEnd As Long, ByVal asFrames As Boolean) As Variant
+    Dim tmp() As Variant, cnt As Long: ReDim tmp(1 To 3, 1 To 1)
+    Dim r As Long
+    For r = rStart To rEnd
+        Dim bx As Long: bx = ParseBoxNum(CStr(ws.Cells(r, "C").Value))
+        If bx > 0 Then
+            cnt = cnt + 1
+            If cnt > UBound(tmp, 2) Then ReDim Preserve tmp(1 To 3, 1 To cnt)
+            tmp(1, cnt) = IIf(asFrames, "*FRAMES*", NormalizeColor(CStr(ws.Cells(r, "C").Value)))
+            tmp(2, cnt) = bx
+            tmp(3, cnt) = r
+        End If
+    Next r
+    If cnt = 0 Then CollectBoxRows = Empty Else CollectBoxRows = tmp
+End Function
+
+Private Function CollectCoversRows(ws As Worksheet, ByVal rStart As Long, ByVal rEnd As Long, _
+                                   allowColors As Collection) As Variant
+    Dim tmp() As Variant, cnt As Long: ReDim tmp(1 To 3, 1 To 1)
+    Dim lastBox As Long: lastBox = 0
+    Dim r As Long
+    For r = rStart To rEnd
+        Dim textC As String: textC = CStr(ws.Cells(r, "C").Value)
+        Dim bx As Long: bx = ParseBoxNum(textC)
+        If bx > 0 Then
+            lastBox = bx
+        ElseIf lastBox > 0 Then
+            If IsLikelyColor(textC) Then
+                Dim colorKey As String: colorKey = NormalizeColor(textC)
+                On Error Resume Next
+                Dim t As Variant: t = allowColors.Item(colorKey)
+                If Err.Number <> 0 Then Err.Clear: On Error GoTo 0: GoTo SkipAdd
+                On Error GoTo 0
+                If Len(colorKey) > 0 Then
+                    cnt = cnt + 1
+                    If cnt > UBound(tmp, 2) Then ReDim Preserve tmp(1 To 3, 1 To cnt)
+                    tmp(1, cnt) = colorKey: tmp(2, cnt) = lastBox: tmp(3, cnt) = r
+                End If
+            End If
+        End If
+SkipAdd:
+    Next r
+    If cnt = 0 Then CollectCoversRows = Empty Else CollectCoversRows = tmp
+End Function
+
+' Allowed colors with positive weight on specific box this week
+Private Function ColorsFromBoxWeight(ws As Worksheet, coversSalesTbl As Variant, allowColors As Collection, _
+                                     ByVal weightBox As Long, ByVal colIdx As Long) As Collection
+    Dim c As New Collection, i As Long, key As String, w As Double
+    On Error Resume Next
+    If Not IsEmpty(coversSalesTbl) Then
+        For i = 1 To UBound(coversSalesTbl, 2)
+            key = CStr(coversSalesTbl(1, i))
+            Dim t As Variant: t = allowColors.Item(key)
+            If Err.Number = 0 Then
+                w = WeightFromBox(ws, coversSalesTbl, key, weightBox, colIdx)
+                If w > 0 Then c.Add key, key
+            Else
+                Err.Clear
+            End If
+        Next i
+    End If
+    On Error GoTo 0
+    Set ColorsFromBoxWeight = c
+End Function
+
+' Weight = color’s sales on the selected box in the given week
+Private Function WeightFromBox(ws As Worksheet, tbl As Variant, ByVal colorKey As String, _
+                               ByVal boxNum As Long, ByVal colIdx As Long) As Double
+    Dim raw As Variant
+    raw = ReadRawForKey(ws, tbl, colorKey, colIdx)
+    WeightFromBox = SafeArrGet(raw, boxNum)
+End Function
+
+'=========================== GATING =========================
+Private Sub AllowedBoxesForDC_Single(ws As Worksheet, gateTbl As Variant, ByVal key As String, ByVal colIdx As Long, _
+                                     ByRef grp As Variant, _
+                                     ByRef passCore As Boolean, ByRef reason As String, _
+                                     ByRef allowed() As Boolean)
+    Dim b As Long, i As Long
+    ReDim allowed(1 To MAX_BOX)
+    For b = 1 To MAX_BOX: allowed(b) = False: Next b
+
+    passCore = SectionAvailable_Table(ws, gateTbl, key, colIdx, grp, reason)
+    If passCore Then
+        For i = LBound(grp) To UBound(grp)
+            b = CLng(grp(i))
+            If b >= 1 And b <= MAX_BOX Then allowed(b) = True
+        Next i
+    End If
+End Sub
+
+Private Function SectionAvailable_Table(ws As Worksheet, gateTbl As Variant, ByVal colorKey As String, _
+                                        ByVal colIdx As Long, ByRef grp As Variant, ByRef reason As String) As Boolean
+    reason = ""
+    If IsEmpty(gateTbl) Then reason = "Gate section not found": Exit Function
+    Dim hasAny As Boolean, k As Long, b As Long, r As Long, v As Double
+    For k = LBound(grp) To UBound(grp)
+        b = CLng(grp(k))
+        r = RowForInTable(gateTbl, colorKey, b)
+        If r <> 0 Then
+            hasAny = True
+            v = ValD(ws.Cells(r, colIdx).Value)
+            If v < 0 Then reason = "Box " & b & " < 0": Exit Function
+        End If
+    Next k
+    If Not hasAny Then reason = "No boxes from group found": Exit Function
+    SectionAvailable_Table = True
+End Function
+
+'========================== DISTRIBUTION ====================
+Private Function SumOverBoxesFiltered(ByRef arr() As Double, ByVal list As Variant, ByRef allowed() As Boolean) As Double
+    Dim s As Double, i As Long, b As Long
+    For i = LBound(list) To UBound(list)
+        b = CLng(list(i))
+        If b >= LBound(arr) And b <= UBound(arr) Then
+            If b >= LBound(allowed) And b <= UBound(allowed) Then
+                If allowed(b) Then s = s + arr(b)
+            End If
+        End If
+    Next i
+    SumOverBoxesFiltered = s
+End Function
+
+Private Function Distribute(ByRef shipFrames() As Double, _
+                            ByRef framesLeft() As Double, ByVal core As Variant, _
+                            ByRef allowed() As Boolean, ByVal qty As Double) As Double
+    Dim left As Double: left = qty
+    Dim pass As Long, i As Long, b As Long, take As Double, used As Double
+    For pass = 1 To 3
+        If left <= 0 Then Exit For
+        For i = LBound(core) To UBound(core)
+            b = CLng(core(i))
+            If b >= 1 And b <= UBound(framesLeft) Then
+                If allowed(b) And framesLeft(b) > 0 And left > 0 Then
+                    take = WorksheetFunction.Min(framesLeft(b), left)
+                    framesLeft(b) = framesLeft(b) - take
+                    shipFrames(b) = shipFrames(b) + take
+                    left = left - take
+                    used = used + take
+                End If
+            End If
+        Next i
+    Next pass
+    Distribute = used
+End Function
+
+Private Sub CopyAddOnShip(ByVal addOns As Variant, ByRef ship() As Double)
+    Dim i As Long, b As Long
+    For i = LBound(addOns) To UBound(addOns)
+        b = CLng(addOns(i))
+        If b >= 1 And b <= UBound(ship) Then ship(b) = ship(b)
+    Next i
+End Sub
+
+Private Sub DistributeProportional(ByRef rawC() As Double, ByVal coverCore As Variant, _
+                                   ByVal qty As Double, ByRef shipCovers() As Double)
+    Dim total As Double, i As Long, b As Long
+    For i = LBound(coverCore) To UBound(coverCore)
+        b = CLng(coverCore(i))
+        If b >= LBound(rawC) And b <= UBound(rawC) Then total = total + rawC(b)
+    Next i
+    If total <= 0 Then Exit Sub
+    For i = LBound(coverCore) To UBound(coverCore)
+        b = CLng(coverCore(i))
+        If b >= 1 And b <= UBound(shipCovers) Then shipCovers(b) = shipCovers(b) + qty * SafeArrGet(rawC, b) / total
+    Next i
+End Sub
+
+Private Function SumOverList(ByRef arr() As Double, ByVal lst As Variant) As Double
+    Dim s As Double, i As Long, b As Long
+    For i = LBound(lst) To UBound(lst)
+        b = CLng(lst(i))
+        If b >= LBound(arr) And b <= UBound(arr) Then s = s + arr(b)
+    Next i
+    SumOverList = s
+End Function
+
+'=========================== GENERIC ========================
+Private Function GetSpanBySheet(ByVal sheetName As String, ByRef startCol As Long, ByRef endCol As Long) As Boolean
+    Dim sStart As String, sEnd As String
+    If InStr(1, sheetName, "Ironlink", vbTextCompare) > 0 Then
+        sStart = IRN_START_COL: sEnd = IRN_END_COL
+    Else
+        sStart = DEF_START_COL: sEnd = DEF_END_COL
+    End If
+    startCol = ColLetterToNumber(sStart)
+    endCol = ColLetterToNumber(sEnd)
+    GetSpanBySheet = (startCol > 0 And endCol >= startCol)
+End Function
+
+Private Function ColLetterToNumber(ByVal colLetters As String) As Long
+    Dim s As String: s = UCase$(Trim$(colLetters))
+    Dim i As Long, n As Long
+    For i = 1 To Len(s)
+        If Mid$(s, i, 1) < "A" Or Mid$(s, i, 1) > "Z" Then Exit For
+        n = n * 26 + (Asc(Mid$(s, i, 1)) - Asc("A") + 1)
+    Next i
+    ColLetterToNumber = n
+End Function
+
+Private Function ColN2L(ByVal n As Long) As String
+    Dim s As String, r As Long
+    Do While n > 0
+        r = (n - 1) Mod 26
+        s = Chr$(Asc("A") + r) & s
+        n = (n - 1) \ 26
+    Loop
+    ColN2L = s
+End Function
+
+Private Sub AppendOut(ws As Worksheet, ByRef outRow As Long, _
+                      ByVal city As String, ByVal color As String, _
+                      ByVal wkStart As Date, ByVal wkEnd As Date, ByVal qty As Double)
+    ws.Cells(outRow, 1).Value = city
+    ws.Cells(outRow, 2).Value = color
+    ws.Cells(outRow, 3).Value = wkStart
+    ws.Cells(outRow, 4).Value = wkEnd
+    ws.Cells(outRow, 5).Value = qty
+    outRow = outRow + 1
+End Sub
+
+Private Function EnsureOutputSheet(wb As Workbook, ByVal name As String) As Worksheet
+    If SheetExists(name) Then
+        Set EnsureOutputSheet = wb.Worksheets(name)
+    Else
+        Set EnsureOutputSheet = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+        EnsureOutputSheet.name = name
+    End If
+End Function
+
+Private Function SheetExists(ByVal name As String) As Boolean
+    On Error Resume Next
+    SheetExists = Not ThisWorkbook.Worksheets(name) Is Nothing
+    On Error GoTo 0
+End Function
+
+Private Function NormalizeColor(ByVal s As String) As String
+    Dim t As String
+    t = CStr(s)
+    t = Replace(t, Chr$(160), " ")
+    On Error Resume Next: t = Replace(t, ChrW(160), " "): On Error GoTo 0
+    On Error Resume Next: t = WorksheetFunction.Trim(WorksheetFunction.Clean(t)): On Error GoTo 0
+    NormalizeColor = UCase$(Trim$(t))
+End Function
+
+Private Function IsLikelyColor(ByVal v As Variant) As Boolean
+    Dim s As String: s = Trim$(CStr(v))
+    If Len(s) = 0 Then Exit Function
+    If UCase$(left$(s, 3)) = "BOX" Then Exit Function
+    If IsNumeric(s) Then Exit Function
+    On Error Resume Next
+    If IsDate(s) Then Exit Function
+    On Error GoTo 0
+    Dim i As Long, ch As String
+    For i = 1 To Len(s)
+        ch = Mid$(s, i, 1)
+        If ch Like "[A-Za-z]" Then IsLikelyColor = True: Exit Function
+    Next i
+End Function
+
+Private Function ParseBoxNum(ByVal s As String) As Long
+    Dim U As String: U = UCase$(Trim$(s))
+    Dim p As Long: p = InStr(1, U, "BOX")
+    Dim i As Long, ch As String, numStr As String
+    If p > 0 Then
+        For i = p + 3 To Len(U)
+            ch = Mid$(U, i, 1)
+            If ch = " " Or ch = "-" Or ch = ChrW(8211) Or ch = ChrW(8212) Or ch = ChrW(160) Then
+            ElseIf ch Like "#" Then
+                numStr = numStr & ch
+            ElseIf Len(numStr) > 0 Then
+                Exit For
+            End If
+        Next i
+        If Len(numStr) > 0 Then ParseBoxNum = CLng(numStr)
+    End If
+End Function
+
+Private Function RowForInTable(tbl As Variant, ByVal key As String, ByVal boxNum As Long) As Long
+    If IsEmpty(tbl) Then Exit Function
+    Dim i As Long
+    For i = 1 To UBound(tbl, 2)
+        If CStr(tbl(1, i)) = key And CLng(tbl(2, i)) = boxNum Then
+            RowForInTable = CLng(tbl(3, i))
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Function ValD(ByVal v As Variant) As Double
+    If IsError(v) Or IsNull(v) Then ValD = 0#: Exit Function
+    Dim s As String: s = CStr(v)
+    s = Replace(s, Chr$(160), " ")
+    s = Replace(s, ",", "")
+    s = Trim$(s)
+    If Len(s) = 0 Or Not IsNumeric(s) Then ValD = 0# Else ValD = CDbl(s)
+End Function
+
+Private Function CoerceDate(v1 As Variant, v2 As Variant, v3 As Variant) As Date
+    If IsDate(v1) Then
+        CoerceDate = CDate(v1)
+    ElseIf IsDate(v2) Then
+        CoerceDate = CDate(v2)
+    ElseIf IsDate(v3) Then
+        CoerceDate = CDate(v3)
+    Else
+        CoerceDate = 0
+    End If
+End Function
+
+' ***** FIX: accept Variant (array or empty), so no type mismatch *****
+Private Function SafeArrGet(ByVal arr As Variant, ByVal idx As Long) As Double
+    On Error GoTo oops
+    If IsArray(arr) Then
+        SafeArrGet = IIf(idx >= LBound(arr) And idx <= UBound(arr), ValD(arr(idx)), 0#)
+    Else
+        SafeArrGet = 0#
+    End If
+    Exit Function
+oops:
+    SafeArrGet = 0#
+End Function
+
+Private Function SafeDiv(ByVal a As Double, ByVal b As Double) As Double
+    If b = 0 Then SafeDiv = 0 Else SafeDiv = a / b
+End Function
+
+' Read raw values for a given key (e.g., "*FRAMES*" or color name) in column c
+' from a pre-built table: tbl(1, i)=key, tbl(2, i)=box#, tbl(3, i)=row#
+Private Function ReadRawForKey(ws As Worksheet, tbl As Variant, ByVal key As String, _
+                               ByVal c As Long, Optional ByVal keepNegative As Boolean = False) As Double()
+
+    Dim raw() As Double: ReDim raw(1 To MAX_BOX)
+    If IsEmpty(tbl) Then
+        ReadRawForKey = raw
+        Exit Function
+    End If
+
+    Dim i As Long, r As Long, b As Long, v As Double
+    For i = 1 To UBound(tbl, 2)
+        If CStr(tbl(1, i)) = key Then
+            b = CLng(tbl(2, i))
+            If b >= 1 And b <= MAX_BOX Then
+                r = CLng(tbl(3, i))
+                v = ValD(ws.Cells(r, c).Value)
+                If keepNegative Then
+                    ' Keep the exact numeric value, including negatives and zero
+                    raw(b) = v
+                Else
+                    ' Original behavior: only store strictly positive values
+                    If v > 0 Then raw(b) = v
+                End If
+            End If
+        End If
+    Next i
+
+    ReadRawForKey = raw
+End Function
+
+' ============================================================
+'  LOOK UP YTD % SALES FOR A GIVEN COLLECTION + COLOR
+'
+'  Sheet name: "Boxes_Shipped Assumptions"
+'  Col A: Type
+'  Col B: Collection
+'  Col C: Color
+'  Col D: YTD % Sales   (as number: .07 for 7%)
+'
+'  Parameters:
+'     collection = "Atmosphere"
+'     colorKey   = normalized color name ("WHITE SAND")
+'
+'  Returns:
+'     YTD % Sales as Double (e.g. 0.07)
+'     or 0 if no match found
+'
+' ============================================================
+Private Function GetColorMixPercent(ByVal collection As String, _
+                                    ByVal colorKey As String) As Double
+    Dim wsMix As Worksheet
+    On Error Resume Next
+    Set wsMix = ThisWorkbook.Worksheets("Boxes_Shipped Assumptions")
+    On Error GoTo 0
+
+    If wsMix Is Nothing Then
+        GetColorMixPercent = 0
+        Exit Function
+    End If
+
+    Dim lastRow As Long
+    lastRow = wsMix.Cells(wsMix.Rows.Count, "A").End(xlUp).Row
+
+    Dim r As Long
+    Dim collVal As String, rawColor As String, normColor As String
+
+    For r = 2 To lastRow   ' skip header row
+        collVal = CStr(wsMix.Cells(r, "B").Value)   ' Collection column
+        rawColor = CStr(wsMix.Cells(r, "C").Value)  ' Color column
+        normColor = NormalizeColor(rawColor)        ' Normalize to match your macro keys
+
+        If StrComp(collVal, collection, vbTextCompare) = 0 _
+           And normColor = colorKey Then
+
+            GetColorMixPercent = ValD(wsMix.Cells(r, "D").Value) ' YTD % Sales
+            Exit Function
+        End If
+    Next r
+
+    ' If no match found:
+    GetColorMixPercent = 0
+End Function
