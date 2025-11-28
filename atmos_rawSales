@@ -130,7 +130,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     '   frames:  Raw + End + Avail + AvailByCover  (4 * nFrRaw)
     '   covers:  Raw + End + Avail                 (3 * nCovRaw)
     '   3 totals
-    ReDim hdr(1 To 12 + 4 * nFrRaw + 3 * nCovRaw + 3)
+    ReDim hdr(1 To 12 + 5 * nFrRaw + 3 * nCovRaw + 3)
 
     
     hdr(1) = "City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
@@ -164,24 +164,30 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         hdr(k) = "EndCovers B" & dbgCoversRaw(iCol)
     Next iCol
     
-    ' 5) Available frame stock (only selected boxes) = EndFrames + RawFrames
+    ' 5) Available frame stock (subset) = EndFrames + RawFrames
     For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
         k = k + 1
         hdr(k) = "AvailFrames B" & dbgFramesRaw(iCol)
     Next iCol
     
-    ' 6) Available cover stock (only selected boxes) = EndCovers + RawCovers
+    ' 6) Available cover stock (subset) = EndCovers + RawCovers
     For iCol = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
         k = k + 1
         hdr(k) = "AvailCovers B" & dbgCoversRaw(iCol)
     Next iCol
-
-    ' 7) Available frames limited by covers (Frame–Cover mapping)
+    
+    ' 7) Available frames BY COLOR via YTD mix
+    For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        k = k + 1
+        hdr(k) = "AvailFramesColor B" & dbgFramesRaw(iCol)
+    Next iCol
+    
+    ' 8) Available frames limited by matching covers (per color)
     For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
         k = k + 1
         hdr(k) = "AvailFramesByCov B" & dbgFramesRaw(iCol)
     Next iCol
-    
+
 
     k = k + 1: hdr(k) = "SalesTotal"
     k = k + 1: hdr(k) = "FramesShipTotal"
@@ -418,7 +424,7 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
     nFrRaw = UBound(dbgFramesRaw) - LBound(dbgFramesRaw) + 1
     nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1
     
-    ReDim rowArr(1 To 12 + 4 * nFrRaw + 3 * nCovRaw + 3)
+    ReDim rowArr(1 To 12 + 5 * nFrRaw + 3 * nCovRaw + 3)
 
     rowArr(1) = city
     rowArr(2) = color
@@ -479,35 +485,50 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
         rowArr(idx) = SafeArrGet(coversEndRaw, bb) + SafeArrGet(coversRaw, bb)
     Next i
 
-    ' 7) Available frames limited by matching covers (per color)
-    '    For each frame box, find its cover box, then
-    '    AvailFramesByCov = MIN( max(0, availFrames), max(0, availCoversForThatCoverBox) )
+    ' 7) Available frame stock BY COLOR (subset) = AvailFrames * YTD mix
+    Dim colorMix As Double
+    colorMix = GetColorMixPercent("Atmosphere", NormalizeColor(color))  ' collection fixed = Atmosphere
+
+    For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        bb = dbgFramesRaw(i)
+        idx = idx + 1
+
+        Dim availFramesTotal As Double
+        availFramesTotal = SafeArrGet(framesEndRaw, bb) + SafeArrGet(framesRaw, bb)
+
+        rowArr(idx) = availFramesTotal * colorMix   ' AvailFramesColor B#
+    Next i
+
+
+    ' 8) Available frames limited by matching covers (per color)
+    '    AvailFramesByCov Bn = MIN(AvailFramesColor Bn,
+    '                               AvailCovers Bm for that color)
     Dim frameBox As Long, coverBox As Long
     Dim availF As Double, availC As Double
-    
+
     For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
         frameBox = dbgFramesRaw(i)
         coverBox = CoverForFrameBox(frameBox)
         idx = idx + 1
-        
+
         If coverBox > 0 Then
-            ' Available frames for this box in this color
+            ' Total frames in this box (all colors)
             availF = SafeArrGet(framesEndRaw, frameBox) + SafeArrGet(framesRaw, frameBox)
-            ' Available covers for the matching cover box in this color
+            ' Convert to this color using YTD mix
+            availF = availF * colorMix
+
+            ' Color-specific covers for mapped cover box
             availC = SafeArrGet(coversEndRaw, coverBox) + SafeArrGet(coversRaw, coverBox)
-            
-            ' We don't let "available" go below zero, even if End stock is negative
-            If availF < 0 Then availF = 0
-            If availC < 0 Then availC = 0
-            
-            ' Limiting factor: whichever is smaller
+
+            ' NOTE: no clamping – negatives are allowed for debug
             rowArr(idx) = IIf(availF < availC, availF, availC)
         Else
-            ' No mapping for this frame box – leave blank / 0
+            ' No mapping for this frame box – leave blank
             rowArr(idx) = vbNullString
         End If
     Next i
-    
+
+
     ' Totals
     idx = idx + 1: rowArr(idx) = salesTotal
     idx = idx + 1: rowArr(idx) = framesShipTotal
@@ -897,3 +918,57 @@ Private Function ReadRawForKey(ws As Worksheet, tbl As Variant, ByVal key As Str
 
     ReadRawForKey = raw
 End Function
+
+' ============================================================
+'  LOOK UP YTD % SALES FOR A GIVEN COLLECTION + COLOR
+'
+'  Sheet name: "Boxes_Shipped Assumptions"
+'  Col A: Type
+'  Col B: Collection
+'  Col C: Color
+'  Col D: YTD % Sales   (as number: .07 for 7%)
+'
+'  Parameters:
+'     collection = "Atmosphere"
+'     colorKey   = normalized color name ("WHITE SAND")
+'
+'  Returns:
+'     YTD % Sales as Double (e.g. 0.07)
+'     or 0 if no match found
+'
+' ============================================================
+Private Function GetColorMixPercent(ByVal collection As String, _
+                                    ByVal colorKey As String) As Double
+    Dim wsMix As Worksheet
+    On Error Resume Next
+    Set wsMix = ThisWorkbook.Worksheets("Boxes_Shipped Assumptions")
+    On Error GoTo 0
+
+    If wsMix Is Nothing Then
+        GetColorMixPercent = 0
+        Exit Function
+    End If
+
+    Dim lastRow As Long
+    lastRow = wsMix.Cells(wsMix.Rows.Count, "A").End(xlUp).Row
+
+    Dim r As Long
+    Dim collVal As String, rawColor As String, normColor As String
+
+    For r = 2 To lastRow   ' skip header row
+        collVal = CStr(wsMix.Cells(r, "B").Value)   ' Collection column
+        rawColor = CStr(wsMix.Cells(r, "C").Value)  ' Color column
+        normColor = NormalizeColor(rawColor)        ' Normalize to match your macro keys
+
+        If StrComp(collVal, collection, vbTextCompare) = 0 _
+           And normColor = colorKey Then
+
+            GetColorMixPercent = ValD(wsMix.Cells(r, "D").Value) ' YTD % Sales
+            Exit Function
+        End If
+    Next r
+
+    ' If no match found:
+    GetColorMixPercent = 0
+End Function
+
