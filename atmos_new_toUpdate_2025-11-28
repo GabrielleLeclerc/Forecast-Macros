@@ -130,7 +130,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     '   frames:  Raw + End + Avail + AvailByCover  (4 * nFrRaw)
     '   covers:  Raw + End + Avail                 (3 * nCovRaw)
     '   3 totals
-    ReDim hdr(1 To 12 + 4 * nFrRaw + 3 * nCovRaw + 3)
+    ReDim hdr(1 To 12 + 3 * nFrRaw + 3 * nCovRaw + 3)
     
     hdr(1) = "City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "FramesGate": hdr(7) = "CoversGate"
@@ -175,15 +175,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         hdr(k) = "AvailCovers B" & dbgCoversRaw(iCol)
     Next iCol
     
-    ' 7) Available frames BY COLOR via YTD mix
-    For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
-        k = k + 1
-        hdr(k) = "AvailFramesColor B" & dbgFramesRaw(iCol)
-    Next iCol
-  
     k = k + 1: hdr(k) = "SalesTotal"
     k = k + 1: hdr(k) = "FramesShipTotal"
     k = k + 1: hdr(k) = "CoversShipTotal"
+
     wsDbg.Cells(1, 1).Resize(1, UBound(hdr)).Value = hdr
 
     Dim dbgRow As Long: dbgRow = 2
@@ -416,7 +411,7 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
     nFrRaw = UBound(dbgFramesRaw) - LBound(dbgFramesRaw) + 1
     nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1
     
-    ReDim rowArr(1 To 12 + 4 * nFrRaw + 3 * nCovRaw + 3)
+    ReDim rowArr(1 To 12 + 3 * nFrRaw + 3 * nCovRaw + 3)
 
     rowArr(1) = city
     rowArr(2) = color
@@ -476,21 +471,6 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
         idx = idx + 1
         rowArr(idx) = SafeArrGet(coversEndRaw, bb) + SafeArrGet(coversRaw, bb)
     Next i
-
-    ' 7) Available frame stock BY COLOR (subset) = AvailFrames * YTD mix
-    Dim colorMix As Double
-    colorMix = GetColorMixPercent("Atmosphere", NormalizeColor(color))  ' collection fixed = Atmosphere
-
-    For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
-        bb = dbgFramesRaw(i)
-        idx = idx + 1
-
-        Dim availFramesTotal As Double
-        availFramesTotal = SafeArrGet(framesEndRaw, bb) + SafeArrGet(framesRaw, bb)
-
-        rowArr(idx) = availFramesTotal * colorMix   ' AvailFramesColor B#
-    Next i
-
 
     ' Totals
     idx = idx + 1: rowArr(idx) = salesTotal
@@ -880,57 +860,4 @@ Private Function ReadRawForKey(ws As Worksheet, tbl As Variant, ByVal key As Str
     Next i
 
     ReadRawForKey = raw
-End Function
-
-' ============================================================
-'  LOOK UP YTD % SALES FOR A GIVEN COLLECTION + COLOR
-'
-'  Sheet name: "Boxes_Shipped Assumptions"
-'  Col A: Type
-'  Col B: Collection
-'  Col C: Color
-'  Col D: YTD % Sales   (as number: .07 for 7%)
-'
-'  Parameters:
-'     collection = "Atmosphere"
-'     colorKey   = normalized color name ("WHITE SAND")
-'
-'  Returns:
-'     YTD % Sales as Double (e.g. 0.07)
-'     or 0 if no match found
-'
-' ============================================================
-Private Function GetColorMixPercent(ByVal collection As String, _
-                                    ByVal colorKey As String) As Double
-    Dim wsMix As Worksheet
-    On Error Resume Next
-    Set wsMix = ThisWorkbook.Worksheets("Boxes_Shipped Assumptions")
-    On Error GoTo 0
-
-    If wsMix Is Nothing Then
-        GetColorMixPercent = 0
-        Exit Function
-    End If
-
-    Dim lastRow As Long
-    lastRow = wsMix.Cells(wsMix.Rows.Count, "A").End(xlUp).Row
-
-    Dim r As Long
-    Dim collVal As String, rawColor As String, normColor As String
-
-    For r = 2 To lastRow   ' skip header row
-        collVal = CStr(wsMix.Cells(r, "B").Value)   ' Collection column
-        rawColor = CStr(wsMix.Cells(r, "C").Value)  ' Color column
-        normColor = NormalizeColor(rawColor)        ' Normalize to match your macro keys
-
-        If StrComp(collVal, collection, vbTextCompare) = 0 _
-           And normColor = colorKey Then
-
-            GetColorMixPercent = ValD(wsMix.Cells(r, "D").Value) ' YTD % Sales
-            Exit Function
-        End If
-    Next r
-
-    ' If no match found:
-    GetColorMixPercent = 0
 End Function
