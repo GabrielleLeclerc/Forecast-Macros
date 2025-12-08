@@ -240,6 +240,18 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
             Dim fsTotal As Double, bSum As Long
             For bSum = 1 To MAX_BOX: fsTotal = fsTotal + SafeArrGet(fsRaw, bSum): Next bSum
             If fsTotal <= 0# Then GoTo NextWeek  ' nothing to ship this week
+            
+            ' Debug row for uncolored frame pool (no color split yet) ***
+            If WRITE_DEBUG Then
+                WriteDebug wsDbg, dbgRow, city, "NONE", wkStart, wkEnd, c, _
+                           (passF_Reg Or passF_Sto), False, _
+                           "FramesPool", "All frames before color split", _
+                           0, fsTotal, 0, 0, _
+                           Empty, Empty, _
+                           fsRaw, Empty, _
+                           framesEndRaw, Empty, _
+                           0, WEIGHT_BOX
+            End If
 
             ' ---- Allowed colors with positive weight on BOX 16 this week
             Dim colors As Collection: Set colors = ColorsFromBoxWeight(wsDC, coversSalesTbl, allowColors, WEIGHT_BOX, c)
