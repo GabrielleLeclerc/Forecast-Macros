@@ -130,7 +130,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     '   frames:  Raw + End + Avail + AvailByCover  (4 * nFrRaw)
     '   covers:  Raw + End + Avail                 (3 * nCovRaw)
     '   3 totals
-    ReDim hdr(1 To 12 + 3 * nFrRaw + 3 * nCovRaw + 3)
+    ReDim hdr(1 To 12 + 5 * nFrRaw + 3 * nCovRaw + 4)
     
     hdr(1) = "City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
     hdr(5) = "Col":  hdr(6) = "FramesGate": hdr(7) = "CoversGate"
@@ -169,13 +169,28 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         hdr(k) = "AvailFrames B" & dbgFramesRaw(iCol)
     Next iCol
     
-    ' 6) Available cover stock (subset) = EndCovers + RawCovers
+    ' 6) Frames shipped from local (based on Avail vs Raw)
+    For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        k = k + 1
+        hdr(k) = "FromLocal B" & dbgFramesRaw(iCol)
+    Next iCol
+    
+    ' 7) Available frames after local shipments
+    For iCol = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        k = k + 1
+        hdr(k) = "AvailFramesAfterLocal B" & dbgFramesRaw(iCol)
+    Next iCol
+    
+    ' 8) Available cover stock (subset) = EndCovers + RawCovers
     For iCol = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
         k = k + 1
         hdr(k) = "AvailCovers B" & dbgCoversRaw(iCol)
     Next iCol
-    
-    k = k + 1: hdr(k) = "SalesTotal"
+
+    ' 9) Total frames shipped from local (sum of FromLocal B#)
+        k = k + 1: hdr(k) = "TotalFrames_FromLocal"
+        
+    k = k + 1: hdr(k) = "NewSalesTotal"
     k = k + 1: hdr(k) = "FramesShipTotal"
     k = k + 1: hdr(k) = "CoversShipTotal"
 
@@ -321,8 +336,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                           False, False, "", "No demand or cover gates off", _
                           0, 0, 0, 0, _
                           Empty, Empty, _
-                          fsRaw, rawCovers, _
-                          framesEndRaw, coversEndRaw, _
+                          Empty, rawCovers, _
+                          Empty, coversEndRaw, _
                           weightArr(x), WEIGHT_BOX
                     GoTo NextColor
                 End If
@@ -373,14 +388,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     AppendOut wsShip, shipRow, city, colorRaw, wkStart, wkEnd, framesShipTotal
 
                 If WRITE_DEBUG Then
-                WriteDebug wsDbg, dbgRow, city, colorRaw, wkStart, wkEnd, c, _
-                    (passF_Reg Or passF_Sto), (passCovRegArr(x) Or passCovStoArr(x)), _
-                    groupChosen, reason, framesCapUsed, salesTotal, framesShipTotal, coversShipTotal, _
-                    shipFrames, shipCovers, _
-                    fsRaw, rawCovers, _
-                    framesEndRaw, coversEndRaw, _
-                    weightArr(x), WEIGHT_BOX
-            End If
+                    WriteDebug wsDbg, dbgRow, city, colorRaw, wkStart, wkEnd, c, _
+                        (passF_Reg Or passF_Sto), (passCovRegArr(x) Or passCovStoArr(x)), _
+                        groupChosen, reason, framesCapUsed, salesTotal, framesShipTotal, coversShipTotal, _
+                        shipFrames, shipCovers, _
+                        Empty, rawCovers, _
+                        Empty, coversEndRaw, _
+                        weightArr(x), WEIGHT_BOX
+                End If
 
 
 NextColor:
@@ -423,7 +438,7 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
     nFrRaw = UBound(dbgFramesRaw) - LBound(dbgFramesRaw) + 1
     nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1
     
-    ReDim rowArr(1 To 12 + 3 * nFrRaw + 3 * nCovRaw + 3)
+    ReDim rowArr(1 To 12 + 5 * nFrRaw + 3 * nCovRaw + 4)
 
     rowArr(1) = city
     rowArr(2) = color
@@ -439,8 +454,14 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
     rowArr(12) = framesCapUsed
     
     idx = 12
-    
+
     Dim i As Long
+    Dim isNone As Boolean
+    Dim totalFromLocal As Double
+    
+    isNone = (UCase$(color) = "NONE")
+    totalFromLocal = 0
+
     
     ' 1) Raw frame sales (subset)
     For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
@@ -477,17 +498,69 @@ Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
         rowArr(idx) = SafeArrGet(framesEndRaw, bb) + SafeArrGet(framesRaw, bb)
     Next i
     
-    ' 6) Available cover stock (subset) = EndCovers + RawCovers
+    ' 6) Frames shipped from local (NONE rows only)
+    For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        bb = dbgFramesRaw(i)
+        idx = idx + 1
+    
+        If isNone Then
+            Dim availTotal As Double, demand As Double, fromLocal As Double
+            availTotal = SafeArrGet(framesEndRaw, bb) + SafeArrGet(framesRaw, bb)
+            demand = SafeArrGet(framesRaw, bb)
+    
+            If availTotal <= 0 Then
+                fromLocal = 0
+            ElseIf availTotal >= demand Then
+                fromLocal = demand
+            Else
+                fromLocal = availTotal
+            End If
+    
+            rowArr(idx) = fromLocal
+            totalFromLocal = totalFromLocal + fromLocal   ' <<<<< NEW LINE
+        Else
+            rowArr(idx) = 0
+        End If
+    Next i
+    
+    ' 7) Available frames after local shipments (NONE rows only)
+    For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
+        bb = dbgFramesRaw(i)
+        idx = idx + 1
+    
+        If isNone Then
+            Dim availTotal2 As Double, demand2 As Double, fromLocal2 As Double
+            availTotal2 = SafeArrGet(framesEndRaw, bb) + SafeArrGet(framesRaw, bb)
+            demand2 = SafeArrGet(framesRaw, bb)
+    
+            If availTotal2 <= 0 Then
+                fromLocal2 = 0
+            ElseIf availTotal2 >= demand2 Then
+                fromLocal2 = demand2
+            Else
+                fromLocal2 = availTotal2
+            End If
+    
+            rowArr(idx) = availTotal2 - fromLocal2
+        Else
+            rowArr(idx) = 0
+        End If
+    Next i
+    
+    ' 8) Available cover stock (subset) = EndCovers + RawCovers
     For i = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
         bb = dbgCoversRaw(i)
         idx = idx + 1
         rowArr(idx) = SafeArrGet(coversEndRaw, bb) + SafeArrGet(coversRaw, bb)
     Next i
+    
 
     ' Totals
+    idx = idx + 1: rowArr(idx) = totalFromLocal
     idx = idx + 1: rowArr(idx) = salesTotal
     idx = idx + 1: rowArr(idx) = framesShipTotal
     idx = idx + 1: rowArr(idx) = coversShipTotal
+
 
 
     wsDbg.Cells(dbgRow, 1).Resize(1, UBound(rowArr)).Value = rowArr
