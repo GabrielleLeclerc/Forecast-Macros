@@ -15,6 +15,23 @@ Public Const BOX11_SHARE As Double = 0         ' Storage Corner Seat, ~40% (chan
 Public Const BOX12_SHARE As Double = 0         ' Storage Armless seat, ~15% (changeable)
 Public Const BOX14_SHARE As Double = 0        ' Universal Arm, ~40% (changeable)
 
+' Return the share of NewSalesTotal to assign to each frame box
+Private Function LocalSalesShareForBox(ByVal boxNum As Long) As Double
+    Select Case boxNum
+        Case 1:  LocalSalesShareForBox = BOX1_SHARE
+        Case 2:  LocalSalesShareForBox = BOX2_SHARE
+        Case 3:  LocalSalesShareForBox = BOX3_SHARE
+        Case 4:  LocalSalesShareForBox = BOX4_SHARE
+        Case 5:  LocalSalesShareForBox = BOX5_SHARE
+        Case 11: LocalSalesShareForBox = BOX11_SHARE
+        Case 12: LocalSalesShareForBox = BOX12_SHARE
+        Case 14: LocalSalesShareForBox = BOX14_SHARE
+        Case Else
+            LocalSalesShareForBox = 0
+    End Select
+End Function
+
+
 
 ' Sales are NOT cumulative across columns
 Public Const SALES_ARE_CUMULATIVE As Boolean = False
@@ -152,15 +169,18 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1
     nFrDet = UBound(dbgFramesDetail) - LBound(dbgFramesDetail) + 1
 
-    '================ FRAMES DEBUG HEADER (color = NONE) ================
+   '================ FRAMES DEBUG HEADER (color = NONE) ================
     ' 12 base +
     '   RawFrames (all debug frames)               -> nFrRaw
     '   EndFrames (detail)                         -> nFrDet
     '   AvailFrames (detail)                       -> nFrDet
+    '   NewSalesTotal                              -> 1
+    '   Local_SalesBn_Needed (detail)              -> nFrDet
     '   FromLocal (detail)                         -> nFrDet
     '   AvailFramesAfterLocal (detail)             -> nFrDet
-    '   Totals: TotalFrames_FromLocal, NewSalesTotal, FramesShipTotal -> 3
-    ReDim hdrFrames(1 To 12 + nFrRaw + 4 * nFrDet + 3)
+    '   Totals: TotalFrames_FromLocal, FramesShipTotal -> 2
+    ReDim hdrFrames(1 To 12 + nFrRaw + 5 * nFrDet + 3)
+
 
     hdrFrames(1) = "City":       hdrFrames(2) = "Color"
     hdrFrames(3) = "Week Start": hdrFrames(4) = "Week End"
@@ -193,6 +213,12 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     ' 3b) NewSalesTotal (sum of RawFrames B#)
     k = k + 1
     hdrFrames(k) = "NewSalesTotal"
+
+    ' 3c) Local_SalesBn_Needed (detail)
+    For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        k = k + 1
+        hdrFrames(k) = "Local_SalesB" & dbgFramesDetail(iCol) & "_Needed"
+    Next iCol
     
     ' 4) Frames shipped from local (detail)
     For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
@@ -560,7 +586,7 @@ Private Sub WriteDebug( _
         Dim wsOut As Worksheet
         Dim outRow As Long
 
-        ReDim rowArr(1 To 12 + nFrRaw + 4 * nFrDet + 3)
+        ReDim rowArr(1 To 12 + nFrRaw + 5 * nFrDet + 3)
 
         rowArr(1) = city
         rowArr(2) = color
@@ -608,6 +634,17 @@ Private Sub WriteDebug( _
         ' 3b) NewSalesTotal (sum of RawFrames B#)
         idx = idx + 1
         rowArr(idx) = newSalesTotal
+
+        ' 3c) Local_SalesBn_Needed (detail)
+        '     Local_SalesB#_Needed = share_for_box * NewSalesTotal
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            idx = idx + 1
+
+            Dim localNeed As Double
+            localNeed = LocalSalesShareForBox(bb) * newSalesTotal
+            rowArr(idx) = localNeed
+        Next i
 
         ' 4) FromLocal (detail)
         For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
