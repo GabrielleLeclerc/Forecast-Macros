@@ -180,8 +180,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     '   AvailFrames (detail)                       -> nFrDet
     '   FromLocal (detail)                         -> nFrDet
     '   AvailFramesAfterLocal (detail)             -> nFrDet
-    '   Totals: TotalFrames_FromLocal, NewSalesTotal, FramesShipTotal -> 3
-    ReDim hdrFrames(1 To 12 + nFrRaw + 4 * nFrDet + 3)
+    '   Totals: TotalFrames_FromLocal, FramesShipTotal, Backlog_Start, TotalToShip, P1 City, P2 City -> +6
+    '   (plus NewSalesTotal already counted in the 4*nFrDet + 3 term)
+    ReDim hdrFrames(1 To 12 + nFrRaw + 4 * nFrDet + 7)
+
 
     hdrFrames(1) = "City":       hdrFrames(2) = "Color"
     hdrFrames(3) = "Week Start": hdrFrames(4) = "Week End"
@@ -227,9 +229,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         hdrFrames(k) = "AvailFramesAfterLocal B" & dbgFramesDetail(iCol)
     Next iCol
 
-   ' 6) Totals (frames only)
+    ' 6) Totals (frames only)
     k = k + 1: hdrFrames(k) = "TotalFrames_FromLocal"
     k = k + 1: hdrFrames(k) = "FramesShipTotal"
+    k = k + 1: hdrFrames(k) = "Backlog_Start"
+    k = k + 1: hdrFrames(k) = "TotalToShip"
+    k = k + 1: hdrFrames(k) = "P1 City"
+    k = k + 1: hdrFrames(k) = "P2 City"
+
 
 
     wsDbgFrames.Cells(1, 1).Resize(1, UBound(hdrFrames)).Value = hdrFrames
@@ -239,8 +246,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     '   RawCovers (all debug covers)               -> nCovRaw
     '   EndCovers                                  -> nCovRaw
     '   AvailCovers (End + Raw)                    -> nCovRaw
-    '   Totals: FramesShipTotal, CoversShipTotal   -> 2
-    ReDim hdrCovers(1 To 12 + 3 * nCovRaw + 2)
+    '   Totals: FramesShipTotal, CoversShipTotal, P1 City, P2 City -> +4
+    ReDim hdrCovers(1 To 12 + 3 * nCovRaw + 4)
+
 
     hdrCovers(1) = "City":       hdrCovers(2) = "Color"
     hdrCovers(3) = "Week Start": hdrCovers(4) = "Week End"
@@ -273,6 +281,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     ' 4) Totals (covers view)
     k = k + 1: hdrCovers(k) = "FramesShipTotal"
     k = k + 1: hdrCovers(k) = "CoversShipTotal"
+    k = k + 1: hdrCovers(k) = "P1 City"
+    k = k + 1: hdrCovers(k) = "P2 City"
+
 
     wsDbgCovers.Cells(1, 1).Resize(1, UBound(hdrCovers)).Value = hdrCovers
 
@@ -301,6 +312,24 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         If Not SheetExists(citySheet) Then GoTo NextSheet
         Dim wsDC As Worksheet: Set wsDC = wb.Worksheets(citySheet)
         Dim city As String: city = AtmosCity(citySheet)
+
+        '=== NEW: resolve P1 / P2 city names for this DC ===
+        Dim partners As Variant
+        Dim p1City As String, p2City As String
+        Dim lb As Long, ub As Long
+
+        p1City = "": p2City = ""
+        partners = AtmosPartnersFor(citySheet)
+
+        On Error Resume Next
+        lb = LBound(partners)
+        ub = UBound(partners)
+        If Err.Number = 0 Then
+            If ub >= lb Then p1City = AtmosCity(CStr(partners(lb)))
+            If ub >= lb + 1 Then p2City = AtmosCity(CStr(partners(lb + 1)))
+        End If
+        Err.Clear
+        On Error GoTo 0
 
         ' Column span
         Dim cStart As Long, cEnd As Long
@@ -373,6 +402,13 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
             
             ' Debug row for uncolored frame pool (no color split yet) ***
             If WRITE_DEBUG Then
+                Dim backlogStartTotal As Double
+                Dim backlogTotalToShip As Double
+
+                ' backlog at start of this week for this city (sum of all colors)
+                backlogStartTotal = BacklogForCity(carryRun, city)
+                backlogTotalToShip = backlogStartTotal + fsTotal   ' backlog + new sales
+
                 WriteDebug wsDbgFrames, dbgRowFrames, wsDbgCovers, dbgRowCovers, _
                    city, "NONE", wkStart, wkEnd, c, _
                    (passF_Reg Or passF_Sto), False, _
@@ -381,8 +417,11 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                    Empty, Empty, _
                    fsRaw, Empty, _
                    framesEndRaw, Empty, _
-                   0, WEIGHT_BOX
+                   0, WEIGHT_BOX, _
+                   backlogStartTotal, backlogTotalToShip, _
+                   p1City, p2City
             End If
+
 
             ' ---- Allowed colors with positive weight on BOX 16 this week
             Dim colors As Collection: Set colors = ColorsFromBoxWeight(wsDC, coversSalesTbl, allowColors, WEIGHT_BOX, c)
@@ -467,7 +506,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                             Empty, Empty, _
                             Empty, rawCovers, _
                             Empty, coversEndRaw, _
-                            weightArr(x), WEIGHT_BOX
+                            weightArr(x), WEIGHT_BOX, _
+                            0, 0, _
+                            p1City, p2City
+
                     End If
                     GoTo NextColor
                 End If
@@ -488,7 +530,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         Empty, Empty, _
                         Empty, rawCovers, _
                         Empty, coversEndRaw, _
-                        weightArr(x), WEIGHT_BOX
+                        weightArr(x), WEIGHT_BOX, _
+                        0, 0, _
+                        p1City, p2City
                     GoTo NextColor
                 End If
 
@@ -548,14 +592,17 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 If WRITE_DEBUG Then
                     ' Note: we continue to pass "salesTotal" (new sales) to WriteDebug;
                     ' backlog is implicit in carryRun, not shown yet.
-                    WriteDebug wsDbgFrames, dbgRowFrames, wsDbgCovers, dbgRowCovers, _
+                      WriteDebug wsDbgFrames, dbgRowFrames, wsDbgCovers, dbgRowCovers, _
                         city, colorRaw, wkStart, wkEnd, c, _
                         (passF_Reg Or passF_Sto), (passCovRegArr(x) Or passCovStoArr(x)), _
                         groupChosen, reason, framesCapUsed, salesTotal, framesShipTotal, coversShipTotal, _
                         shipFrames, shipCovers, _
                         Empty, rawCovers, _
                         Empty, coversEndRaw, _
-                        weightArr(x), WEIGHT_BOX
+                        weightArr(x), WEIGHT_BOX, _
+                        0, 0, _
+                        p1City, p2City
+
                 End If
 
 
@@ -603,7 +650,11 @@ Private Sub WriteDebug( _
     Optional shipFrames As Variant, Optional shipCovers As Variant, _
     Optional framesRaw As Variant, Optional coversRaw As Variant, _
     Optional framesEndRaw As Variant, Optional coversEndRaw As Variant, _
-    Optional ByVal weight As Double = 0, Optional ByVal weightBox As Long = 16)
+    Optional ByVal weight As Double = 0, Optional ByVal weightBox As Long = 16, _
+    Optional ByVal backlogStart As Double = 0, _
+    Optional ByVal backlogTotalToShip As Double = 0, _
+    Optional ByVal p1City As String = "", _
+    Optional ByVal p2City As String = "")
 
     Dim dbgFramesRaw As Variant, dbgCoversRaw As Variant, dbgFramesDetail As Variant
     Dim nFrRaw As Long, nCovRaw As Long, nFrDet As Long
@@ -629,7 +680,7 @@ Private Sub WriteDebug( _
         Dim wsOut As Worksheet
         Dim outRow As Long
 
-        ReDim rowArr(1 To 12 + nFrRaw + 4 * nFrDet + 3)
+        ReDim rowArr(1 To 12 + nFrRaw + 4 * nFrDet + 7)
 
         rowArr(1) = city
         rowArr(2) = color
@@ -719,9 +770,14 @@ Private Sub WriteDebug( _
             rowArr(idx) = availTotal2 - fromLocal2
         Next i
 
-        ' 6) Totals
-        idx = idx + 1: rowArr(idx) = totalFromLocal
-        idx = idx + 1: rowArr(idx) = framesShipTotal
+        ' 6) Totals + Backlog + Partners
+        idx = idx + 1: rowArr(idx) = totalFromLocal          ' TotalFrames_FromLocal
+        idx = idx + 1: rowArr(idx) = framesShipTotal         ' FramesShipTotal
+        idx = idx + 1: rowArr(idx) = backlogStart            ' Backlog_Start
+        idx = idx + 1: rowArr(idx) = backlogTotalToShip      ' TotalToShip
+        idx = idx + 1: rowArr(idx) = p1City                  ' P1 City
+        idx = idx + 1: rowArr(idx) = p2City                  ' P2 City
+
 
         ' Write to FRAMES debug sheet
         Set wsOut = wsDbgFrames
@@ -731,7 +787,7 @@ Private Sub WriteDebug( _
 
     Else
         '================ COVERS ROW (real colors) =======================
-        ReDim rowArr(1 To 12 + 3 * nCovRaw + 2)
+        ReDim rowArr(1 To 12 + 3 * nCovRaw + 4)
 
         rowArr(1) = city
         rowArr(2) = color
@@ -769,9 +825,12 @@ Private Sub WriteDebug( _
             rowArr(idx) = SafeArrGet(coversEndRaw, bb) + SafeArrGet(coversRaw, bb)
         Next i
 
-        ' 4) Totals (covers view)
+        ' 4) Totals (covers view) + partners
         idx = idx + 1: rowArr(idx) = framesShipTotal
         idx = idx + 1: rowArr(idx) = coversShipTotal
+        idx = idx + 1: rowArr(idx) = p1City      ' P1 City
+        idx = idx + 1: rowArr(idx) = p2City      ' P2 City
+
 
         ' Write to COVERS debug sheet
         wsDbgCovers.Cells(dbgRowCovers, 1).Resize(1, UBound(rowArr)).Value = rowArr
@@ -820,6 +879,23 @@ End Sub
         
         Private Function MakeCarryKey(ByVal city As String, ByVal colorKey As String) As String
             MakeCarryKey = city & "|" & colorKey
+        End Function
+
+        ' Sum backlog across all colors for a given city (keys like "City|Color")
+        Private Function BacklogForCity(ByVal carryRun As Object, ByVal city As String) As Double
+            Dim res As Double
+            Dim k As Variant
+
+            If carryRun Is Nothing Then Exit Function
+            If carryRun.Count = 0 Then Exit Function
+
+            For Each k In carryRun.Keys
+                If Left$(CStr(k), Len(city) + 1) = city & "|" Then
+                    res = res + CDbl(carryRun(k))
+                End If
+            Next k
+
+            BacklogForCity = res
         End Function
         
         ' Find key index in a pre-allocated keys() array
