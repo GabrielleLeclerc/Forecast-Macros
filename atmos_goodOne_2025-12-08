@@ -487,13 +487,18 @@ NextSheet:
         .Columns("A:ZZ").AutoFit
         If .Cells(.Rows.Count, "A").End(xlUp).Row >= 2 Then _
             .Range("C2:D" & .Cells(.Rows.Count, "A").End(xlUp).Row).NumberFormat = "yyyy-mm-dd"
+        ' Hide gate / pass / reason / cap columns
+        .Range("F:L").EntireColumn.Hidden = True
     End With
 
     With wsDbgCovers
         .Columns("A:ZZ").AutoFit
         If .Cells(.Rows.Count, "A").End(xlUp).Row >= 2 Then _
             .Range("C2:D" & .Cells(.Rows.Count, "A").End(xlUp).Row).NumberFormat = "yyyy-mm-dd"
+        ' Hide gate / pass / reason / cap columns
+        .Range("F:L").EntireColumn.Hidden = True
     End With
+
 
     MsgBox "Done. See 'Boxes_Shipped_DEBUG_FRAMES', 'Boxes_Shipped_DEBUG_COVERS', and 'Boxes_Shipped'.", vbInformation
 End Sub
