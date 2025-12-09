@@ -177,7 +177,11 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         k = k + 1
         hdrFrames(k) = "AvailFrames B" & dbgFramesDetail(iCol)
     Next iCol
-
+    
+    ' 3b) NewSalesTotal (sum of RawFrames B#)
+    k = k + 1
+    hdrFrames(k) = "NewSalesTotal"
+    
     ' 4) Frames shipped from local (detail)
     For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
         k = k + 1
@@ -190,10 +194,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         hdrFrames(k) = "AvailFramesAfterLocal B" & dbgFramesDetail(iCol)
     Next iCol
 
-    ' 6) Totals (frames only)
+   ' 6) Totals (frames only)
     k = k + 1: hdrFrames(k) = "TotalFrames_FromLocal"
-    k = k + 1: hdrFrames(k) = "NewSalesTotal"
     k = k + 1: hdrFrames(k) = "FramesShipTotal"
+
 
     wsDbgFrames.Cells(1, 1).Resize(1, UBound(hdrFrames)).Value = hdrFrames
 
@@ -589,6 +593,10 @@ Private Sub WriteDebug( _
             rowArr(idx) = SafeArrGet(framesEndRaw, bb) + SafeArrGet(framesRaw, bb)
         Next i
 
+        ' 3b) NewSalesTotal (sum of RawFrames B#)
+        idx = idx + 1
+        rowArr(idx) = newSalesTotal
+
         ' 4) FromLocal (detail)
         For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
             bb = dbgFramesDetail(i)
@@ -632,7 +640,6 @@ Private Sub WriteDebug( _
 
         ' 6) Totals
         idx = idx + 1: rowArr(idx) = totalFromLocal
-        idx = idx + 1: rowArr(idx) = newSalesTotal
         idx = idx + 1: rowArr(idx) = framesShipTotal
 
         ' Write to FRAMES debug sheet
