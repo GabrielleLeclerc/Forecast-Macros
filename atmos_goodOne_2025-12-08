@@ -107,6 +107,27 @@ Private Function AtmosCity(ByVal sheetName As String) As String
     End Select
 End Function
 
+'==================== PARTNERS (INFRA ONLY, NOT USED YET) ===
+Private Function AtmosPartnersFor(ByVal sheetName As String) As Variant
+    ' NOTE: this does nothing yet; you won't call it
+    ' until we add partner logic.
+    Select Case sheetName
+        Case "Atmosphere-Montreal"
+            AtmosPartnersFor = VBA.Array("Atmosphere-Toronto", "Atmosphere-Vancouver")
+        Case "Atmosphere-Toronto"
+            AtmosPartnersFor = VBA.Array("Atmosphere-Montreal", "Atmosphere-Vancouver")
+        Case "Atmosphere-Vancouver"
+            AtmosPartnersFor = VBA.Array("Atmosphere-Toronto", "Atmosphere-Montreal")
+        Case "Atmosphere-Ironlink"
+            AtmosPartnersFor = VBA.Array("Atmosphere-Moreno")
+        Case "Atmosphere-Moreno"
+            AtmosPartnersFor = VBA.Array("Atmosphere-Ironlink")
+        Case Else
+            AtmosPartnersFor = VBA.Array()
+    End Select
+End Function
+
+
 '==================== COLOR ALLOW LIST (STRICT) =============
 Private Function LoadAllowColors() As Collection
     Dim c As New Collection, x As Variant
@@ -267,7 +288,12 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     Dim allowColors As Collection: Set allowColors = LoadAllowColors()
 
+    '=== NEW: backlog map (per city+color across weeks) ===
+    Dim carryRun As Object
+    Set carryRun = Map_Create()
+
     Dim dcSheets As Variant: dcSheets = AtmosSheets()
+
     Dim i As Long
     For i = LBound(dcSheets) To UBound(dcSheets)
 
@@ -402,30 +428,63 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
             For Each clr In colors
                 x = x + 1
                 Dim colorRaw As String: colorRaw = CStr(clr)
+                Dim colorKeyNorm As String
+                colorKeyNorm = NormalizeColor(colorRaw)
 
-            ' NEW: raw cover sales for this color this week
+                ' NEW: raw cover sales for this color this week
                 Dim rawCovers() As Double
-                rawCovers = ReadRawForKey(wsDC, coversSalesTbl, NormalizeColor(colorRaw), c)
+                rawCovers = ReadRawForKey(wsDC, coversSalesTbl, colorKeyNorm, c)
 
-            ' NEW: ending cover stock for this color this week
-            Dim coversEndRaw() As Double
-            coversEndRaw = ReadRawForKey(wsDC, coversEndTbl, NormalizeColor(colorRaw), c, True)   ' keepNegative:=True
+                ' NEW: ending cover stock for this color this week
+                Dim coversEndRaw() As Double
+                coversEndRaw = ReadRawForKey(wsDC, coversEndTbl, colorKeyNorm, c, True)   ' keepNegative:=True
 
+                '================ BACKLOG + NEW SALES (LOCAL ONLY) ================
+                Dim wantReg As Double, wantSto As Double
+                Dim salesTotal As Double           ' new sales for this color this week
+                Dim backlog As Double              ' carried from previous weeks
+                Dim totalToShip As Double          ' backlog + new sales
+                Dim carryKey As String
 
-                Dim wantReg As Double, wantSto As Double, salesTotal As Double
-                salesTotal = baseDem(x)    ' this color's demand ceiling
+                salesTotal = baseDem(x)    ' this is STILL "new sales" only
 
-                ' Split this color’s demand across groups by capacity / competing demand
+                carryKey = MakeCarryKey(city, colorKeyNorm)
+                If Map_Exists(carryRun, carryKey) Then
+                    backlog = CDbl(Map_Get(carryRun, carryKey, 0#))
+                Else
+                    backlog = 0#
+                End If
+
+                totalToShip = backlog + salesTotal   ' full demand: backlog + new
+
+                ' If nothing to ship at all for this color, skip
+                If totalToShip <= 0# Then
+                    If WRITE_DEBUG Then
+                        WriteDebug wsDbgFrames, dbgRowFrames, wsDbgCovers, dbgRowCovers, _
+                            city, colorRaw, wkStart, wkEnd, c, _
+                            False, False, "", "No backlog or demand", _
+                            0, salesTotal, 0, 0, _
+                            Empty, Empty, _
+                            Empty, rawCovers, _
+                            Empty, coversEndRaw, _
+                            weightArr(x), WEIGHT_BOX
+                    End If
+                    GoTo NextColor
+                End If
+
+                ' Split this color’s TOTAL demand across groups by capacity / competing demand.
+                ' NOTE: we still use baseDem(x) to apportion capacity across colors,
+                ' but cap each color by totalToShip (backlog + new).
                 If passCovRegArr(x) And capReg > 0# And totWantReg > 0# Then _
-                    wantReg = WorksheetFunction.Min(capReg * (baseDem(x) / totWantReg), salesTotal)
+                    wantReg = WorksheetFunction.Min(capReg * (baseDem(x) / totWantReg), totalToShip)
                 If passCovStoArr(x) And capSto > 0# And totWantSto > 0# Then _
-                    wantSto = WorksheetFunction.Min(capSto * (baseDem(x) / totWantSto), salesTotal - wantReg)
+                    wantSto = WorksheetFunction.Min(capSto * (baseDem(x) / totWantSto), totalToShip - wantReg)
 
                 If wantReg + wantSto <= 0# Then
                     If WRITE_DEBUG Then WriteDebug wsDbgFrames, dbgRowFrames, wsDbgCovers, dbgRowCovers, _
                         city, colorRaw, wkStart, wkEnd, c, _
                         False, False, "", "No demand or cover gates off", _
-                        0, 0, 0, 0, _
+                        0, salesTotal, 0, 0, _
                         Empty, Empty, _
                         Empty, rawCovers, _
                         Empty, coversEndRaw, _
@@ -433,7 +492,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     GoTo NextColor
                 End If
 
-                ' Pull frames for this color
+                ' Pull frames for this color (LOCAL ONLY for now)
                 Dim shipFrames() As Double, shipCovers() As Double
                 ReDim shipFrames(1 To MAX_BOX)
                 ReDim shipCovers(1 To MAX_BOX)
@@ -472,13 +531,23 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     End If
                 End If
 
-                ' safety clamp
-                If framesShipTotal > salesTotal Then framesShipTotal = salesTotal
+                ' safety clamp vs TOTAL demand (backlog + new)
+                If framesShipTotal > totalToShip Then framesShipTotal = totalToShip
 
+                '================= UPDATE BACKLOG CARRY ==========================
+                Dim pendingThisWeek As Double
+                pendingThisWeek = totalToShip - framesShipTotal
+                If pendingThisWeek < 0# Then pendingThisWeek = 0#
+                Map_Set carryRun, carryKey, pendingThisWeek
+
+                '================= OUTPUTS / DEBUG (UNCHANGED SEMANTIC) =========
+                ' We still record "Boxes Shipped" as framesShipTotal
                 If framesShipTotal > 0# Then _
                     AppendOut wsShip, shipRow, city, colorRaw, wkStart, wkEnd, framesShipTotal
 
                 If WRITE_DEBUG Then
+                    ' Note: we continue to pass "salesTotal" (new sales) to WriteDebug;
+                    ' backlog is implicit in carryRun, not shown yet.
                     WriteDebug wsDbgFrames, dbgRowFrames, wsDbgCovers, dbgRowCovers, _
                         city, colorRaw, wkStart, wkEnd, c, _
                         (passF_Reg Or passF_Sto), (passCovRegArr(x) Or passCovStoArr(x)), _
@@ -711,6 +780,88 @@ Private Sub WriteDebug( _
 
 End Sub
 
+'========================= MAP & KEY HELPERS ======================
+        ' Simple late-bound dictionary wrapper
+        Private Function Map_Create() As Object
+            Set Map_Create = CreateObject("Scripting.Dictionary")
+        End Function
+        
+        Private Sub Map_Set(ByVal m As Object, ByVal key As String, ByVal value As Variant)
+            m(key) = value
+        End Sub
+        
+        Private Function Map_Get(ByVal m As Object, ByVal key As String, Optional ByVal defaultValue As Variant) As Variant
+            If m.Exists(key) Then
+                Map_Get = m(key)
+            Else
+                Map_Get = defaultValue
+            End If
+        End Function
+        
+        Private Function Map_Exists(ByVal m As Object, ByVal key As String) As Boolean
+            Map_Exists = m.Exists(key)
+        End Function
+        
+        Private Function Map_Count(ByVal m As Object) As Long
+            Map_Count = m.Count
+        End Function
+        
+        Private Function Map_Keys(ByVal m As Object) As Variant
+            Map_Keys = m.Keys
+        End Function
+        
+        '--- composite keys for demand / backlog ---
+        Private Function MakeKey(ByVal city As String, ByVal colorKey As String, _
+                                 ByVal wkStart As Date, ByVal wkEnd As Date) As String
+            MakeKey = city & "|" & colorKey & "|" & _
+                      Format$(wkStart, "yyyy-mm-dd") & "|" & _
+                      Format$(wkEnd, "yyyy-mm-dd")
+        End Function
+        
+        Private Function MakeCarryKey(ByVal city As String, ByVal colorKey As String) As String
+            MakeCarryKey = city & "|" & colorKey
+        End Function
+        
+        ' Find key index in a pre-allocated keys() array
+        Private Function FindKeyIndex(ByRef keys() As String, ByVal cnt As Long, ByVal key As String) As Long
+            Dim i As Long
+            For i = 1 To cnt
+                If keys(i) = key Then
+                    FindKeyIndex = i
+                    Exit Function
+                End If
+            Next i
+        End Function
+        
+        ' Aggregate shipments by demand city+color+week (used later for OutOfCity)
+        Private Sub UpdateOriginAgg(ByRef keys() As String, ByRef tot() As Double, _
+                                    ByRef cnt As Long, ByRef cap As Long, _
+                                    ByVal demandCity As String, ByVal colorKey As String, _
+                                    ByVal wkStart As Date, ByVal wkEnd As Date, _
+                                    ByVal qty As Double)
+        
+            Dim k As String
+            Dim idx As Long
+        
+            If qty <= 0# Then Exit Sub
+        
+            k = MakeKey(demandCity, colorKey, wkStart, wkEnd)
+        
+            idx = FindKeyIndex(keys, cnt, k)
+            If idx = 0 Then
+                ' Need to append
+                cnt = cnt + 1
+                If cnt > cap Then
+                    cap = cap * 2
+                    ReDim Preserve keys(1 To cap)
+                    ReDim Preserve tot(1 To cap)
+                End If
+                keys(cnt) = k
+                tot(cnt) = qty
+            Else
+                tot(idx) = tot(idx) + qty
+            End If
+        End Sub
 
 '=========================== BUILDERS =======================
 Private Function BuildFramesEndTable(ws As Worksheet) As Variant
