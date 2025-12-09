@@ -213,27 +213,33 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         hdrFrames(k) = "AvailFrames B" & dbgFramesDetail(iCol)
     Next iCol
     
-    ' 3b) NewSalesTotal (sum of RawFrames B#)
+    ' 3b) Backlog at start of week (all colors, this city)
+    k = k + 1
+    hdrFrames(k) = "Backlog"
+    
+    ' 3c) NewSalesTotal (sum of RawFrames B#)
     k = k + 1
     hdrFrames(k) = "NewSalesTotal"
+    
+    ' 3d) TotalToShip = Backlog + NewSalesTotal
+    k = k + 1
+    hdrFrames(k) = "TotalToShip"
     
     ' 4) Frames shipped from local (detail)
     For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
         k = k + 1
         hdrFrames(k) = "FromLocal B" & dbgFramesDetail(iCol)
     Next iCol
-
+    
     ' 5) Available frames after local shipments (detail)
     For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
         k = k + 1
         hdrFrames(k) = "AvailFramesAfterLocal B" & dbgFramesDetail(iCol)
     Next iCol
-
+    
     ' 6) Totals (frames only)
     k = k + 1: hdrFrames(k) = "TotalFrames_FromLocal"
     k = k + 1: hdrFrames(k) = "FramesShipTotal"
-    k = k + 1: hdrFrames(k) = "Backlog_Start"
-    k = k + 1: hdrFrames(k) = "TotalToShip"
     k = k + 1: hdrFrames(k) = "P1 City"
     k = k + 1: hdrFrames(k) = "P2 City"
 
@@ -418,8 +424,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                    fsRaw, Empty, _
                    framesEndRaw, Empty, _
                    0, WEIGHT_BOX, _
-                   backlogStartTotal, backlogTotalToShip, _
+                   backlogStartTotal, 0, _
                    p1City, p2City
+
             End If
 
 
@@ -725,9 +732,17 @@ Private Sub WriteDebug( _
             rowArr(idx) = SafeArrGet(framesEndRaw, bb) + SafeArrGet(framesRaw, bb)
         Next i
 
-        ' 3b) NewSalesTotal (sum of RawFrames B#)
+        ' 3b) Backlog at start of week
+        idx = idx + 1
+        rowArr(idx) = backlogStart
+
+        ' 3c) NewSalesTotal (sum of RawFrames B#)
         idx = idx + 1
         rowArr(idx) = newSalesTotal
+
+        ' 3d) TotalToShip = Backlog + NewSalesTotal
+        idx = idx + 1
+        rowArr(idx) = backlogStart + newSalesTotal
 
         ' 4) FromLocal (detail)
         For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
@@ -770,13 +785,12 @@ Private Sub WriteDebug( _
             rowArr(idx) = availTotal2 - fromLocal2
         Next i
 
-        ' 6) Totals + Backlog + Partners
+        ' 6) Totals + Partners
         idx = idx + 1: rowArr(idx) = totalFromLocal          ' TotalFrames_FromLocal
         idx = idx + 1: rowArr(idx) = framesShipTotal         ' FramesShipTotal
-        idx = idx + 1: rowArr(idx) = backlogStart            ' Backlog_Start
-        idx = idx + 1: rowArr(idx) = backlogTotalToShip      ' TotalToShip
         idx = idx + 1: rowArr(idx) = p1City                  ' P1 City
         idx = idx + 1: rowArr(idx) = p2City                  ' P2 City
+
 
 
         ' Write to FRAMES debug sheet
