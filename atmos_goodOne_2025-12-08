@@ -4,6 +4,18 @@ Option Explicit
 Public Const WRITE_DEBUG As Boolean = True
 Public Const MAX_BOX As Long = 30
 
+'Assuming the average order is a 3-seater sofa. 8 boxes total, 1 box of arms, 3 boxes of seats & seat cushions, 3 boxes of Backrest
+'Share of new sales/backlog assumed to be Box 1, Box 2, and Box 3
+Public Const BOX1_SHARE As Double = 0         ' Left Corner Backrest, ~15% (changeable)
+Public Const BOX2_SHARE As Double = 0          ' Right Corner Backrest, ~40% (changeable)
+Public Const BOX3_SHARE As Double = 0         ' Corner Base, ~40% (changeable)
+Public Const BOX4_SHARE As Double = 0.375        ' Armless Backrest, ~15% (changeable)
+Public Const BOX5_SHARE As Double = 0       ' Armless Seat, ~40% (changeable)
+Public Const BOX11_SHARE As Double = 0         ' Storage Corner Seat, ~40% (changeable)
+Public Const BOX12_SHARE As Double = 0         ' Storage Armless seat, ~15% (changeable)
+Public Const BOX14_SHARE As Double = 0        ' Universal Arm, ~40% (changeable)
+
+
 ' Sales are NOT cumulative across columns
 Public Const SALES_ARE_CUMULATIVE As Boolean = False
 
@@ -48,7 +60,7 @@ End Function
 
 Private Function DebugFramesDetailList() As Variant
     ' Only these boxes will appear for EndFrames, AvailFrames, FromLocal, AvailFramesAfterLocal
-    DebugFramesDetailList = VBA.Array(3, 4, 5, 11, 12)
+    DebugFramesDetailList = VBA.Array(1, 2, 3, 4, 5, 11, 12, 14)
 End Function
 
 Private Function DebugCoversRawList() As Variant
