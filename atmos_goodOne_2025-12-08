@@ -429,6 +429,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     '=== NEW: partner availability map (per city+week+box) ===
     Set gPartnerAvail = Map_Create()
 
+    '--- NEW: precompute local-only availability for all cities/weeks ---
+    PrecomputeLocalAvailability
+
     Dim dcSheets As Variant: dcSheets = AtmosSheets()
     Dim i As Long
 
@@ -526,21 +529,6 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
             
             ' Put this near your other Dim statements in BuildWeeklyBoxesShipped_ColsOnly:
             Dim idxDet As Long
-
-            ' --- NEW: seed partner availability from Ending + Raw even if fsTotal = 0 ---
-            If Not gPartnerAvail Is Nothing Then
-                Dim seedKeyCityWeek As String
-                Dim seedBB As Long
-                Dim baseAvail As Double
-        
-                seedKeyCityWeek = city & "|" & Format$(wkStart, "yyyy-mm-dd")
-        
-                For idxDet = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
-                    seedBB = dbgFramesDetail(idxDet)
-                    baseAvail = SafeArrGet(framesEndRaw, seedBB) + SafeArrGet(fsRaw, seedBB)
-                    Map_Set gPartnerAvail, seedKeyCityWeek & "|B" & CStr(seedBB), baseAvail
-                Next idxDet
-            End If
 
             If fsTotal <= 0# Then GoTo NextWeek  ' nothing to ship this week
             Dim backlogStartTotal As Double
@@ -1019,17 +1007,6 @@ Private Sub WriteDebug( _
 
         fromLocalTotal = fromLocalBacklog + fromLocalNewSales
         totalFramesFromLocal = fromLocalTotal     ' still your local-only total
-
-        '=== Record partner availability for this city/week/box ===
-        If Not gPartnerAvail Is Nothing Then
-            Dim keyCityWeek As String
-            keyCityWeek = city & "|" & Format$(wkStart, "yyyy-mm-dd")
-
-            For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
-                bb = dbgFramesDetail(i)
-                Map_Set gPartnerAvail, keyCityWeek & "|B" & CStr(bb), availAfterSales(bb)
-            Next i
-        End If
 
         ' --- 10) FromLocal_NewSales scalar
         idx = idx + 1
@@ -1595,6 +1572,98 @@ Private Sub ComputeLocalForCityWeek( _
     End If
 
 End Sub
+
+Private Sub PrecomputeLocalAvailability()
+    Dim wb As Workbook
+    Set wb = ThisWorkbook
+
+    Dim dcSheets As Variant
+    dcSheets = AtmosSheets()
+
+    Dim localCarry As Object
+    Set localCarry = Map_Create()  ' capacity-only backlog for pre-pass
+
+    Dim i As Long
+    For i = LBound(dcSheets) To UBound(dcSheets)
+
+        Dim citySheet As String
+        citySheet = CStr(dcSheets(i))
+        If Not SheetExists(citySheet) Then GoTo NextSheetPre
+
+        Dim wsDC As Worksheet
+        Set wsDC = wb.Worksheets(citySheet)
+
+        Dim city As String
+        city = AtmosCity(citySheet)
+
+        Dim cStart As Long, cEnd As Long
+        If Not GetSpanBySheet(citySheet, cStart, cEnd) Then GoTo NextSheetPre
+
+        Dim framesEndTbl As Variant
+        Dim framesSalesTbl As Variant
+        framesEndTbl = BuildFramesEndTable(wsDC)
+        framesSalesTbl = BuildFramesSalesTable(wsDC)
+
+        Dim prevFsRaw() As Double
+        ReDim prevFsRaw(1 To MAX_BOX)
+
+        Dim c As Long
+        For c = cStart To cEnd
+            Dim wkStart As Date, wkEnd As Date
+            wkStart = CoerceDate(wsDC.Cells(2, c).Value, wsDC.Cells(3, c).Value, wsDC.Cells(47, c).Value)
+            wkEnd = CoerceDate(wsDC.Cells(4, c).Value, wsDC.Cells(5, c).Value, wsDC.Cells(48, c).Value)
+
+            Dim framesEndRaw() As Double
+            framesEndRaw = ReadRawForKey(wsDC, framesEndTbl, "*FRAMES*", c, True)
+
+            Dim fsRawCum() As Double
+            fsRawCum = ReadRawForKey(wsDC, framesSalesTbl, "*FRAMES*", c)
+
+            Dim fsRaw() As Double
+            ReDim fsRaw(1 To MAX_BOX)
+
+            Dim bSum As Long
+            For bSum = 1 To MAX_BOX
+                Dim thisCum As Double
+                thisCum = SafeArrGet(fsRawCum, bSum)
+
+                If SALES_ARE_CUMULATIVE Then
+                    Dim delta As Double
+                    delta = thisCum - SafeArrGet(prevFsRaw, bSum)
+                    If delta < 0 Then delta = 0
+                    fsRaw(bSum) = delta
+                    prevFsRaw(bSum) = thisCum
+                Else
+                    fsRaw(bSum) = thisCum
+                End If
+            Next bSum
+
+            Dim backlogStartLocal As Double
+            backlogStartLocal = BacklogForCity(localCarry, city)
+
+            Dim backlogEndLocal As Double
+            Dim localShip As Double
+            Dim availAfterSales() As Double
+
+            ' This will:
+            '   - run LOCAL backlog + new sales logic
+            '   - compute availAfterSales()
+            '   - seed gPartnerAvail(city|week|B#) with availAfterSales
+            ComputeLocalForCityWeek city, wkStart, wkEnd, _
+                                    backlogStartLocal, _
+                                    fsRaw, framesEndRaw, _
+                                    backlogEndLocal, localShip, _
+                                    availAfterSales
+
+            ' carry forward capacity-only backlog
+            Map_Set localCarry, MakeCarryKey(city, "CAP"), backlogEndLocal
+
+        Next c
+
+NextSheetPre:
+    Next i
+End Sub
+
 
 Private Function PartnerAvailBox(ByVal partnerCity As String, _
                                  ByVal wkStart As Date, ByVal wkEnd As Date, _
