@@ -1628,11 +1628,16 @@ Public Function Map_Keys(ByVal m As Object) As Variant
     Else
         Dim n As Long, i As Long
         n = m.Count
+
+        Dim arr() As String
         If n = 0 Then
-            Map_Keys = Empty
+            ' Return a zero-length array so For Each is safe
+            ReDim arr(1 To 0)
+            Map_Keys = arr
             Exit Function
         End If
-        Dim arr() As String, v As Variant
+
+        Dim v As Variant
         ReDim arr(1 To n)
         For i = 1 To n
             v = m.Item(i)              ' positional access
@@ -1645,6 +1650,7 @@ Public Function Map_Keys(ByVal m As Object) As Variant
         Map_Keys = arr
     End If
 End Function
+
 
 Public Function Map_Count(ByVal m As Object) As Long
     Map_Count = m.Count
