@@ -1546,36 +1546,112 @@ Private Sub WriteDebug( _
 
 End Sub
 
+'============================================================
+'==================== CROSS-PLATFORM MAP ====================
+' Small wrapper that uses Scripting.Dictionary if present;
+' otherwise falls back to a Collection storing [key, value] pairs.
+' Keeps everything in ONE module (no class files needed).
 
-'========================= MAP & KEY HELPERS ======================
-' Simple late-bound dictionary wrapper
-Private Function Map_Create() As Object
-    Set Map_Create = CreateObject("Scripting.Dictionary")
-End Function
-
-Private Sub Map_Set(ByVal m As Object, ByVal key As String, ByVal value As Variant)
-    m(key) = value
-End Sub
-
-Private Function Map_Get(ByVal m As Object, ByVal key As String, Optional ByVal defaultValue As Variant) As Variant
-    If m.Exists(key) Then
-        Map_Get = m(key)
+Public Function Map_Create() As Object
+    On Error Resume Next
+    Dim d As Object
+    Set d = CreateObject("Scripting.Dictionary") ' Windows & some Mac installs
+    On Error GoTo 0
+    If d Is Nothing Then
+        Dim c As Collection
+        Set c = New Collection
+        Set Map_Create = c
     Else
-        Map_Get = defaultValue
+        Set Map_Create = d
     End If
 End Function
 
-Private Function Map_Exists(ByVal m As Object, ByVal key As String) As Boolean
-    Map_Exists = m.Exists(key)
+Public Sub Map_Set(ByVal m As Object, ByVal key As String, ByVal value As Variant)
+    If TypeName(m) = "Dictionary" Or TypeName(m) = "Scripting.Dictionary" Then
+        m(CStr(key)) = value
+    Else
+        ' Collection fallback — store [key, value] and use key for uniqueness
+        On Error Resume Next
+        m.Remove CStr(key)             ' remove if already exists
+        Err.Clear
+        m.Add Array(CStr(key), value), CStr(key)
+        On Error GoTo 0
+    End If
+End Sub
+
+Public Function Map_Get(ByVal m As Object, ByVal key As String, _
+                        Optional ByVal defaultValue As Variant) As Variant
+    If TypeName(m) = "Dictionary" Or TypeName(m) = "Scripting.Dictionary" Then
+        If m.Exists(CStr(key)) Then
+            Map_Get = m(CStr(key))
+        Else
+            Map_Get = defaultValue
+        End If
+    Else
+        On Error Resume Next
+        Dim itm As Variant
+        itm = m.Item(CStr(key))        ' keyed access
+        If Err.Number <> 0 Then
+            Err.Clear
+            Map_Get = defaultValue
+        Else
+            If IsArray(itm) Then
+                If UBound(itm) >= 1 Then
+                    Map_Get = itm(1)   ' [key, value]
+                Else
+                    Map_Get = defaultValue
+                End If
+            Else
+                Map_Get = itm
+            End If
+        End If
+        On Error GoTo 0
+    End If
 End Function
 
-Private Function Map_Count(ByVal m As Object) As Long
+Public Function Map_Exists(ByVal m As Object, ByVal key As String) As Boolean
+    If TypeName(m) = "Dictionary" Or TypeName(m) = "Scripting.Dictionary" Then
+        Map_Exists = m.Exists(CStr(key))
+    Else
+        On Error Resume Next
+        Dim tmp As Variant
+        tmp = m.Item(CStr(key))
+        Map_Exists = (Err.Number = 0)
+        Err.Clear
+        On Error GoTo 0
+    End If
+End Function
+
+Public Function Map_Keys(ByVal m As Object) As Variant
+    If TypeName(m) = "Dictionary" Or TypeName(m) = "Scripting.Dictionary" Then
+        Map_Keys = m.Keys
+    Else
+        Dim n As Long, i As Long
+        n = m.Count
+        If n = 0 Then
+            Map_Keys = Empty
+            Exit Function
+        End If
+        Dim arr() As String, v As Variant
+        ReDim arr(1 To n)
+        For i = 1 To n
+            v = m.Item(i)              ' positional access
+            If IsArray(v) Then
+                arr(i) = CStr(v(0))    ' stored key
+            Else
+                arr(i) = ""
+            End If
+        Next i
+        Map_Keys = arr
+    End If
+End Function
+
+Public Function Map_Count(ByVal m As Object) As Long
     Map_Count = m.Count
 End Function
 
-Private Function Map_Keys(ByVal m As Object) As Variant
-    Map_Keys = m.Keys
-End Function
+'============================================================
+
 
 '--- composite keys for demand / backlog ---
 Private Function MakeKey(ByVal city As String, ByVal colorKey As String, _
