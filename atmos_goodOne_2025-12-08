@@ -15,7 +15,6 @@ Public Const BOX11_SHARE As Double = 0         ' Storage Corner Seat, ~40% (chan
 Public Const BOX12_SHARE As Double = 0         ' Storage Armless seat, ~15% (changeable)
 Public Const BOX14_SHARE As Double = 0        ' Universal Arm, ~40% (changeable)
 
-
 ' Sales are NOT cumulative across columns
 Public Const SALES_ARE_CUMULATIVE As Boolean = False
 
@@ -45,6 +44,20 @@ Public Const ROW_COVERS_END_END   As Long = 688
 ' Weighting box to split frame sales by color
 Public Const WEIGHT_BOX As Long = 16
 
+Private Function BoxShare(ByVal boxNum As Long) As Double
+    Select Case boxNum
+        Case 1:  BoxShare = BOX1_SHARE
+        Case 2:  BoxShare = BOX2_SHARE
+        Case 3:  BoxShare = BOX3_SHARE
+        Case 4:  BoxShare = BOX4_SHARE
+        Case 5:  BoxShare = BOX5_SHARE
+        Case 11: BoxShare = BOX11_SHARE
+        Case 12: BoxShare = BOX12_SHARE
+        Case 14: BoxShare = BOX14_SHARE
+        Case Else
+            BoxShare = 0
+    End Select
+End Function
 '===================== BOX LISTS ============================
 Private Function FramesCore_Regular() As Variant: FramesCore_Regular = VBA.Array(1, 2, 3, 4, 5): End Function
 Private Function FramesCore_Storage() As Variant: FramesCore_Storage = VBA.Array(1, 2, 11, 4, 12): End Function
@@ -175,14 +188,17 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     '================ FRAMES DEBUG HEADER (color = NONE) ================
     ' 12 base +
-    '   RawFrames (all debug frames)               -> nFrRaw
-    '   EndFrames (detail)                         -> nFrDet
-    '   AvailFrames (detail)                       -> nFrDet
-    '   FromLocal (detail)                         -> nFrDet
-    '   AvailFramesAfterLocal (detail)             -> nFrDet
-    '   Totals: TotalFrames_FromLocal, FramesShipTotal, Backlog_Start, TotalToShip, P1 City, P2 City -> +6
-    '   (plus NewSalesTotal already counted in the 4*nFrDet + 3 term)
-    ReDim hdrFrames(1 To 12 + nFrRaw + 4 * nFrDet + 7)
+    '   RawFrames (all debug frames)                        -> nFrRaw
+    '   EndFrames (detail)                                  -> nFrDet
+    '   AvailFrames (detail)                                -> nFrDet
+    '   Backlog, NewSalesTotal, TotalToShip                 -> +3
+    '   Local_BacklogBn_Needed (detail)                     -> nFrDet
+    '   FromLocal (detail)                                  -> nFrDet
+    '   Local_SalesBn_Needed (detail)                       -> nFrDet
+    '   AvailFramesAfterLocal (detail)                      -> nFrDet
+    '   Totals: TotalFrames_FromLocal, FramesShipTotal,
+    '           P1 City, P2 City                            -> +4
+    ReDim hdrFrames(1 To 12 + nFrRaw + 6 * nFrDet + 7)
 
 
     hdrFrames(1) = "City":       hdrFrames(2) = "Color"
@@ -225,19 +241,32 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = k + 1
     hdrFrames(k) = "TotalToShip"
     
-    ' 4) Frames shipped from local (detail)
+    ' 4) Local backlog needed per box (detail)
+    For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        k = k + 1
+        hdrFrames(k) = "Local_BacklogB" & dbgFramesDetail(iCol) & "_Needed"
+    Next iCol
+    
+    ' 5) Frames shipped from local (detail)
     For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
         k = k + 1
         hdrFrames(k) = "FromLocal B" & dbgFramesDetail(iCol)
     Next iCol
     
-    ' 5) Available frames after local shipments (detail)
+    ' 6) Local new sales needed per box (detail)
+    For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        k = k + 1
+        hdrFrames(k) = "Local_SalesB" & dbgFramesDetail(iCol) & "_Needed"
+    Next iCol
+    
+    ' 7) Available frames after local shipments (detail)
     For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
         k = k + 1
         hdrFrames(k) = "AvailFramesAfterLocal B" & dbgFramesDetail(iCol)
     Next iCol
+
     
-    ' 6) Totals (frames only)
+    ' 8) Totals (frames only)
     k = k + 1: hdrFrames(k) = "TotalFrames_FromLocal"
     k = k + 1: hdrFrames(k) = "FramesShipTotal"
     k = k + 1: hdrFrames(k) = "P1 City"
@@ -686,8 +715,10 @@ Private Sub WriteDebug( _
         Dim newSalesTotal As Double
         Dim wsOut As Worksheet
         Dim outRow As Long
+        Dim share As Double
 
-        ReDim rowArr(1 To 12 + nFrRaw + 4 * nFrDet + 7)
+
+        ReDim rowArr(1 To 12 + nFrRaw + 6 * nFrDet + 7)
 
         rowArr(1) = city
         rowArr(2) = color
@@ -744,7 +775,15 @@ Private Sub WriteDebug( _
         idx = idx + 1
         rowArr(idx) = backlogStart + newSalesTotal
 
-        ' 4) FromLocal (detail)
+        ' 4) Local_BacklogBn_Needed (detail) = BOXn_SHARE * Backlog
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            idx = idx + 1
+            share = BoxShare(bb)
+            rowArr(idx) = share * backlogStart
+        Next i
+
+        ' 5) FromLocal (detail)
         For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
             bb = dbgFramesDetail(i)
             idx = idx + 1
@@ -765,7 +804,15 @@ Private Sub WriteDebug( _
             totalFromLocal = totalFromLocal + fromLocal
         Next i
 
-        ' 5) AvailFramesAfterLocal (detail)
+        ' 6) Local_SalesBn_Needed (detail) = BOXn_SHARE * NewSalesTotal
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            idx = idx + 1
+            share = BoxShare(bb)
+            rowArr(idx) = share * newSalesTotal
+        Next i
+
+        ' 7) AvailFramesAfterLocal (detail)
         For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
             bb = dbgFramesDetail(i)
             idx = idx + 1
@@ -785,7 +832,8 @@ Private Sub WriteDebug( _
             rowArr(idx) = availTotal2 - fromLocal2
         Next i
 
-        ' 6) Totals + Partners
+
+        ' 8) Totals + Partners
         idx = idx + 1: rowArr(idx) = totalFromLocal          ' TotalFrames_FromLocal
         idx = idx + 1: rowArr(idx) = framesShipTotal         ' FramesShipTotal
         idx = idx + 1: rowArr(idx) = p1City                  ' P1 City
