@@ -27,6 +27,9 @@ Public Const BOX11_SHARE As Double = 0         ' Storage Corner Seat, ~40% (chan
 Public Const BOX12_SHARE As Double = 0         ' Storage Armless seat, ~15% (changeable)great
 Public Const BOX14_SHARE As Double = 0        ' Universal Arm, ~40% (changeable)
 
+' PnP: average boxes per PnP order (changeable)
+Public Const PNP_BOX_ASSUMPTION As Double = 8
+
 ' Sales are NOT cumulative across columns
 Public Const SALES_ARE_CUMULATIVE As Boolean = False
 
@@ -808,7 +811,7 @@ NextSheet:
     '=== NEW: build compact Boxes_Shipped_DEBUG sheet from FRAMES debug ===
     BuildBoxesShippedDebugSummary wb, wsDbgFrames
 
-    MsgBox "Done. See 'Boxes_Shipped_DEBUG_FRAMES', 'Boxes_Shipped_DEBUG_COVERS', and 'Boxes_Shipped'.", vbInformation
+    MsgBox "Done. See 'Boxes_Shipped_DEBUG'. Week of Dec 1st, 2025", vbInformation
 End Sub
 
 ' Build a compact debug sheet with selected columns from Boxes_Shipped_DEBUG_FRAMES
@@ -821,11 +824,13 @@ Private Sub BuildBoxesShippedDebugSummary(wb As Workbook, wsDbgFrames As Workshe
     
     ' Columns we want in the summary sheet, in this order:
     ' City, Color, Week Start, Week End, Col, Backlog,
-    ' NewSalesTotal, BoxesShipped, Unfulfilled, OutOfCityTotal
+    ' NewSalesTotal, BoxesShipped, Unfulfilled, OutOfCityTotal,
+    ' PnP Boxes, Adjusted_OutOfCityTotal
     Dim outHeaders As Variant
     outHeaders = VBA.Array( _
         "City", "Color", "Week Start", "Week End", "Col", _
-        "Backlog", "NewSalesTotal", "BoxesShipped", "Unfulfilled", "OutOfCityTotal")
+        "Backlog", "NewSalesTotal", "BoxesShipped", "Unfulfilled", _
+        "OutOfCityTotal", "PnP Boxes", "Adjusted_OutOfCityTotal")
     
     ' Write header row
     wsOut.Range("A1").Resize(1, UBound(outHeaders) + 1).Value = outHeaders
@@ -835,6 +840,9 @@ Private Sub BuildBoxesShippedDebugSummary(wb As Workbook, wsDbgFrames As Workshe
     ReDim srcCols(0 To UBound(outHeaders))
     
     Dim i As Long
+    Dim outCitySrcCol As Long
+    outCitySrcCol = 0
+    
     For i = 0 To UBound(outHeaders)
         Select Case outHeaders(i)
             Case "City":         srcCols(i) = 1     ' col A
@@ -842,6 +850,15 @@ Private Sub BuildBoxesShippedDebugSummary(wb As Workbook, wsDbgFrames As Workshe
             Case "Week Start":   srcCols(i) = 3     ' col C
             Case "Week End":     srcCols(i) = 4     ' col D
             Case "Col":          srcCols(i) = 5     ' col E
+            
+            Case "OutOfCityTotal"
+                srcCols(i) = FindHeaderColumn(wsDbgFrames, "OutOfCityTotal")
+                outCitySrcCol = srcCols(i)
+            
+            Case "PnP Boxes", "Adjusted_OutOfCityTotal"
+                ' Computed columns; no direct source
+                srcCols(i) = 0
+            
             Case Else
                 ' Look up by header name in row 1 of Boxes_Shipped_DEBUG_FRAMES
                 srcCols(i) = FindHeaderColumn(wsDbgFrames, CStr(outHeaders(i)))
@@ -856,11 +873,33 @@ Private Sub BuildBoxesShippedDebugSummary(wb As Workbook, wsDbgFrames As Workshe
     
     ' Copy ALL rows from Frames debug (including Color="NONE")
     For r = 2 To lastRow
+        
+        Dim outOfCityVal As Double
+        Dim pnpBoxesVal As Double
+        
+        outOfCityVal = 0#
+        If outCitySrcCol > 0 Then
+            outOfCityVal = ValD(wsDbgFrames.Cells(r, outCitySrcCol).Value)
+        End If
+        
+        ' PnP Boxes per row (NOT cumulative)
+        pnpBoxesVal = SafeDiv(outOfCityVal, PNP_BOX_ASSUMPTION)
+        
         For i = 0 To UBound(outHeaders)
-            If srcCols(i) > 0 Then
-                wsOut.Cells(outRow, i + 1).Value = wsDbgFrames.Cells(r, srcCols(i)).Value
-            End If
+            Select Case outHeaders(i)
+                Case "PnP Boxes"
+                    wsOut.Cells(outRow, i + 1).Value = pnpBoxesVal
+                
+                Case "Adjusted_OutOfCityTotal"
+                    wsOut.Cells(outRow, i + 1).Value = outOfCityVal + pnpBoxesVal
+                
+                Case Else
+                    If srcCols(i) > 0 Then
+                        wsOut.Cells(outRow, i + 1).Value = wsDbgFrames.Cells(r, srcCols(i)).Value
+                    End If
+            End Select
         Next i
+        
         outRow = outRow + 1
     Next r
     
@@ -869,7 +908,8 @@ Private Sub BuildBoxesShippedDebugSummary(wb As Workbook, wsDbgFrames As Workshe
         wsOut.Range("C2:D" & outRow - 1).NumberFormat = "yyyy-mm-dd"
     End If
     
-    wsOut.Columns("A:J").AutoFit
+    ' Autofit all columns used (A:L = 12 columns)
+    wsOut.Columns("A:L").AutoFit
 End Sub
 
 
