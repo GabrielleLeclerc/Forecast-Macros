@@ -4,6 +4,14 @@ Option Explicit
 ' key = "<City>|yyyy-mm-dd|yyyy-mm-dd|B<box>"
 Private gPartnerAvail As Object
 
+'=== Out-of-city aggregation (for OutOfCityTotal on FRAMES sheet) ===
+' key = "<CITY>|yyyy-mm-dd|yyyy-mm-dd"
+Private gOutKeys() As String
+Private gOutTot() As Double
+Private gOutCnt As Long
+Private gOutCap As Long
+Private gOutRowMap As Object   ' key "<CITY>|yyyy-mm-dd|yyyy-mm-dd" -> row number in FRAMES debug
+
 '========================= SETTINGS =========================
 Public Const WRITE_DEBUG As Boolean = True
 Public Const MAX_BOX As Long = 30
@@ -224,10 +232,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     '   FromP2_Total                                        -> +1
     '   P2_AvailBn_AfterNewSales (detail)                   -> nFrDet
     '
-    '   BoxesShipped, Unfulfilled                           -> +2
+    '   BoxesShipped, Unfulfilled, OutOfCityTotal           -> +3
     '
-    ' Total columns = 28 + nFrRaw + 16 * nFrDet
-    ReDim hdrFrames(1 To 28 + nFrRaw + 16 * nFrDet)
+    ' Total columns = 29 + nFrRaw + 16 * nFrDet
+    ReDim hdrFrames(1 To 29 + nFrRaw + 16 * nFrDet)
 
     
     hdrFrames(1) = "City":       hdrFrames(2) = "Color"
@@ -359,7 +367,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     ' 14) Overall totals
     k = k + 1: hdrFrames(k) = "BoxesShipped"     ' Local + P1 + P2
     k = k + 1: hdrFrames(k) = "Unfulfilled"
-
+    k = k + 1: hdrFrames(k) = "OutOfCityTotal"   ' Total outbound from this city (all destinations)
 
   
     wsDbgFrames.Cells(1, 1).Resize(1, UBound(hdrFrames)).Value = hdrFrames
@@ -416,6 +424,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Summary sheet
     Dim wsShip As Worksheet: Set wsShip = EnsureOutputSheet(wb, OUT_SHIP)
+
+    '=== Init out-of-city aggregation ===
+    gOutCap = 256
+    gOutCnt = 0
+    ReDim gOutKeys(1 To gOutCap)
+    ReDim gOutTot(1 To gOutCap)
+    Set gOutRowMap = Map_Create()
+
     wsShip.Cells.Clear
     wsShip.Range("A1:E1").Value = VBA.Array("City", "Color", "Week Start", "Week End", "Boxes Shipped")
     Dim shipRow As Long: shipRow = 2
@@ -768,6 +784,27 @@ NextSheet:
         .Range("F:L").EntireColumn.Hidden = True
     End With
 
+    '=== Second pass: fill OutOfCityTotal on FRAMES debug ===
+    Dim outCol As Long
+    Dim cityWeekKey As Variant
+    Dim rowIdx As Long
+    Dim idx As Long
+
+    ' OutOfCityTotal is the last FRAMES column
+    outCol = UBound(hdrFrames)
+
+    If Not gOutRowMap Is Nothing Then
+        For Each cityWeekKey In Map_Keys(gOutRowMap)
+            rowIdx = CLng(Map_Get(gOutRowMap, CStr(cityWeekKey)))
+            If rowIdx > 0 Then
+                idx = FindKeyIndex(gOutKeys, gOutCnt, CStr(cityWeekKey))
+                If idx > 0 Then
+                    wsDbgFrames.Cells(rowIdx, outCol).Value = gOutTot(idx)
+                End If
+            End If
+        Next cityWeekKey
+    End If
+
 
     MsgBox "Done. See 'Boxes_Shipped_DEBUG_FRAMES', 'Boxes_Shipped_DEBUG_COVERS', and 'Boxes_Shipped'.", vbInformation
 End Sub
@@ -864,7 +901,7 @@ Private Sub WriteDebug( _
         Dim p2AvailAfterNewSales() As Double
 
         ' Size row to match the FRAMES debug header 
-        ReDim rowArr(1 To 28 + nFrRaw + 16 * nFrDet)
+        ReDim rowArr(1 To 29 + nFrRaw + 16 * nFrDet)
 
         rowArr(1) = city
         rowArr(2) = color
@@ -1217,6 +1254,23 @@ Private Sub WriteDebug( _
         fromP1Total = fromP1Backlog + fromP1NewSales
         fromP2Total = fromP2Backlog + fromP2NewSales
 
+        '=== Aggregate outbound by origin city/week ===
+        ' Local shipments originate from this city
+        If fromLocalTotal > 0# Then
+            UpdateOutbound city, wkStart, wkEnd, fromLocalTotal
+        End If
+        
+        ' P1 shipments originate from p1City
+        If fromP1Total > 0# And Len(p1City) > 0 Then
+            UpdateOutbound p1City, wkStart, wkEnd, fromP1Total
+        End If
+        
+        ' P2 shipments originate from p2City
+        If fromP2Total > 0# And Len(p2City) > 0 Then
+            UpdateOutbound p2City, wkStart, wkEnd, fromP2Total
+        End If
+
+
         '================= WRITE P1 / P2 DEBUG COLUMNS ====================
 
         ' --- 14) P1 partner details
@@ -1316,6 +1370,9 @@ Private Sub WriteDebug( _
         idx = idx + 1: rowArr(idx) = totalShipped          ' BoxesShipped (all origins)
         idx = idx + 1: rowArr(idx) = unfulfilled           ' Unfulfilled
 
+        ' Placeholder for OutOfCityTotal; filled later in a second pass
+        idx = idx + 1: rowArr(idx) = 0#                    ' OutOfCityTotal (to be overwritten)
+
         ' Feed totals back to caller for carryRun
         outBoxesShipped = totalShipped
         outUnfulfilled = unfulfilled
@@ -1324,6 +1381,12 @@ Private Sub WriteDebug( _
         Set wsOut = wsDbgFrames
         outRow = dbgRowFrames
         wsOut.Cells(outRow, 1).Resize(1, UBound(rowArr)).Value = rowArr
+
+        ' Remember which row corresponds to this City+Week
+        Dim keyCityWeek As String
+        keyCityWeek = OutKeyCityWeek(city, wkStart, wkEnd)
+        Map_Set gOutRowMap, keyCityWeek, outRow
+
         dbgRowFrames = dbgRowFrames + 1
 
     Else
@@ -1707,6 +1770,44 @@ Private Function FindKeyIndex(ByRef keys() As String, ByVal cnt As Long, ByVal k
         End If
     Next i
 End Function
+
+'=== Out-of-city key helper ===
+Private Function OutKeyCityWeek(ByVal city As String, _
+                                ByVal wkStart As Date, _
+                                ByVal wkEnd As Date) As String
+    OutKeyCityWeek = UCase$(Trim$(city)) & "|" & _
+                     Format$(wkStart, "yyyy-mm-dd") & "|" & _
+                     Format$(wkEnd, "yyyy-mm-dd")
+End Function
+
+'=== Aggregate outbound shipments for a given origin city/week ===
+Private Sub UpdateOutbound(ByVal originCity As String, _
+                           ByVal wkStart As Date, _
+                           ByVal wkEnd As Date, _
+                           ByVal qty As Double)
+    Dim key As String
+    Dim idx As Long
+    
+    If qty <= 0# Then Exit Sub
+    
+    key = OutKeyCityWeek(originCity, wkStart, wkEnd)
+    
+    idx = FindKeyIndex(gOutKeys, gOutCnt, key)
+    If idx = 0 Then
+        gOutCnt = gOutCnt + 1
+        If gOutCnt > gOutCap Then
+            gOutCap = gOutCap * 2
+            ReDim Preserve gOutKeys(1 To gOutCap)
+            ReDim Preserve gOutTot(1 To gOutCap)
+        End If
+        idx = gOutCnt
+        gOutKeys(idx) = key
+        gOutTot(idx) = 0#
+    End If
+    
+    gOutTot(idx) = gOutTot(idx) + qty
+End Sub
+
 
 ' Aggregate shipments by demand city+color+week (used later for OutOfCity)
 Private Sub UpdateOriginAgg(ByRef keys() As String, ByRef tot() As Double, _
