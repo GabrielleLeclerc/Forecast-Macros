@@ -19,11 +19,11 @@ Public Const BOX14_SHARE As Double = 0        ' Universal Arm, ~40% (changeable)
 ' Sales are NOT cumulative across columns
 Public Const SALES_ARE_CUMULATIVE As Boolean = False
 
-' Fixed column spans (Ironlink different start)
-Public Const DEF_START_COL As String = "CF"  ' Week of Nov 10th, 2025
+' Fixed column spans (Dayton different start)
+Public Const DEF_START_COL As String = "CJ"  ' Week of Dec 8th, 2025
 Public Const DEF_END_COL   As String = "EL"
-Public Const IRN_START_COL As String = "CC"  ' Week of Nov 10th, 2025 
-Public Const IRN_END_COL   As String = "EL"
+Public Const DAY_START_COL As String = "CG"  ' Week of Dec 8th, 2025 
+Public Const DAY_END_COL   As String = "EL"
 
 ' ---- fixed row boundaries (SAME FOR ALL CITIES) ----
 ' FRAMES Ending (capacity / gate)
@@ -92,7 +92,7 @@ Private Function AtmosSheets() As Variant
         "Atmosphere-Montreal", _
         "Atmosphere-Toronto", _
         "Atmosphere-Vancouver", _
-        "Atmosphere-Ironlink", _
+        "Atmosphere-Dayton", _
         "Atmosphere-Moreno")
 End Function
 
@@ -101,7 +101,7 @@ Private Function AtmosCity(ByVal sheetName As String) As String
         Case "Atmosphere-Montreal":  AtmosCity = "Montreal"
         Case "Atmosphere-Toronto":   AtmosCity = "Toronto"
         Case "Atmosphere-Vancouver": AtmosCity = "Vancouver"
-        Case "Atmosphere-Ironlink":  AtmosCity = "Ironlink"
+        Case "Atmosphere-Dayton":  AtmosCity = "Dayton"
         Case "Atmosphere-Moreno":    AtmosCity = "Moreno"
         Case Else:                   AtmosCity = sheetName
     End Select
@@ -118,10 +118,10 @@ Private Function AtmosPartnersFor(ByVal sheetName As String) As Variant
             AtmosPartnersFor = VBA.Array("Atmosphere-Montreal", "Atmosphere-Vancouver")
         Case "Atmosphere-Vancouver"
             AtmosPartnersFor = VBA.Array("Atmosphere-Toronto", "Atmosphere-Montreal")
-        Case "Atmosphere-Ironlink"
+        Case "Atmosphere-Dayton"
             AtmosPartnersFor = VBA.Array("Atmosphere-Moreno")
         Case "Atmosphere-Moreno"
-            AtmosPartnersFor = VBA.Array("Atmosphere-Ironlink")
+            AtmosPartnersFor = VBA.Array("Atmosphere-Dayton")
         Case Else
             AtmosPartnersFor = VBA.Array()
     End Select
@@ -1154,8 +1154,8 @@ End Function
 '=========================== GENERIC ========================
 Private Function GetSpanBySheet(ByVal sheetName As String, ByRef startCol As Long, ByRef endCol As Long) As Boolean
     Dim sStart As String, sEnd As String
-    If InStr(1, sheetName, "Ironlink", vbTextCompare) > 0 Then
-        sStart = IRN_START_COL: sEnd = IRN_END_COL
+    If InStr(1, sheetName, "Dayton", vbTextCompare) > 0 Then
+        sStart = DAY_START_COL: sEnd = DAY_END_COL
     Else
         sStart = DEF_START_COL: sEnd = DEF_END_COL
     End If
