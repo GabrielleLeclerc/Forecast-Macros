@@ -805,8 +805,71 @@ NextSheet:
         Next cityWeekKey
     End If
 
+    '=== NEW: build compact Boxes_Shipped_DEBUG sheet from FRAMES debug ===
+    BuildBoxesShippedDebugSummary wb, wsDbgFrames
 
     MsgBox "Done. See 'Boxes_Shipped_DEBUG_FRAMES', 'Boxes_Shipped_DEBUG_COVERS', and 'Boxes_Shipped'.", vbInformation
+End Sub
+
+' Build a compact debug sheet with selected columns from Boxes_Shipped_DEBUG_FRAMES
+Private Sub BuildBoxesShippedDebugSummary(wb As Workbook, wsDbgFrames As Worksheet)
+    Const SUM_SHEET As String = "Boxes_Shipped_DEBUG"
+    
+    Dim wsOut As Worksheet
+    Set wsOut = EnsureOutputSheet(wb, SUM_SHEET)
+    wsOut.Cells.Clear
+    
+    ' Columns we want in the summary sheet, in this order:
+    ' City, Color, Week Start, Week End, Col, Backlog,
+    ' NewSalesTotal, BoxesShipped, Unfulfilled, OutOfCityTotal
+    Dim outHeaders As Variant
+    outHeaders = VBA.Array( _
+        "City", "Color", "Week Start", "Week End", "Col", _
+        "Backlog", "NewSalesTotal", "BoxesShipped", "Unfulfilled", "OutOfCityTotal")
+    
+    ' Write header row
+    wsOut.Range("A1").Resize(1, UBound(outHeaders) + 1).Value = outHeaders
+    
+    ' Map each summary column to its source column in Boxes_Shipped_DEBUG_FRAMES
+    Dim srcCols() As Long
+    ReDim srcCols(0 To UBound(outHeaders))
+    
+    Dim i As Long
+    For i = 0 To UBound(outHeaders)
+        Select Case outHeaders(i)
+            Case "City":         srcCols(i) = 1     ' col A
+            Case "Color":        srcCols(i) = 2     ' col B
+            Case "Week Start":   srcCols(i) = 3     ' col C
+            Case "Week End":     srcCols(i) = 4     ' col D
+            Case "Col":          srcCols(i) = 5     ' col E
+            Case Else
+                ' Look up by header name in row 1 of Boxes_Shipped_DEBUG_FRAMES
+                srcCols(i) = FindHeaderColumn(wsDbgFrames, CStr(outHeaders(i)))
+        End Select
+    Next i
+    
+    Dim lastRow As Long
+    lastRow = wsDbgFrames.Cells(wsDbgFrames.Rows.Count, "A").End(xlUp).Row
+    
+    Dim r As Long, outRow As Long
+    outRow = 2
+    
+    ' Copy ALL rows from Frames debug (including Color="NONE")
+    For r = 2 To lastRow
+        For i = 0 To UBound(outHeaders)
+            If srcCols(i) > 0 Then
+                wsOut.Cells(outRow, i + 1).Value = wsDbgFrames.Cells(r, srcCols(i)).Value
+            End If
+        Next i
+        outRow = outRow + 1
+    Next r
+    
+    ' Format dates nicely
+    If outRow > 2 Then
+        wsOut.Range("C2:D" & outRow - 1).NumberFormat = "yyyy-mm-dd"
+    End If
+    
+    wsOut.Columns("A:J").AutoFit
 End Sub
 
 
@@ -2040,6 +2103,21 @@ Private Function SumOverList(ByRef arr() As Double, ByVal lst As Variant) As Dou
 End Function
 
 '=========================== GENERIC ========================
+' Find a column by header text in row 1
+Private Function FindHeaderColumn(ws As Worksheet, headerName As String) As Long
+    Dim lastCol As Long, c As Long
+    lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    
+    For c = 1 To lastCol
+        If CStr(ws.Cells(1, c).Value) = headerName Then
+            FindHeaderColumn = c
+            Exit Function
+        End If
+    Next c
+    
+    FindHeaderColumn = 0   ' not found
+End Function
+
 Private Function GetSpanBySheet(ByVal sheetName As String, ByRef startCol As Long, ByRef endCol As Long) As Boolean
     Dim sStart As String, sEnd As String
     If InStr(1, sheetName, "Dayton", vbTextCompare) > 0 Then
