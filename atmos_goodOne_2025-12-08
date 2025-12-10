@@ -811,7 +811,7 @@ NextSheet:
     '=== NEW: build compact Boxes_Shipped_DEBUG sheet from FRAMES debug ===
     BuildBoxesShippedDebugSummary wb, wsDbgFrames
 
-    MsgBox "Done. See 'Boxes_Shipped_DEBUG'. Week of Dec 1st, 2025", vbInformation
+    MsgBox "Done. See 'Boxes_Shipped_DEBUG'. Start week: Dec 1st 2025", vbInformation
 End Sub
 
 ' Build a compact debug sheet with selected columns from Boxes_Shipped_DEBUG_FRAMES
