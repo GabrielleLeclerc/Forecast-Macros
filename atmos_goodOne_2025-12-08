@@ -1,5 +1,9 @@
 Option Explicit
 
+'=== Partner availability per city/week/box ===
+' key = "<City>|yyyy-mm-dd|yyyy-mm-dd|B<box>"
+Private gPartnerAvail As Object
+
 '========================= SETTINGS =========================
 Public Const WRITE_DEBUG As Boolean = True
 Public Const MAX_BOX As Long = 30
@@ -19,9 +23,9 @@ Public Const BOX14_SHARE As Double = 0        ' Universal Arm, ~40% (changeable)
 Public Const SALES_ARE_CUMULATIVE As Boolean = False
 
 ' Fixed column spans (Dayton different start)
-Public Const DEF_START_COL As String = "CJ"  ' Week of Dec 8th, 2025
+Public Const DEF_START_COL As String = "CI"  ' Week of Dec 1st, 2025
 Public Const DEF_END_COL   As String = "EL"
-Public Const DAY_START_COL As String = "CG"  ' Week of Dec 8th, 2025 
+Public Const DAY_START_COL As String = "CF"  ' Week of Dec 1st, 2025 
 Public Const DAY_END_COL   As String = "EL"
 
 ' ---- fixed row boundaries (SAME FOR ALL CITIES) ----
@@ -199,9 +203,32 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     '   Local_SalesBn_Needed (detail)                       -> nFrDet
     '   FromLocal_Total                                     -> +1
     '   Local_AvailBn_AfterNewSales (detail)                -> nFrDet
-    '   Totals: TotalFrames_FromLocal, FramesShipTotal,
-    '           P1 City, P2 City                            -> +4
-    ReDim hdrFrames(1 To 12 + nFrRaw + 6 * nFrDet + 11)
+    '
+    '   P1 City                                             -> +1
+    '   P1_AvailBn_AfterLocal (detail)                      -> nFrDet
+    '   P1_BacklogBn_Needed (detail)                        -> nFrDet
+    '   FromP1_Backlog                                      -> +1
+    '   P1_AvailBn_AfterBacklog (detail)                    -> nFrDet
+    '   P1_SalesBn_Needed (detail)                          -> nFrDet
+    '   FromP1_NewSales                                     -> +1
+    '   FromP1_Total                                        -> +1
+    '   P1_AvailBn_AfterNewSales (detail)                   -> nFrDet
+    '
+    '   P2 City                                             -> +1
+    '   P2_AvailBn_AfterP1 (detail)                         -> nFrDet
+    '   P2_BacklogBn_Needed (detail)                        -> nFrDet
+    '   FromP2_Backlog                                      -> +1
+    '   P2_AvailBn_AfterBacklog (detail)                    -> nFrDet
+    '   P2_SalesBn_Needed (detail)                          -> nFrDet
+    '   FromP2_NewSales                                     -> +1
+    '   FromP2_Total                                        -> +1
+    '   P2_AvailBn_AfterNewSales (detail)                   -> nFrDet
+    '
+    '   BoxesShipped, Unfulfilled                           -> +2
+    '
+    ' Total columns = 28 + nFrRaw + 16 * nFrDet
+    ReDim hdrFrames(1 To 28 + nFrRaw + 16 * nFrDet)
+
     
     hdrFrames(1) = "City":       hdrFrames(2) = "Color"
     hdrFrames(3) = "Week Start": hdrFrames(4) = "Week End"
@@ -277,16 +304,64 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         hdrFrames(k) = "Local_AvailB" & dbgFramesDetail(iCol) & "_AfterNewSales"
     Next iCol
     
-    ' 12) Totals (frames only)
-    ' BoxesShipped = FromLocal_Backlog + FromLocal_NewSales (capacity-only)
-    k = k + 1: hdrFrames(k) = "BoxesShipped"
-    k = k + 1: hdrFrames(k) = "FramesShipTotal"
+    ' 12) Partner P1 details
     k = k + 1: hdrFrames(k) = "P1 City"
+    For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        k = k + 1
+        hdrFrames(k) = "P1_AvailB" & dbgFramesDetail(iCol) & "_AfterLocal"
+    Next iCol
+    For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        k = k + 1
+        hdrFrames(k) = "P1_BacklogB" & dbgFramesDetail(iCol) & "_Needed"
+    Next iCol
+    k = k + 1: hdrFrames(k) = "FromP1_Backlog"
+    For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        k = k + 1
+        hdrFrames(k) = "P1_AvailB" & dbgFramesDetail(iCol) & "_AfterBacklog"
+    Next iCol
+    For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        k = k + 1
+        hdrFrames(k) = "P1_SalesB" & dbgFramesDetail(iCol) & "_Needed"
+    Next iCol
+    k = k + 1: hdrFrames(k) = "FromP1_NewSales"
+    k = k + 1: hdrFrames(k) = "FromP1_Total"
+    For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        k = k + 1
+        hdrFrames(k) = "P1_AvailB" & dbgFramesDetail(iCol) & "_AfterNewSales"
+    Next iCol
+
+    ' 13) Partner P2 details
     k = k + 1: hdrFrames(k) = "P2 City"
+    For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        k = k + 1
+        hdrFrames(k) = "P2_AvailB" & dbgFramesDetail(iCol) & "_AfterP1"
+    Next iCol
+    For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        k = k + 1
+        hdrFrames(k) = "P2_BacklogB" & dbgFramesDetail(iCol) & "_Needed"
+    Next iCol
+    k = k + 1: hdrFrames(k) = "FromP2_Backlog"
+    For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        k = k + 1
+        hdrFrames(k) = "P2_AvailB" & dbgFramesDetail(iCol) & "_AfterBacklog"
+    Next iCol
+    For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        k = k + 1
+        hdrFrames(k) = "P2_SalesB" & dbgFramesDetail(iCol) & "_Needed"
+    Next iCol
+    k = k + 1: hdrFrames(k) = "FromP2_NewSales"
+    k = k + 1: hdrFrames(k) = "FromP2_Total"
+    For iCol = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        k = k + 1
+        hdrFrames(k) = "P2_AvailB" & dbgFramesDetail(iCol) & "_AfterNewSales"
+    Next iCol
+
+    ' 14) Overall totals
+    k = k + 1: hdrFrames(k) = "BoxesShipped"     ' Local + P1 + P2
     k = k + 1: hdrFrames(k) = "Unfulfilled"
 
 
-    
+  
     wsDbgFrames.Cells(1, 1).Resize(1, UBound(hdrFrames)).Value = hdrFrames
 
     '================ COVERS DEBUG HEADER (rows with real colors) =======
@@ -350,6 +425,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     '=== NEW: backlog map (per city+color across weeks) ===
     Dim carryRun As Object
     Set carryRun = Map_Create()
+
+    '=== NEW: partner availability map (per city+week+box) ===
+    Set gPartnerAvail = Map_Create()
 
     Dim dcSheets As Variant: dcSheets = AtmosSheets()
 
@@ -738,7 +816,7 @@ Private Sub WriteDebug( _
         Dim totalToShip As Double
         Dim unfulfilled As Double
 
-        ' Arrays for per-box logic
+        ' Arrays for per-box logic (LOCAL)
         Dim avail() As Double                ' AvailStock Bn = End + Raw
         Dim needBacklog() As Double          ' Local_BacklogBn_Needed
         Dim availAfterBacklog() As Double    ' Local_AvailBn_AfterBacklog
@@ -752,8 +830,35 @@ Private Sub WriteDebug( _
         Dim fromLocalTotal As Double
         Dim totalFramesFromLocal As Double
 
+        ' Partner shipments (scalar summary)
+        Dim fromP1Backlog As Double
+        Dim fromP1NewSales As Double
+        Dim fromP2Backlog As Double
+        Dim fromP2NewSales As Double
+        Dim fromP1Total As Double
+        Dim fromP2Total As Double
+
+        ' Partner gating flags
+        Dim canP1Backlog As Boolean
+        Dim canP2Backlog As Boolean
+        Dim canP1Sales As Boolean
+        Dim canP2Sales As Boolean
+
+        ' Partner arrays for debug
+        Dim p1AvailAfterLocal() As Double
+        Dim p1NeedBacklog() As Double
+        Dim p1AvailAfterBacklog() As Double
+        Dim p1NeedSales() As Double
+        Dim p1AvailAfterNewSales() As Double
+
+        Dim p2AvailAfterP1() As Double
+        Dim p2NeedBacklog() As Double
+        Dim p2AvailAfterBacklog() As Double
+        Dim p2NeedSales() As Double
+        Dim p2AvailAfterNewSales() As Double
+
         ' Size row to match the FRAMES debug header 
-        ReDim rowArr(1 To 12 + nFrRaw + 6 * nFrDet + 11)
+        ReDim rowArr(1 To 28 + nFrRaw + 16 * nFrDet)
 
         rowArr(1) = city
         rowArr(2) = color
@@ -821,7 +926,7 @@ Private Sub WriteDebug( _
             rowArr(idx) = needBacklog(bb)
         Next i
 
-        ' --- 6) All-or-nothing backlog gating
+        ' --- 6) All-or-nothing backlog gating (LOCAL)
         canBacklog = True
         If backlogStart > 0 Then
             For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
@@ -867,7 +972,7 @@ Private Sub WriteDebug( _
             needSales(bb) = share * newSalesTotal
         Next i
 
-        ' --- 9) All-or-nothing new sales gating on remaining stock
+        ' --- 9) All-or-nothing new sales gating on remaining stock (LOCAL)
         canSales = True
         If newSalesTotal > 0 Then
             For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
@@ -895,7 +1000,20 @@ Private Sub WriteDebug( _
         End If
 
         fromLocalTotal = fromLocalBacklog + fromLocalNewSales
-        totalFramesFromLocal = fromLocalTotal     ' for the TotalFrames_FromLocal column
+        totalFramesFromLocal = fromLocalTotal     ' still your local-only total
+
+        '=== Record partner availability for this city/week/box ===
+        If Not gPartnerAvail Is Nothing Then
+            Dim keyCityWeek As String
+            keyCityWeek = city & "|" & _
+                          Format$(wkStart, "yyyy-mm-dd") & "|" & _
+                          Format$(wkEnd, "yyyy-mm-dd")
+
+            For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                bb = dbgFramesDetail(i)
+                Map_Set gPartnerAvail, keyCityWeek & "|B" & CStr(bb), availAfterSales(bb)
+            Next i
+        End If
 
         ' --- 10) FromLocal_NewSales scalar
         idx = idx + 1
@@ -919,22 +1037,295 @@ Private Sub WriteDebug( _
             rowArr(idx) = availAfterSales(bb)
         Next i
 
-        ' --- 14) Totals + Partners
-        
-        ' Capacity-based unfulfilled: backlog + new sales - TotalFrames_FromLocal
-        unfulfilled = totalToShip - totalFramesFromLocal
-        If unfulfilled < 0# Then unfulfilled = 0#
-                
-        idx = idx + 1: rowArr(idx) = totalFramesFromLocal   ' TotalFrames_FromLocal
-        idx = idx + 1: rowArr(idx) = framesShipTotal        ' FramesShipTotal (sum over colors for this week)
-        idx = idx + 1: rowArr(idx) = p1City                 ' P1 City
-        idx = idx + 1: rowArr(idx) = p2City                 ' P2 City
-        idx = idx + 1: rowArr(idx) = unfulfilled            ' Unfulfilled (becomes next week's backlog at city level)
-        
-        ' Feed back capacity-only totals to caller
-        outBoxesShipped = totalFramesFromLocal
-        outUnfulfilled = unfulfilled
+        '================= PARTNER LOGIC (ALL-OR-NOTHING) =================
+        Dim backlogLeft As Double
+        Dim newSalesLeft As Double
 
+        backlogLeft = backlogStart - fromLocalBacklog
+        If backlogLeft < 0# Then backlogLeft = 0#
+
+        newSalesLeft = newSalesTotal - fromLocalNewSales
+        If newSalesLeft < 0# Then newSalesLeft = 0#
+
+        ReDim p1AvailAfterLocal(1 To MAX_BOX)
+        ReDim p1NeedBacklog(1 To MAX_BOX)
+        ReDim p1AvailAfterBacklog(1 To MAX_BOX)
+        ReDim p1NeedSales(1 To MAX_BOX)
+        ReDim p1AvailAfterNewSales(1 To MAX_BOX)
+
+        ReDim p2AvailAfterP1(1 To MAX_BOX)
+        ReDim p2NeedBacklog(1 To MAX_BOX)
+        ReDim p2AvailAfterBacklog(1 To MAX_BOX)
+        ReDim p2NeedSales(1 To MAX_BOX)
+        ReDim p2AvailAfterNewSales(1 To MAX_BOX)
+
+        fromP1Backlog = 0#
+        fromP1NewSales = 0#
+        fromP2Backlog = 0#
+        fromP2NewSales = 0#
+
+        ' --- Load initial partner availability from map
+        If Len(p1City) > 0 Then
+            For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                bb = dbgFramesDetail(i)
+                p1AvailAfterLocal(bb) = PartnerAvailBox(p1City, wkStart, wkEnd, bb)
+            Next i
+        End If
+
+        If Len(p2City) > 0 Then
+            For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                bb = dbgFramesDetail(i)
+                p2AvailAfterP1(bb) = PartnerAvailBox(p2City, wkStart, wkEnd, bb)
+            Next i
+        End If
+
+        ' --- A) Backlog to P1 (all-or-nothing)
+        If backlogLeft > 0# And Len(p1City) > 0 Then
+            canP1Backlog = True
+            For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                bb = dbgFramesDetail(i)
+                share = BoxShare(bb)
+                p1NeedBacklog(bb) = share * backlogLeft
+                If p1NeedBacklog(bb) > p1AvailAfterLocal(bb) + 0.0000001 Then
+                    canP1Backlog = False
+                End If
+            Next i
+
+            If canP1Backlog Then
+                fromP1Backlog = backlogLeft
+                backlogLeft = 0#
+                For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                    bb = dbgFramesDetail(i)
+                    p1AvailAfterBacklog(bb) = p1AvailAfterLocal(bb) - p1NeedBacklog(bb)
+                    PartnerConsumeBox p1City, wkStart, wkEnd, bb, p1NeedBacklog(bb)
+                Next i
+            Else
+                For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                    bb = dbgFramesDetail(i)
+                    p1AvailAfterBacklog(bb) = p1AvailAfterLocal(bb)
+                Next i
+            End If
+        Else
+            For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                bb = dbgFramesDetail(i)
+                p1AvailAfterBacklog(bb) = p1AvailAfterLocal(bb)
+            Next i
+        End If
+
+        ' --- B) Backlog to P2 (all-or-nothing, only if backlog still left)
+        If backlogLeft > 0# And Len(p2City) > 0 Then
+            canP2Backlog = True
+            For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                bb = dbgFramesDetail(i)
+                share = BoxShare(bb)
+                p2NeedBacklog(bb) = share * backlogLeft
+                If p2NeedBacklog(bb) > p2AvailAfterP1(bb) + 0.0000001 Then
+                    canP2Backlog = False
+                End If
+            Next i
+
+            If canP2Backlog Then
+                fromP2Backlog = backlogLeft
+                backlogLeft = 0#
+                For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                    bb = dbgFramesDetail(i)
+                    p2AvailAfterBacklog(bb) = p2AvailAfterP1(bb) - p2NeedBacklog(bb)
+                    PartnerConsumeBox p2City, wkStart, wkEnd, bb, p2NeedBacklog(bb)
+                Next i
+            Else
+                For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                    bb = dbgFramesDetail(i)
+                    p2AvailAfterBacklog(bb) = p2AvailAfterP1(bb)
+                Next i
+            End If
+        Else
+            For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                bb = dbgFramesDetail(i)
+                p2AvailAfterBacklog(bb) = p2AvailAfterP1(bb)
+            Next i
+        End If
+
+        ' --- C) New sales to P1 then P2 (only if backlog fully solved)
+        If backlogLeft = 0# Then
+            ' P1 new sales
+            If newSalesLeft > 0# And Len(p1City) > 0 Then
+                canP1Sales = True
+                For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                    bb = dbgFramesDetail(i)
+                    share = BoxShare(bb)
+                    p1NeedSales(bb) = share * newSalesLeft
+                    If p1NeedSales(bb) > p1AvailAfterBacklog(bb) + 0.0000001 Then
+                        canP1Sales = False
+                    End If
+                Next i
+
+                If canP1Sales Then
+                    fromP1NewSales = newSalesLeft
+                    newSalesLeft = 0#
+                    For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                        bb = dbgFramesDetail(i)
+                        p1AvailAfterNewSales(bb) = p1AvailAfterBacklog(bb) - p1NeedSales(bb)
+                        PartnerConsumeBox p1City, wkStart, wkEnd, bb, p1NeedSales(bb)
+                    Next i
+                Else
+                    For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                        bb = dbgFramesDetail(i)
+                        p1AvailAfterNewSales(bb) = p1AvailAfterBacklog(bb)
+                    Next i
+                End If
+            Else
+                For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                    bb = dbgFramesDetail(i)
+                    p1AvailAfterNewSales(bb) = p1AvailAfterBacklog(bb)
+                Next i
+            End If
+
+            ' P2 new sales (if still left after P1)
+            If newSalesLeft > 0# And Len(p2City) > 0 Then
+                canP2Sales = True
+                For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                    bb = dbgFramesDetail(i)
+                    share = BoxShare(bb)
+                    p2NeedSales(bb) = share * newSalesLeft
+                    If p2NeedSales(bb) > p2AvailAfterBacklog(bb) + 0.0000001 Then
+                        canP2Sales = False
+                    End If
+                Next i
+
+                If canP2Sales Then
+                    fromP2NewSales = newSalesLeft
+                    newSalesLeft = 0#
+                    For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                        bb = dbgFramesDetail(i)
+                        p2AvailAfterNewSales(bb) = p2AvailAfterBacklog(bb) - p2NeedSales(bb)
+                        PartnerConsumeBox p2City, wkStart, wkEnd, bb, p2NeedSales(bb)
+                    Next i
+                Else
+                    For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                        bb = dbgFramesDetail(i)
+                        p2AvailAfterNewSales(bb) = p2AvailAfterBacklog(bb)
+                    Next i
+                End If
+            Else
+                For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                    bb = dbgFramesDetail(i)
+                    p2AvailAfterNewSales(bb) = p2AvailAfterBacklog(bb)
+                Next i
+            End If
+        Else
+            ' Backlog not fully solved => no partner new sales
+            For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                bb = dbgFramesDetail(i)
+                p1AvailAfterNewSales(bb) = p1AvailAfterBacklog(bb)
+                p2AvailAfterNewSales(bb) = p2AvailAfterBacklog(bb)
+            Next i
+        End If
+
+        fromP1Total = fromP1Backlog + fromP1NewSales
+        fromP2Total = fromP2Backlog + fromP2NewSales
+
+        '================= WRITE P1 / P2 DEBUG COLUMNS ====================
+
+        ' --- 14) P1 partner details
+        idx = idx + 1
+        rowArr(idx) = p1City   ' P1 City
+
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            idx = idx + 1
+            rowArr(idx) = p1AvailAfterLocal(bb)
+        Next i
+
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            idx = idx + 1
+            rowArr(idx) = p1NeedBacklog(bb)
+        Next i
+
+        idx = idx + 1
+        rowArr(idx) = fromP1Backlog
+
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            idx = idx + 1
+            rowArr(idx) = p1AvailAfterBacklog(bb)
+        Next i
+
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            idx = idx + 1
+            rowArr(idx) = p1NeedSales(bb)
+        Next i
+
+        idx = idx + 1
+        rowArr(idx) = fromP1NewSales
+
+        idx = idx + 1
+        rowArr(idx) = fromP1Total
+
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            idx = idx + 1
+            rowArr(idx) = p1AvailAfterNewSales(bb)
+        Next i
+
+        ' --- 15) P2 partner details
+        idx = idx + 1
+        rowArr(idx) = p2City   ' P2 City
+
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            idx = idx + 1
+            rowArr(idx) = p2AvailAfterP1(bb)
+        Next i
+
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            idx = idx + 1
+            rowArr(idx) = p2NeedBacklog(bb)
+        Next i
+
+        idx = idx + 1
+        rowArr(idx) = fromP2Backlog
+
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            idx = idx + 1
+            rowArr(idx) = p2AvailAfterBacklog(bb)
+        Next i
+
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            idx = idx + 1
+            rowArr(idx) = p2NeedSales(bb)
+        Next i
+
+        idx = idx + 1
+        rowArr(idx) = fromP2NewSales
+
+        idx = idx + 1
+        rowArr(idx) = fromP2Total
+
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            idx = idx + 1
+            rowArr(idx) = p2AvailAfterNewSales(bb)
+        Next i
+
+        ' --- 16) Overall totals
+        Dim totalShipped As Double
+        totalShipped = totalFramesFromLocal + fromP1Total + fromP2Total
+
+        ' Backlog rule: backlog + new sales - all shipments (Local + P1 + P2)
+        unfulfilled = totalToShip - totalShipped
+        If unfulfilled < 0# Then unfulfilled = 0#
+
+        idx = idx + 1: rowArr(idx) = totalShipped          ' BoxesShipped (all origins)
+        idx = idx + 1: rowArr(idx) = unfulfilled           ' Unfulfilled
+
+        ' Feed totals back to caller for carryRun
+        outBoxesShipped = totalShipped
+        outUnfulfilled = unfulfilled
 
         ' Write to FRAMES debug sheet
         Set wsOut = wsDbgFrames
@@ -1044,6 +1435,41 @@ Private Function BacklogForCity(ByVal carryRun As Object, ByVal city As String) 
     If carryRun Is Nothing Then Exit Function
     BacklogForCity = CDbl(Map_Get(carryRun, MakeCarryKey(city, "CAP"), 0#))
 End Function
+
+'====================== PARTNER AVAILABILITY HELPERS ======================
+
+Private Function PartnerAvailBox(ByVal partnerCity As String, _
+                                 ByVal wkStart As Date, ByVal wkEnd As Date, _
+                                 ByVal boxNum As Long) As Double
+    Dim keyCityWeek As String
+    Dim keyBox As String
+
+    keyCityWeek = partnerCity & "|" & _
+                  Format$(wkStart, "yyyy-mm-dd") & "|" & _
+                  Format$(wkEnd, "yyyy-mm-dd")
+    keyBox = keyCityWeek & "|B" & CStr(boxNum)
+
+    PartnerAvailBox = CDbl(Map_Get(gPartnerAvail, keyBox, 0#))
+End Function
+
+Private Sub PartnerConsumeBox(ByVal partnerCity As String, _
+                              ByVal wkStart As Date, ByVal wkEnd As Date, _
+                              ByVal boxNum As Long, ByVal qty As Double)
+    Dim keyCityWeek As String
+    Dim keyBox As String
+    Dim cur As Double
+
+    keyCityWeek = partnerCity & "|" & _
+                  Format$(wkStart, "yyyy-mm-dd") & "|" & _
+                  Format$(wkEnd, "yyyy-mm-dd")
+    keyBox = keyCityWeek & "|B" & CStr(boxNum)
+
+    cur = CDbl(Map_Get(gPartnerAvail, keyBox, 0#))
+    cur = cur - qty
+    If cur < 0# Then cur = 0#
+    Map_Set gPartnerAvail, keyBox, cur
+End Sub
+
 
 
 '====================== CAPACITY-ONLY BACKLOG HELPERS =====================
