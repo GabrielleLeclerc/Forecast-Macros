@@ -422,7 +422,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     Dim allowColors As Collection: Set allowColors = LoadAllowColors()
 
-    '=== NEW: backlog map (per city+color across weeks) ===
+    '=== Backlog map (capacity-only, after LOCAL+PARTNERS) ===
     Dim carryRun As Object
     Set carryRun = Map_Create()
 
@@ -430,8 +430,8 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     Set gPartnerAvail = Map_Create()
 
     Dim dcSheets As Variant: dcSheets = AtmosSheets()
-
     Dim i As Long
+
     For i = LBound(dcSheets) To UBound(dcSheets)
 
         Dim citySheet As String: citySheet = CStr(dcSheets(i))
@@ -523,6 +523,24 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
             
                 fsTotal = fsTotal + fsRaw(bSum)
             Next bSum
+            
+            ' Put this near your other Dim statements in BuildWeeklyBoxesShipped_ColsOnly:
+            Dim idxDet As Long
+
+            ' --- NEW: seed partner availability from Ending + Raw even if fsTotal = 0 ---
+            If Not gPartnerAvail Is Nothing Then
+                Dim seedKeyCityWeek As String
+                Dim seedBB As Long
+                Dim baseAvail As Double
+        
+                seedKeyCityWeek = city & "|" & Format$(wkStart, "yyyy-mm-dd")
+        
+                For idxDet = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+                    seedBB = dbgFramesDetail(idxDet)
+                    baseAvail = SafeArrGet(framesEndRaw, seedBB) + SafeArrGet(fsRaw, seedBB)
+                    Map_Set gPartnerAvail, seedKeyCityWeek & "|B" & CStr(seedBB), baseAvail
+                Next idxDet
+            End If
 
             If fsTotal <= 0# Then GoTo NextWeek  ' nothing to ship this week
             Dim backlogStartTotal As Double
@@ -1005,9 +1023,7 @@ Private Sub WriteDebug( _
         '=== Record partner availability for this city/week/box ===
         If Not gPartnerAvail Is Nothing Then
             Dim keyCityWeek As String
-            keyCityWeek = city & "|" & _
-                          Format$(wkStart, "yyyy-mm-dd") & "|" & _
-                          Format$(wkEnd, "yyyy-mm-dd")
+            keyCityWeek = city & "|" & Format$(wkStart, "yyyy-mm-dd")
 
             For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
                 bb = dbgFramesDetail(i)
@@ -1437,6 +1453,148 @@ Private Function BacklogForCity(ByVal carryRun As Object, ByVal city As String) 
 End Function
 
 '====================== PARTNER AVAILABILITY HELPERS ======================
+' Computes LOCAL backlog + sales for a city/week, and seeds gPartnerAvail.
+' Inputs:
+'   backlogStart   - backlog at start of week (capacity-only)
+'   framesRaw()    - fsRaw(), weekly frame sales per box
+'   framesEndRaw() - frame ending stock per box (can include negatives)
+' Outputs (ByRef):
+'   backlogEnd     - backlog after LOCAL has tried to serve backlog+sales
+'   localShip      - total shipped from LOCAL (backlog + new sales)
+'   availAfterSales() - array(1..MAX_BOX) of availability after LOCAL
+'
+Private Sub ComputeLocalForCityWeek( _
+    ByVal city As String, _
+    ByVal wkStart As Date, ByVal wkEnd As Date, _
+    ByVal backlogStart As Double, _
+    ByRef framesRaw() As Double, _
+    ByRef framesEndRaw() As Double, _
+    ByRef backlogEnd As Double, _
+    ByRef localShip As Double, _
+    ByRef availAfterSales() As Double)
+
+    Dim dbgFramesDetail As Variant
+    Dim nFrDet As Long
+    Dim i As Long, bb As Long
+    Dim share As Double
+
+    Dim avail() As Double
+    Dim needBacklog() As Double
+    Dim availAfterBacklog() As Double
+    Dim needSales() As Double
+
+    Dim canBacklog As Boolean
+    Dim canSales As Boolean
+    Dim fromLocalBacklog As Double
+    Dim fromLocalNewSales As Double
+    Dim fromLocalTotal As Double
+    Dim newSalesTotal As Double
+
+    dbgFramesDetail = DebugFramesDetailList()
+    nFrDet = UBound(dbgFramesDetail) - LBound(dbgFramesDetail) + 1
+
+    ' 1) Sum new sales over all boxes (same as in WriteDebug)
+    newSalesTotal = 0#
+    For i = LBound(DebugFramesRawList()) To UBound(DebugFramesRawList())
+        bb = DebugFramesRawList()(i)
+        newSalesTotal = newSalesTotal + SafeArrGet(framesRaw, bb)
+    Next i
+
+    ' 2) Build Avail = End + Raw for detail boxes
+    ReDim avail(1 To MAX_BOX)
+    For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        bb = dbgFramesDetail(i)
+        avail(bb) = SafeArrGet(framesEndRaw, bb) + SafeArrGet(framesRaw, bb)
+    Next i
+
+    ' 3) Backlog needed per box
+    ReDim needBacklog(1 To MAX_BOX)
+    For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        bb = dbgFramesDetail(i)
+        share = BoxShare(bb)
+        needBacklog(bb) = share * backlogStart
+    Next i
+
+    ' 4) All-or-nothing backlog gating
+    canBacklog = True
+    If backlogStart > 0 Then
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            If needBacklog(bb) > avail(bb) + 0.0000001 Then
+                canBacklog = False
+                Exit For
+            End If
+        Next i
+    End If
+
+    ReDim availAfterBacklog(1 To MAX_BOX)
+    If canBacklog And backlogStart > 0 Then
+        fromLocalBacklog = backlogStart
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            availAfterBacklog(bb) = avail(bb) - needBacklog(bb)
+        Next i
+    Else
+        fromLocalBacklog = 0#
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            availAfterBacklog(bb) = avail(bb)
+        Next i
+    End If
+
+    ' 5) Sales needed per box
+    ReDim needSales(1 To MAX_BOX)
+    For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+        bb = dbgFramesDetail(i)
+        share = BoxShare(bb)
+        needSales(bb) = share * newSalesTotal
+    Next i
+
+    ' 6) All-or-nothing sales gating on remaining stock
+    canSales = True
+    If newSalesTotal > 0# Then
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            If needSales(bb) > availAfterBacklog(bb) + 0.0000001 Then
+                canSales = False
+                Exit For
+            End If
+        Next i
+    End If
+
+    ReDim availAfterSales(1 To MAX_BOX)
+    If canSales And newSalesTotal > 0# Then
+        fromLocalNewSales = newSalesTotal
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            availAfterSales(bb) = availAfterBacklog(bb) - needSales(bb)
+        Next i
+    Else
+        fromLocalNewSales = 0#
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            availAfterSales(bb) = availAfterBacklog(bb)
+        Next i
+    End If
+
+    fromLocalTotal = fromLocalBacklog + fromLocalNewSales
+    localShip = fromLocalTotal
+
+    ' Backlog AFTER LOCAL but BEFORE partners
+    backlogEnd = (backlogStart + newSalesTotal) - fromLocalTotal
+    If backlogEnd < 0# Then backlogEnd = 0#
+
+    ' 7) Seed partner availability map from LOCAL availAfterSales
+    If Not gPartnerAvail Is Nothing Then
+        Dim keyCityWeek As String
+        keyCityWeek = city & "|" & Format$(wkStart, "yyyy-mm-dd")
+        For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
+            bb = dbgFramesDetail(i)
+            Map_Set gPartnerAvail, keyCityWeek & "|B" & CStr(bb), availAfterSales(bb)
+        Next i
+    End If
+
+End Sub
 
 Private Function PartnerAvailBox(ByVal partnerCity As String, _
                                  ByVal wkStart As Date, ByVal wkEnd As Date, _
@@ -1444,9 +1602,7 @@ Private Function PartnerAvailBox(ByVal partnerCity As String, _
     Dim keyCityWeek As String
     Dim keyBox As String
 
-    keyCityWeek = partnerCity & "|" & _
-                  Format$(wkStart, "yyyy-mm-dd") & "|" & _
-                  Format$(wkEnd, "yyyy-mm-dd")
+    keyCityWeek = partnerCity & "|" & Format$(wkStart, "yyyy-mm-dd")
     keyBox = keyCityWeek & "|B" & CStr(boxNum)
 
     PartnerAvailBox = CDbl(Map_Get(gPartnerAvail, keyBox, 0#))
@@ -1459,9 +1615,7 @@ Private Sub PartnerConsumeBox(ByVal partnerCity As String, _
     Dim keyBox As String
     Dim cur As Double
 
-    keyCityWeek = partnerCity & "|" & _
-                  Format$(wkStart, "yyyy-mm-dd") & "|" & _
-                  Format$(wkEnd, "yyyy-mm-dd")
+    keyCityWeek = partnerCity & "|" & Format$(wkStart, "yyyy-mm-dd")
     keyBox = keyCityWeek & "|B" & CStr(boxNum)
 
     cur = CDbl(Map_Get(gPartnerAvail, keyBox, 0#))
