@@ -12,7 +12,7 @@ Public Const BOX3_SHARE As Double = 0         ' Corner Base, ~40% (changeable)
 Public Const BOX4_SHARE As Double = 0.375        ' Armless Backrest, ~15% (changeable)
 Public Const BOX5_SHARE As Double = 0       ' Armless Seat, ~40% (changeable)
 Public Const BOX11_SHARE As Double = 0         ' Storage Corner Seat, ~40% (changeable)
-Public Const BOX12_SHARE As Double = 0         ' Storage Armless seat, ~15% (changeable)
+Public Const BOX12_SHARE As Double = 0         ' Storage Armless seat, ~15% (changeable)great
 Public Const BOX14_SHARE As Double = 0        ' Universal Arm, ~40% (changeable)
 
 ' Sales are NOT cumulative across columns
@@ -201,7 +201,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     '   Local_AvailBn_AfterNewSales (detail)                -> nFrDet
     '   Totals: TotalFrames_FromLocal, FramesShipTotal,
     '           P1 City, P2 City                            -> +4
-    ReDim hdrFrames(1 To 12 + nFrRaw + 6 * nFrDet + 10)
+    ReDim hdrFrames(1 To 12 + nFrRaw + 6 * nFrDet + 11)
     
     hdrFrames(1) = "City":       hdrFrames(2) = "Color"
     hdrFrames(3) = "Week Start": hdrFrames(4) = "Week End"
@@ -278,10 +278,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     Next iCol
     
     ' 12) Totals (frames only)
-    k = k + 1: hdrFrames(k) = "TotalFrames_FromLocal"
+    ' BoxesShipped = FromLocal_Backlog + FromLocal_NewSales (capacity-only)
+    k = k + 1: hdrFrames(k) = "BoxesShipped"
     k = k + 1: hdrFrames(k) = "FramesShipTotal"
     k = k + 1: hdrFrames(k) = "P1 City"
     k = k + 1: hdrFrames(k) = "P2 City"
+    k = k + 1: hdrFrames(k) = "Unfulfilled"
+
+
     
     wsDbgFrames.Cells(1, 1).Resize(1, UBound(hdrFrames)).Value = hdrFrames
 
@@ -441,33 +445,19 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
             
                 fsTotal = fsTotal + fsRaw(bSum)
             Next bSum
-            
+
             If fsTotal <= 0# Then GoTo NextWeek  ' nothing to ship this week
-            
-            ' Debug row for uncolored frame pool (no color split yet) ***
-            If WRITE_DEBUG Then
-                Dim backlogStartTotal As Double
-                Dim backlogTotalToShip As Double
+            Dim backlogStartTotal As Double
+            Dim framesShipTotalCity As Double
+            Dim boxesShippedCity As Double
+            Dim unfulfilledCity As Double
 
-                ' backlog at start of this week for this city (sum of all colors)
-                backlogStartTotal = BacklogForCity(carryRun, city)
-                backlogTotalToShip = backlogStartTotal + fsTotal   ' backlog + new sales
-
-                WriteDebug wsDbgFrames, dbgRowFrames, wsDbgCovers, dbgRowCovers, _
-                   city, "NONE", wkStart, wkEnd, c, _
-                   (passF_Reg Or passF_Sto), False, _
-                   "FramesPool", "All frames before color split", _
-                   0, fsTotal, 0, 0, _
-                   Empty, Empty, _
-                   fsRaw, Empty, _
-                   framesEndRaw, Empty, _
-                   0, WEIGHT_BOX, _
-                   backlogStartTotal, 0, _
-                   p1City, p2City
-
-            End If
+            ' Backlog at the start of this week for this city (capacity-only, from prior runs)
+            backlogStartTotal = BacklogForCity(carryRun, city)
+            framesShipTotalCity = 0#
 
 
+  
             ' ---- Allowed colors with positive weight on BOX 16 this week
             Dim colors As Collection: Set colors = ColorsFromBoxWeight(wsDC, coversSalesTbl, allowColors, WEIGHT_BOX, c)
             If colors Is Nothing Or colors.Count = 0 Then GoTo NextWeek
@@ -523,23 +513,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 Dim coversEndRaw() As Double
                 coversEndRaw = ReadRawForKey(wsDC, coversEndTbl, colorKeyNorm, c, True)   ' keepNegative:=True
 
-                '================ BACKLOG + NEW SALES (LOCAL ONLY) ================
+                '================ CAPACITY-ONLY NEW SALES (LOCAL ONLY) ================
                 Dim wantReg As Double, wantSto As Double
                 Dim salesTotal As Double           ' new sales for this color this week
-                Dim backlog As Double              ' carried from previous weeks
-                Dim totalToShip As Double          ' backlog + new sales
-                Dim carryKey As String
+                Dim totalToShip As Double          ' here: new sales only (no per-color backlog)
 
-                salesTotal = baseDem(x)    ' this is STILL "new sales" only
+                salesTotal = baseDem(x)            ' this is STILL "new sales" only
+                totalToShip = salesTotal           ' capacity logic will cap what actually ships
 
-                carryKey = MakeCarryKey(city, colorKeyNorm)
-                If Map_Exists(carryRun, carryKey) Then
-                    backlog = CDbl(Map_Get(carryRun, carryKey, 0#))
-                Else
-                    backlog = 0#
-                End If
-
-                totalToShip = backlog + salesTotal   ' full demand: backlog + new
 
                 ' If nothing to ship at all for this color, skip
                 If totalToShip <= 0# Then
@@ -620,14 +601,16 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     End If
                 End If
 
-                ' safety clamp vs TOTAL demand (backlog + new)
+                ' safety clamp vs demand (here: new sales only)
                 If framesShipTotal > totalToShip Then framesShipTotal = totalToShip
 
-                '================= UPDATE BACKLOG CARRY ==========================
-                Dim pendingThisWeek As Double
-                pendingThisWeek = totalToShip - framesShipTotal
-                If pendingThisWeek < 0# Then pendingThisWeek = 0#
-                Map_Set carryRun, carryKey, pendingThisWeek
+                ' Accumulate shipped frames for this city/week (for the NONE debug row)
+                If WRITE_DEBUG Then
+                    framesShipTotalCity = framesShipTotalCity + framesShipTotal
+                End If
+
+                ' (no per-color backlog; city-level capacity backlog is updated after all colors)
+
 
                 '================= OUTPUTS / DEBUG (UNCHANGED SEMANTIC) =========
                 ' We still record "Boxes Shipped" as framesShipTotal
@@ -653,6 +636,31 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
 NextColor:
             Next clr
+
+            ' After all colors are processed, write ONE frame-pool row (color = NONE)
+            ' and compute capacity-only BoxesShipped / Unfulfilled for backlog carryover.
+            If WRITE_DEBUG Then
+                WriteDebug wsDbgFrames, dbgRowFrames, wsDbgCovers, dbgRowCovers, _
+                    city, "NONE", wkStart, wkEnd, c, _
+                    (passF_Reg Or passF_Sto), False, _
+                    "FramesPool", "All frames before color split", _
+                    0, fsTotal, framesShipTotalCity, 0, _
+                    Empty, Empty, _
+                    fsRaw, Empty, _
+                    framesEndRaw, Empty, _
+                    0, WEIGHT_BOX, _
+                    backlogStartTotal, 0, _
+                    p1City, p2City, _
+                    boxesShippedCity, unfulfilledCity
+            Else
+                ' If you ever set WRITE_DEBUG = False, you may want a non-debug
+                ' version of the capacity-only logic here.
+                boxesShippedCity = 0#
+                unfulfilledCity = backlogStartTotal + fsTotal  ' fallback: nothing ships
+            End If
+
+            ' Carry Unfulfilled forward as next week's Backlog for this city
+            Map_Set carryRun, MakeCarryKey(city, "CAP"), unfulfilledCity
 
 NextWeek:
         Next c
@@ -699,7 +707,9 @@ Private Sub WriteDebug( _
     Optional ByVal backlogStart As Double = 0, _
     Optional ByVal backlogTotalToShip As Double = 0, _
     Optional ByVal p1City As String = "", _
-    Optional ByVal p2City As String = "")
+    Optional ByVal p2City As String = "", _
+    Optional ByRef outBoxesShipped As Double = 0, _
+    Optional ByRef outUnfulfilled As Double = 0)
 
     Dim dbgFramesRaw As Variant, dbgCoversRaw As Variant, dbgFramesDetail As Variant
     Dim nFrRaw As Long, nCovRaw As Long, nFrDet As Long
@@ -707,7 +717,7 @@ Private Sub WriteDebug( _
 
     dbgFramesRaw = DebugFramesRawList()       ' full list for RawFrames
     dbgCoversRaw = DebugCoversRawList()
-    dbgFramesDetail = DebugFramesDetailList() ' only B3, B5, B11, B12 for frame details
+    dbgFramesDetail = DebugFramesDetailList() ' only selected frame boxes for detail
 
     nFrRaw = UBound(dbgFramesRaw) - LBound(dbgFramesRaw) + 1
     nCovRaw = UBound(dbgCoversRaw) - LBound(dbgCoversRaw) + 1
@@ -723,28 +733,28 @@ Private Sub WriteDebug( _
         Dim wsOut As Worksheet
         Dim outRow As Long
         Dim share As Double
-    
+
         Dim newSalesTotal As Double
         Dim totalToShip As Double
-        Dim iBox As Long
-    
+        Dim unfulfilled As Double
+
         ' Arrays for per-box logic
         Dim avail() As Double                ' AvailStock Bn = End + Raw
         Dim needBacklog() As Double          ' Local_BacklogBn_Needed
         Dim availAfterBacklog() As Double    ' Local_AvailBn_AfterBacklog
         Dim needSales() As Double            ' Local_SalesBn_Needed
         Dim availAfterSales() As Double      ' Local_AvailBn_AfterNewSales
-    
+
         Dim canBacklog As Boolean
         Dim canSales As Boolean
         Dim fromLocalBacklog As Double
         Dim fromLocalNewSales As Double
         Dim fromLocalTotal As Double
         Dim totalFramesFromLocal As Double
-    
-        ' Size row to match the header
-        ReDim rowArr(1 To 12 + nFrRaw + 6 * nFrDet + 10)
-    
+
+        ' Size row to match the FRAMES debug header 
+        ReDim rowArr(1 To 12 + nFrRaw + 6 * nFrDet + 11)
+
         rowArr(1) = city
         rowArr(2) = color
         rowArr(3) = IIf(wkStart > 0, wkStart, vbNullString)
@@ -757,29 +767,29 @@ Private Sub WriteDebug( _
         rowArr(10) = groupChosen
         rowArr(11) = reason
         rowArr(12) = framesCapUsed
-    
+
         idx = 12
         newSalesTotal = 0
-    
+
         ' --- 1) Raw frame sales (all debug frames)
         For i = LBound(dbgFramesRaw) To UBound(dbgFramesRaw)
             bb = dbgFramesRaw(i)
             idx = idx + 1
-    
+
             Dim rawVal As Double
             rawVal = SafeArrGet(framesRaw, bb)
-    
+
             rowArr(idx) = rawVal
             newSalesTotal = newSalesTotal + rawVal
         Next i
-    
+
         ' --- 2) Ending frame stock (detail only)
         For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
             bb = dbgFramesDetail(i)
             idx = idx + 1
             rowArr(idx) = SafeArrGet(framesEndRaw, bb)
         Next i
-    
+
         ' --- 3) AvailStock Bn = End + Raw (detail)
         ReDim avail(1 To MAX_BOX)
         For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
@@ -788,19 +798,19 @@ Private Sub WriteDebug( _
             idx = idx + 1
             rowArr(idx) = avail(bb)
         Next i
-    
+
         ' --- 4) NewSalesTotal, Backlog, TotalToShip (scalars)
         totalToShip = backlogStart + newSalesTotal
-    
+
         idx = idx + 1
         rowArr(idx) = newSalesTotal          ' NewSalesTotal
-    
+
         idx = idx + 1
         rowArr(idx) = backlogStart           ' Backlog
-    
+
         idx = idx + 1
         rowArr(idx) = totalToShip            ' TotalToShip
-    
+
         ' --- 5) Local_BacklogBn_Needed = BoxShare * Backlog
         ReDim needBacklog(1 To MAX_BOX)
         For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
@@ -810,7 +820,7 @@ Private Sub WriteDebug( _
             idx = idx + 1
             rowArr(idx) = needBacklog(bb)
         Next i
-    
+
         ' --- 6) All-or-nothing backlog gating
         canBacklog = True
         If backlogStart > 0 Then
@@ -822,7 +832,7 @@ Private Sub WriteDebug( _
                 End If
             Next i
         End If
-    
+
         ReDim availAfterBacklog(1 To MAX_BOX)
         If canBacklog And backlogStart > 0 Then
             fromLocalBacklog = backlogStart
@@ -837,18 +847,18 @@ Private Sub WriteDebug( _
                 availAfterBacklog(bb) = avail(bb)
             Next i
         End If
-    
+
         ' Write FromLocal_Backlog scalar
         idx = idx + 1
         rowArr(idx) = fromLocalBacklog
-    
+
         ' --- 7) Local_AvailBn_AfterBacklog (detail)
         For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
             bb = dbgFramesDetail(i)
             idx = idx + 1
             rowArr(idx) = availAfterBacklog(bb)
         Next i
-    
+
         ' --- 8) Local_SalesBn_Needed = BoxShare * NewSalesTotal
         ReDim needSales(1 To MAX_BOX)
         For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
@@ -856,7 +866,7 @@ Private Sub WriteDebug( _
             share = BoxShare(bb)
             needSales(bb) = share * newSalesTotal
         Next i
-    
+
         ' --- 9) All-or-nothing new sales gating on remaining stock
         canSales = True
         If newSalesTotal > 0 Then
@@ -868,7 +878,7 @@ Private Sub WriteDebug( _
                 End If
             Next i
         End If
-    
+
         ReDim availAfterSales(1 To MAX_BOX)
         If canSales And newSalesTotal > 0 Then
             fromLocalNewSales = newSalesTotal
@@ -883,48 +893,60 @@ Private Sub WriteDebug( _
                 availAfterSales(bb) = availAfterBacklog(bb)
             Next i
         End If
-    
+
         fromLocalTotal = fromLocalBacklog + fromLocalNewSales
         totalFramesFromLocal = fromLocalTotal     ' for the TotalFrames_FromLocal column
-    
+
         ' --- 10) FromLocal_NewSales scalar
         idx = idx + 1
         rowArr(idx) = fromLocalNewSales
-    
-        ' --- 11) Local_SalesBn_Needed (detail) – write them now
+
+        ' --- 11) Local_SalesBn_Needed (detail)
         For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
             bb = dbgFramesDetail(i)
             idx = idx + 1
             rowArr(idx) = needSales(bb)
         Next i
-    
+
         ' --- 12) FromLocal_Total scalar
         idx = idx + 1
         rowArr(idx) = fromLocalTotal
-    
+
         ' --- 13) Local_AvailBn_AfterNewSales (detail)
         For i = LBound(dbgFramesDetail) To UBound(dbgFramesDetail)
             bb = dbgFramesDetail(i)
             idx = idx + 1
             rowArr(idx) = availAfterSales(bb)
         Next i
-    
+
         ' --- 14) Totals + Partners
+        
+        ' Capacity-based unfulfilled: backlog + new sales - TotalFrames_FromLocal
+        unfulfilled = totalToShip - totalFramesFromLocal
+        If unfulfilled < 0# Then unfulfilled = 0#
+                
         idx = idx + 1: rowArr(idx) = totalFramesFromLocal   ' TotalFrames_FromLocal
-        idx = idx + 1: rowArr(idx) = framesShipTotal        ' FramesShipTotal (for this row it's 0)
+        idx = idx + 1: rowArr(idx) = framesShipTotal        ' FramesShipTotal (sum over colors for this week)
         idx = idx + 1: rowArr(idx) = p1City                 ' P1 City
         idx = idx + 1: rowArr(idx) = p2City                 ' P2 City
-    
+        idx = idx + 1: rowArr(idx) = unfulfilled            ' Unfulfilled (becomes next week's backlog at city level)
+        
+        ' Feed back capacity-only totals to caller
+        outBoxesShipped = totalFramesFromLocal
+        outUnfulfilled = unfulfilled
+
+
         ' Write to FRAMES debug sheet
         Set wsOut = wsDbgFrames
         outRow = dbgRowFrames
         wsOut.Cells(outRow, 1).Resize(1, UBound(rowArr)).Value = rowArr
         dbgRowFrames = dbgRowFrames + 1
-    
-        Else
+
+    Else
         '================ COVERS ROW (real colors) =======================
+        ' ... (unchanged covers debug code you already have) ...
         ReDim rowArr(1 To 12 + 3 * nCovRaw + 4)
-    
+
         rowArr(1) = city
         rowArr(2) = color
         rowArr(3) = IIf(wkStart > 0, wkStart, vbNullString)
@@ -937,36 +959,36 @@ Private Sub WriteDebug( _
         rowArr(10) = groupChosen
         rowArr(11) = reason
         rowArr(12) = framesCapUsed
-    
+
         idx = 12
-    
+
         ' 1) Raw cover sales
         For i = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
             bb = dbgCoversRaw(i)
             idx = idx + 1
             rowArr(idx) = SafeArrGet(coversRaw, bb)
         Next i
-    
+
         ' 2) Ending cover stock
         For i = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
             bb = dbgCoversRaw(i)
             idx = idx + 1
             rowArr(idx) = SafeArrGet(coversEndRaw, bb)
         Next i
-    
+
         ' 3) AvailCovers = End + Raw
         For i = LBound(dbgCoversRaw) To UBound(dbgCoversRaw)
             bb = dbgCoversRaw(i)
             idx = idx + 1
             rowArr(idx) = SafeArrGet(coversEndRaw, bb) + SafeArrGet(coversRaw, bb)
         Next i
-    
+
         ' 4) Totals (covers view) + partners
         idx = idx + 1: rowArr(idx) = framesShipTotal
         idx = idx + 1: rowArr(idx) = coversShipTotal
         idx = idx + 1: rowArr(idx) = p1City      ' P1 City
         idx = idx + 1: rowArr(idx) = p2City      ' P2 City
-    
+
         ' Write to COVERS debug sheet
         wsDbgCovers.Cells(dbgRowCovers, 1).Resize(1, UBound(rowArr)).Value = rowArr
         dbgRowCovers = dbgRowCovers + 1
@@ -1019,20 +1041,12 @@ End Function
 
 ' Sum backlog across all colors for a given city (keys like "City|Color")
 Private Function BacklogForCity(ByVal carryRun As Object, ByVal city As String) As Double
-    Dim res As Double
-    Dim k As Variant
-
     If carryRun Is Nothing Then Exit Function
-    If carryRun.Count = 0 Then Exit Function
-
-    For Each k In carryRun.Keys
-        If Left$(CStr(k), Len(city) + 1) = city & "|" Then
-            res = res + CDbl(carryRun(k))
-        End If
-    Next k
-
-    BacklogForCity = res
+    BacklogForCity = CDbl(Map_Get(carryRun, MakeCarryKey(city, "CAP"), 0#))
 End Function
+
+
+'====================== CAPACITY-ONLY BACKLOG HELPERS =====================
 
 ' Find key index in a pre-allocated keys() array
 Private Function FindKeyIndex(ByRef keys() As String, ByVal cnt As Long, ByVal key As String) As Long
@@ -1074,6 +1088,7 @@ Private Sub UpdateOriginAgg(ByRef keys() As String, ByRef tot() As Double, _
         tot(idx) = tot(idx) + qty
     End If
 End Sub
+
 
 
 '=========================== BUILDERS =======================
