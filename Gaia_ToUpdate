@@ -16,6 +16,9 @@ Public Const BOX2_SHARE As Double = 0         ' Corner Seat, ~29% (changeable)
 Public Const BOX4_SHARE As Double = 0         ' Corner Backrest, ~29% (changeable)
 Public Const BOX5_SHARE As Double = 0.15         ' Backrest, ~15% (changeable)
 
+' PnP: average boxes per PnP order (changeable)
+Public Const PNP_BOX_ASSUMPTION As Double = 7
+
 ' ---------- Per-sheet weekly column spans (letters) ----------
 Public Const MTL_START_COL As String = "BB"   'Week of 2025-12-01
 Public Const MTL_END_COL   As String = "DH"
@@ -1749,10 +1752,13 @@ Private Sub CollapseDebugToFrames( _
     wsDest.Cells(1, 8).Value = "BoxesShipped"
     wsDest.Cells(1, 9).Value = "Unfulfilled"
     wsDest.Cells(1, 10).Value = "OutOfCityTotal"
+    wsDest.Cells(1, 11).Value = "PnP Boxes"                 
+    wsDest.Cells(1, 12).Value = "Adjusted_OutOfCityTotal"   
+
 
     ' If there are no data rows, we’re done
     If lastRow < 2 Then
-        wsDest.Columns("A:J").AutoFit
+        wsDest.Columns("A:L").AutoFit
         Exit Sub
     End If
 
@@ -1761,6 +1767,19 @@ Private Sub CollapseDebugToFrames( _
     For r = 2 To lastRow
         ' Optionally skip completely blank rows
         If Application.WorksheetFunction.CountA(wsSrc.Rows(r)) > 0 Then
+
+            Dim outOfCityVal As Double
+            Dim pnpBoxes As Double
+            Dim adjustedOut As Double
+
+            ' Read OutOfCityTotal from the Frames sheet
+            outOfCityVal = ValD(wsSrc.Cells(r, srcColOutOfCity).Value)
+
+            ' Compute PnP Boxes and Adjusted_OutOfCityTotal (ROW-BY-ROW, NOT CUMULATIVE)
+            pnpBoxes = outOfCityVal / PNP_BOX_ASSUMPTION
+            adjustedOut = outOfCityVal + pnpBoxes
+
+            ' Copy core fields
             wsDest.Cells(destRow, 1).Value = wsSrc.Cells(r, srcColDemandCity).Value
             wsDest.Cells(destRow, 2).Value = wsSrc.Cells(r, srcColColor).Value
             wsDest.Cells(destRow, 3).Value = wsSrc.Cells(r, srcColWeekStart).Value
@@ -1770,7 +1789,13 @@ Private Sub CollapseDebugToFrames( _
             wsDest.Cells(destRow, 7).Value = wsSrc.Cells(r, srcColNewSalesTotal).Value
             wsDest.Cells(destRow, 8).Value = wsSrc.Cells(r, srcColBoxesShipped).Value
             wsDest.Cells(destRow, 9).Value = wsSrc.Cells(r, srcColUnfulfilled).Value
-            wsDest.Cells(destRow, 10).Value = wsSrc.Cells(r, srcColOutOfCity).Value
+
+            ' Original OutOfCityTotal
+            wsDest.Cells(destRow, 10).Value = outOfCityVal
+
+            ' NEW: PnP Boxes & Adjusted_OutOfCityTotal
+            wsDest.Cells(destRow, 11).Value = pnpBoxes
+            wsDest.Cells(destRow, 12).Value = adjustedOut
 
             destRow = destRow + 1
         End If
@@ -1778,7 +1803,7 @@ Private Sub CollapseDebugToFrames( _
 
     ' Basic formatting
     With wsDest
-        .Columns("A:J").AutoFit
+        .Columns("A:L").AutoFit
         If destRow > 2 Then
             .Range("C2:D" & destRow - 1).NumberFormat = "yyyy-mm-dd"
         End If
