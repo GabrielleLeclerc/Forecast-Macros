@@ -1412,7 +1412,10 @@ NextSheet:
     With wsDbg
         .Columns("A:ZZ").AutoFit
         If dbgRow > 2 Then .Range("C2:D" & dbgRow - 1).NumberFormat = "yyyy-mm-dd"
-    End With
+     End With
+
+    ' NEW: build Boxes_Shipped_DEBUG_Frames containing only Color = "NONE"
+    BuildBoxesShippedFrames wb, DBG_SHEET, "Boxes_Shipped_DEBUG_Frames"
 
     MsgBox "Done. Start week: Dec 1st 2025.", vbInformation
 
@@ -1421,6 +1424,7 @@ cleanup:
     Application.EnableEvents = prevEvt
     Application.ScreenUpdating = prevScr
 End Sub
+
 '============================================================
 '======================= CARRYOVER HELPERS ============================
 Private Function EnsureCarrySheet(wb As Workbook) As Worksheet
@@ -1630,6 +1634,43 @@ Private Function EnsureOutputSheet(wb As Workbook, ByVal name As String) As Work
         EnsureOutputSheet.Name = name
     End If
 End Function
+
+Private Sub BuildBoxesShippedFrames(wb As Workbook, _
+                                    ByVal srcSheetName As String, _
+                                    ByVal destSheetName As String)
+    Dim wsSrc As Worksheet
+    Dim wsDest As Worksheet
+    Dim lastRow As Long
+    Dim r As Long
+    Dim outRow As Long
+    Dim colorVal As String
+    
+    ' Source = Boxes_Shipped_DEBUG
+    Set wsSrc = wb.Worksheets(srcSheetName)
+    
+    ' Destination = Boxes_Shipped_DEBUG_Frames (create if needed)
+    Set wsDest = EnsureOutputSheet(wb, destSheetName)
+    wsDest.Cells.Clear
+    
+    ' Copy header row
+    wsSrc.Rows(1).Copy Destination:=wsDest.Rows(1)
+    
+    ' Find last row on the debug sheet (use column A)
+    lastRow = wsSrc.Cells(wsSrc.Rows.Count, "A").End(xlUp).Row
+    
+    outRow = 2
+    For r = 2 To lastRow
+        colorVal = UCase$(Trim$(CStr(wsSrc.Cells(r, 2).Value))) ' column B = Color
+        If colorVal = "NONE" Then
+            wsSrc.Rows(r).Copy Destination:=wsDest.Rows(outRow)
+            outRow = outRow + 1
+        End If
+    Next r
+    
+    ' Quick format
+    wsDest.Columns("A:ZZ").AutoFit
+End Sub
+
 
 Private Function SheetExists(ByVal name As String) As Boolean
     On Error Resume Next
