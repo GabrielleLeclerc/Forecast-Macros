@@ -7,26 +7,26 @@ Public Const IGNORE_MISSING_BOX_ROWS As Boolean = True
 Public Const WRITE_DEBUG As Boolean = True
 
 ' How many boxes do you have total?
-Public Const MAX_BOX As Long = 12                  ' Adjust as needed
+Public Const MAX_BOX As Long = 8                  ' Adjust as needed
 
 'Assuming the average order is a 3-seater sofa. 7 boxes total, 1 box of armless seat, 2 boxes of corner seat, 2 boxes of corner backrest, 1 backrest box
 'Share of new sales/backlog assumed to be Box 1, Box 2, Box 4, and Box 5
-Public Const BOX1_SHARE As Double = 0.4         ' Armless Seat, ~40% (changeable)
-Public Const BOX2_SHARE As Double = 0         ' Corner Seat, ~40% (changeable)
-Public Const BOX4_SHARE As Double = 0         ' Corner Backrest, ~15% (changeable)
-Public Const BOX5_SHARE As Double = 0         ' Backrest, ~15% (changeable)
+Public Const BOX1_SHARE As Double = 0.15         ' Armless Seat, ~15% (changeable)
+Public Const BOX2_SHARE As Double = 0         ' Corner Seat, ~29% (changeable)
+Public Const BOX4_SHARE As Double = 0         ' Corner Backrest, ~29% (changeable)
+Public Const BOX5_SHARE As Double = 0.15         ' Backrest, ~15% (changeable)
 
 ' ---------- Per-sheet weekly column spans (letters) ----------
-Public Const MTL_START_COL As String = "CF"   'Week of 2025-12-08
-Public Const MTL_END_COL   As String = "EL"
-Public Const TO_START_COL  As String = "CE"   'Week of 2025-12-08
-Public Const TO_END_COL    As String = "EJ"
-Public Const VAN_START_COL As String = "CF"   'Week of 2025-12-08
-Public Const VAN_END_COL   As String = "EO"
-Public Const DAY_START_COL As String = "CH"   'Week of 2025-12-08
-Public Const DAY_END_COL   As String = "EU"
-Public Const MOR_START_COL As String = "CH"   'Week of 2025-12-08
-Public Const MOR_END_COL   As String = "EN"
+Public Const MTL_START_COL As String = "BB"   'Week of 2025-12-01
+Public Const MTL_END_COL   As String = "DH"
+Public Const TO_START_COL  As String = "BB"   'Week of 2025-12-01
+Public Const TO_END_COL    As String = "DH"
+Public Const VAN_START_COL As String = "BB"   'Week of 2025-12-01
+Public Const VAN_END_COL   As String = "DG"
+Public Const DAY_START_COL As String = "BB"   'Week of 2025-12-01
+Public Const DAY_END_COL   As String = "DI"
+Public Const MOR_START_COL As String = "BB"   'Week of 2025-12-01
+Public Const MOR_END_COL   As String = "DI"
 Private Const CARRY_SHEET As String = "Boxes_Shipped_CARRY" ' Persist previous run's pending here
 
 '============================================================
@@ -1414,7 +1414,7 @@ NextSheet:
         If dbgRow > 2 Then .Range("C2:D" & dbgRow - 1).NumberFormat = "yyyy-mm-dd"
     End With
 
-    MsgBox "Done. Start week: Dec 8th 2025.", vbInformation
+    MsgBox "Done. Start week: Dec 1st 2025.", vbInformation
 
 cleanup:
     Application.Calculation = prevCalc
