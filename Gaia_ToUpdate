@@ -12,8 +12,8 @@ Public Const MAX_BOX As Long = 8                  ' Adjust as needed
 'Assuming the average order is a 3-seater sofa. 7 boxes total, 1 box of armless seat, 2 boxes of corner seat, 2 boxes of corner backrest, 1 backrest box
 'Share of new sales/backlog assumed to be Box 1, Box 2, Box 4, and Box 5
 Public Const BOX1_SHARE As Double = 0.15         ' Armless Seat, ~15% (changeable)
-Public Const BOX2_SHARE As Double = 0         ' Corner Seat, ~29% (changeable)
-Public Const BOX4_SHARE As Double = 0         ' Corner Backrest, ~29% (changeable)
+Public Const BOX2_SHARE As Double = 0            ' Corner Seat, ~29% (changeable)
+Public Const BOX4_SHARE As Double = 0            ' Corner Backrest, ~29% (changeable)
 Public Const BOX5_SHARE As Double = 0.15         ' Backrest, ~15% (changeable)
 
 ' PnP: average boxes per PnP order (changeable)
