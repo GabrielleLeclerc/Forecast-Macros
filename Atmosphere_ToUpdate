@@ -386,8 +386,22 @@ NextSheet:
         .Range("C2:D" & .Cells(.Rows.Count, "A").End(xlUp).Row).NumberFormat = "yyyy-mm-dd"
     End With
 
+    ' Hide debug helper sheets if they exist
+    If SheetExists("Boxes_Shipped_DEBUG_COVERS") Then
+        ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG_COVERS").Visible = xlSheetHidden
+        ' or xlSheetVeryHidden if you want it only accessible via VBA
+        ' ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG_COVERS").Visible = xlSheetVeryHidden
+    End If
+
+    If SheetExists("Boxes_Shipped_DEBUG_FRAMES") Then
+        ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG_FRAMES").Visible = xlSheetHidden
+        ' or:
+        ' ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG_FRAMES").Visible = xlSheetVeryHidden
+    End If
+
     MsgBox "Done. See 'Boxes_Shipped' and 'Boxes_Shipped_DEBUG'.", vbInformation
 End Sub
+
 
 ' helper to write one debug row
 Private Sub WriteDebug(wsDbg As Worksheet, ByRef dbgRow As Long, _
