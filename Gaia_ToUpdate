@@ -345,7 +345,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         If cStart <= 0 Or cEnd < cStart Then GoTo NextSheet
 
         ' Sections
-        Dim salesTbl As Variant, gateTbl As Variant, begTbl As Variant
+        Dim salesTbl As Variant, gateTbl As Variant, begTbl As Variant, inboundTbl as Variant
         salesTbl = BuildSectionTable_Block(wsDC, "Sales")
         begTbl   = BuildSectionTable_Block(wsDC, "Beginning Stock")
         inboundTbl = BuildSectionTable_Block(wsDC, "POs to be received")
