@@ -1330,7 +1330,7 @@ NextSheet:
         If dbgRow > 2 Then .Range("C2:D" & dbgRow - 1).NumberFormat = "yyyy-mm-dd"
      End With
 
-    ' NEW: build Boxes_Shipped_DEBUG_Frames containing only Color = "NONE"
+    ' NEW: build Boxes_Shipped_DEBUG_Frames containing only Color <> "NONE"
     BuildBoxesShippedFrames wb, DBG_SHEET, "Boxes_Shipped_DEBUG_Frames"
 
     ' NEW: Step 3 – collapse DEBUG to only the key columns from the Frames sheet
@@ -1566,7 +1566,11 @@ Private Sub BuildBoxesShippedFrames(wb As Workbook, _
     Dim lastRow As Long
     Dim r As Long
     Dim outRow As Long
+    
     Dim colorVal As String
+    Dim srcColColor As Long
+    Dim colorKey As String
+
     
     ' Source = Boxes_Shipped_DEBUG
     Set wsSrc = wb.Worksheets(srcSheetName)
@@ -1577,14 +1581,23 @@ Private Sub BuildBoxesShippedFrames(wb As Workbook, _
     
     ' Copy header row
     wsSrc.Rows(1).Copy Destination:=wsDest.Rows(1)
+
+    ' Find the Color column (by header text)
+    srcColColor = FindHeaderColumn(wsSrc, "Color")
+    If srcColColor = 0 Then Exit Sub
+
     
     ' Find last row on the debug sheet (use column A)
     lastRow = wsSrc.Cells(wsSrc.Rows.Count, "A").End(xlUp).Row
     
     outRow = 2
     For r = 2 To lastRow
-        colorVal = UCase$(Trim$(CStr(wsSrc.Cells(r, 2).Value))) ' column B = Color
-        If colorVal = "NONE" Then
+        ' Read and normalize the Color value for this row
+        colorVal = CStr(wsSrc.Cells(r, srcColColor).Value)
+        colorKey = NormalizeColor(colorVal)
+    
+        ' Keep ONLY rows where Color is NOT "NONE"
+        If colorKey <> "NONE" Then
             wsSrc.Rows(r).Copy Destination:=wsDest.Rows(outRow)
             outRow = outRow + 1
         End If
