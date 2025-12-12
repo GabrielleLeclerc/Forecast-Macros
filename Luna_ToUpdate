@@ -1226,7 +1226,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 idx = idx + 1: rowArr(idx) = fromLocal_NewSales
                 idx = idx + 1: rowArr(idx) = Local_SalesB1_Needed
                 idx = idx + 1: rowArr(idx) = Local_SalesB2_Needed
-                idx = idx + 1: rowArr(idx) = Local_SalesB3Needed
+                idx = idx + 1: rowArr(idx) = Local_SalesB3_Needed
                 idx = idx + 1: rowArr(idx) = fromLocal_Total
                 idx = idx + 1: rowArr(idx) = Local_AvailB1_AfterNewSales
                 idx = idx + 1: rowArr(idx) = Local_AvailB2_AfterNewSales
