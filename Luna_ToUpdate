@@ -1337,7 +1337,7 @@ NextSheet:
     CollapseDebugToFrames wb, DBG_SHEET, "Boxes_Shipped_DEBUG_Frames"
 
     ' Hide the Frames sheet from view
-    'ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG_Frames").Visible = xlSheetHidden
+    ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG_Frames").Visible = xlSheetHidden
 
     MsgBox "Done. Start week: Dec 1st 2025.", vbInformation
 
