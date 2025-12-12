@@ -880,6 +880,16 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 For bb = 1 To MAX_BOX
                     idx = idx + 1: rowArr(idx) = raw(bb)
                 Next bb
+
+                ' Inbound B1..B12
+                For bb = 1 To MAX_BOX
+                    idx = idx + 1: rowArr(idx) = inbound(bb)
+                Next bb
+                
+                ' Beginning B1..B12
+                For bb = 1 To MAX_BOX
+                    idx = idx + 1: rowArr(idx) = beginning(bb)
+                Next bb
                 
                 ' EligLocal B1..B12
                 For bb = 1 To MAX_BOX
