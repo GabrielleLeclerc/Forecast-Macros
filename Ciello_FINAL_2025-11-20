@@ -904,9 +904,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     rowArr(idx) = endStock(bb)
                 Next bb
                 
-                ' AvailableStockB = EndStockB + RawB   (local only, for all boxes)
+                ' AvailableStockB = Beginning Stock + Inbound   (local only, for all boxes)
                 For bb = 1 To MAX_BOX
-                    availStock(bb) = endStock(bb) + raw(bb)
+                    availStock(bb) = beginning(bb) + inbound(bb)
                 Next bb
                 
                 ' NEW: write AvailStock B1..B3 to debug
