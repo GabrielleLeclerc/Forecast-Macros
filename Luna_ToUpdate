@@ -197,6 +197,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "Raw B" & iCol
     Next iCol
+
+    For iCol = 1 To MAX_BOX
+        k = k + 1: hdr(k) = "Inbound B" & iCol
+    Next iCol
+
+    For iCol = 1 To MAX_BOX
+        k = k + 1: hdr(k) = "Beginning B" & iCol
+    Next iCol
     
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "EligLocal B" & iCol
@@ -319,9 +327,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         If cStart <= 0 Or cEnd < cStart Then GoTo NextSheet
 
         ' Sections
-        Dim salesTbl As Variant, gateTbl As Variant, begTbl As Variant
+        Dim salesTbl As Variant, gateTbl As Variant, begTbl As Variant, inboundTbl As Variant
         salesTbl = BuildSectionTable_Block(wsDC, "Sales")
         begTbl   = BuildSectionTable_Block(wsDC, "Beginning Stock")
+        inboundTbl = BuildSectionTable_Block(wsDC, "POs to be received")
 
         Select Case UCase$(GATE_BY)
             Case "ENDING":    gateTbl = BuildSectionTable_Block(wsDC, "Ending Stock")
@@ -388,6 +397,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                 ReDim raw(1 To MAX_BOX)
                 ReDim eligLocal(1 To MAX_BOX)
+                Dim inbound() As Double
+                ReDim inbound(1 To MAX_BOX)
+                Dim beginning() As Double
+                ReDim beginning(1 To MAX_BOX)
 
                 ' NEW: P1 numeric Box 1–based gating debug
                 Dim p1BacklogB1Needed As Double
@@ -541,6 +554,24 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                         If v > 0 Then raw(b) = v
                     End If
                     
+                Next b
+
+                ' ---- Inbound (POs to be received) ----
+                For b = 1 To MAX_BOX
+                    rr = RowForInTable(inboundTbl, colorKey, b)
+                    If rr > 0 Then
+                        v = ValD(wsDC.Cells(rr, c).Value)
+                        If v > 0 Then inbound(b) = v
+                    End If
+                Next b
+
+                ' ---- Beginning Stock ----
+                For b = 1 To MAX_BOX
+                    rr = RowForInTable(begTbl, colorKey, b)
+                    If rr > 0 Then
+                        v = ValD(wsDC.Cells(rr, c).Value)
+                        If v > 0 Then beginning(b) = v
+                    End If
                 Next b
                 
                 ' SalesTotal_New = simple row-only sum of Raw B1..B12
@@ -751,7 +782,17 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                 For bb = 1 To MAX_BOX
                     idx = idx + 1: rowArr(idx) = raw(bb)
                 Next bb
-                
+
+                ' Inbound B1..B8
+                For bb = 1 To MAX_BOX
+                    idx = idx + 1: rowArr(idx) = inbound(bb)
+                Next bb
+
+                ' Beginning B1..B8
+                For bb = 1 To MAX_BOX
+                    idx = idx + 1: rowArr(idx) = beginning(bb)
+                Next bb
+
                 ' EligLocal B1..B12
                 For bb = 1 To MAX_BOX
                     idx = idx + 1: rowArr(idx) = eligLocal(bb)
@@ -775,9 +816,9 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     rowArr(idx) = endStock(bb)
                 Next bb
                 
-                ' AvailableStockB = EndStockB + RawB   (local only, for all boxes)
+                ' AvailableStockB = Beginning Stock + Inbound Stock   (local only, for all boxes)
                 For bb = 1 To MAX_BOX
-                    availStock(bb) = endStock(bb) + raw(bb)
+                    availStock(bb) = beginning(bb) + inbound(bb)
                 Next bb
                 
                 ' NEW: write AvailStock B1..B3 to debug
