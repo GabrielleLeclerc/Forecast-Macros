@@ -23,15 +23,15 @@ Public Const BOX10_SHARE As Double = 0         ' HA Seat, ~40% (changeable)
 
 ' ---------- Per-sheet weekly column spans (letters) ----------
 ' Edit these if your weekly blocks move
-Public Const MTL_START_COL As String = "DZ"  'Week of November 10th
+Public Const MTL_START_COL As String = "ED"  'Week of Dec 8th 2025
 Public Const MTL_END_COL   As String = "GH"
-Public Const TO_START_COL  As String = "CY"  'Week of November 10th
+Public Const TO_START_COL  As String = "DC"  'Week of Dec 8th 2025
 Public Const TO_END_COL    As String = "FG"
-Public Const VAN_START_COL As String = "EA"  'Week of November 10th
+Public Const VAN_START_COL As String = "EE"  'Week of Dec 8th 2025
 Public Const VAN_END_COL   As String = "GN"
-Public Const IRN_START_COL As String = "CE"  'Week of November 10th
+Public Const IRN_START_COL As String = "CI"  'Week of Dec 8th 2025
 Public Const IRN_END_COL   As String = "EN"
-Public Const MOR_START_COL As String = "CN"  'Week of November 10th
+Public Const MOR_START_COL As String = "CR"  'Week of Dec 8th 2025
 Public Const MOR_END_COL   As String = "EY"
 Private Const CARRY_SHEET As String = "Boxes_Shipped_CARRY" ' Persist previous run's pending here
 
@@ -189,7 +189,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
     ' Header: Demand view + inbound breakdown + ONE outbound total on SAME ROW
     Dim hdr() As Variant, k As Long, iCol As Long
-    ReDim hdr(1 To 12 + 8 * MAX_BOX + 30)
+    ReDim hdr(1 To 200)
 
     hdr(1) = "Demand City"
     hdr(2) = "Color"
@@ -204,6 +204,14 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
     k = 8
     For iCol = 1 To MAX_BOX
         k = k + 1: hdr(k) = "Raw B" & iCol
+    Next iCol
+
+    For iCol = 1 To MAX_BOX
+        k = k + 1: hdr(k) = "Inbound B" & iCol
+    Next iCol
+
+    For iCol = 1 To MAX_BOX
+        k = k + 1: hdr(k) = "Beginning B" & iCol
     Next iCol
     
     For iCol = 1 To MAX_BOX
@@ -362,9 +370,10 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
         If cStart <= 0 Or cEnd < cStart Then GoTo NextSheet
 
         ' Sections
-        Dim salesTbl As Variant, gateTbl As Variant, begTbl As Variant
+        Dim salesTbl As Variant, gateTbl As Variant, begTbl As Variant, inboundTbl As Variant
         salesTbl = BuildSectionTable_Block(wsDC, "Sales")
         begTbl = BuildSectionTable_Block(wsDC, "Beginning Stock")
+        inboundTbl = BuildSectionTable_Block(wsDC, "POs to be received")
 
         Select Case UCase$(GATE_BY)
             Case "ENDING":    gateTbl = BuildSectionTable_Block(wsDC, "Ending Stock")
@@ -431,6 +440,11 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
 
                 ReDim raw(1 To MAX_BOX)
                 ReDim eligLocal(1 To MAX_BOX)
+                Dim inbound() As Double
+                ReDim inbound(1 To MAX_BOX)
+                Dim beginning() As Double
+                ReDim beginning(1 To MAX_BOX)
+
 
                 ' NEW: P1 numeric Box 1–based gating debug
                 Dim p1BacklogB1Needed As Double
@@ -626,6 +640,25 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     End If
                     
                 Next b
+
+                ' ---- Inbound (POs to be received) ----
+                For b = 1 To MAX_BOX
+                    rr = RowForInTable(inboundTbl, colorKey, b)
+                    If rr > 0 Then
+                        v = ValD(wsDC.Cells(rr, c).Value)
+                        If v > 0 Then inbound(b) = v
+                    End If
+                Next b
+                
+                ' ---- Beginning Stock ----
+                For b = 1 To MAX_BOX
+                    rr = RowForInTable(begTbl, colorKey, b)
+                    If rr > 0 Then
+                        v = ValD(wsDC.Cells(rr, c).Value)
+                        If v > 0 Then beginning(b) = v
+                    End If
+                Next b
+
                 
                 ' SalesTotal_New = simple row-only sum of Raw B1..B12
                 Dim rawSum As Double
@@ -1534,7 +1567,7 @@ NextSheet:
         If dbgRow > 2 Then .Range("C2:D" & dbgRow - 1).NumberFormat = "yyyy-mm-dd"
     End With
 
-    MsgBox "Done. Start week: Nov 10th 2025.", vbInformation
+    MsgBox "Done. Start week: Dec 8th 2025.", vbInformation
 
 cleanup:
     Application.Calculation = prevCalc
@@ -2014,6 +2047,3 @@ Private Function GetArrayBounds(ByVal arr As Variant, ByRef lb As Long, ByRef ub
     On Error GoTo 0
 End Function
 '============================================================
-
-
-
