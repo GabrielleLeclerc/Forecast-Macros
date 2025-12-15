@@ -16,15 +16,15 @@ Public Const BOX3_SHARE As Double = 0.75         ' Seats, ~75% (changeable)
 
 ' ---------- Per-sheet weekly column spans (letters) ----------
 Public Const MTL_START_COL As String = "ET"   'Week of 2025-12-01
-Public Const MTL_END_COL   As String = "EL"
+Public Const MTL_END_COL   As String = "HE"
 Public Const TO_START_COL  As String = "CW"   'Week of 2025-12-01
-Public Const TO_END_COL    As String = "EJ"
+Public Const TO_END_COL    As String = "FH"
 Public Const VAN_START_COL As String = "FM"   'Week of 2025-12-01
-Public Const VAN_END_COL   As String = "EO"
+Public Const VAN_END_COL   As String = "HZ"
 Public Const DAY_START_COL As String = "CH"   'Week of 2025-12-01
-Public Const DAY_END_COL   As String = "EU"
+Public Const DAY_END_COL   As String = "EM"
 Public Const MOR_START_COL As String = "CT"   'Week of 2025-12-01
-Public Const MOR_END_COL   As String = "EN"
+Public Const MOR_END_COL   As String = "EY"
 Private Const CARRY_SHEET As String = "Boxes_Shipped_CARRY" ' Persist previous run's pending here
 
 '============================================================
@@ -549,7 +549,7 @@ Public Sub BuildWeeklyBoxesShipped_ColsOnly()
                     rawSum = rawSum + raw(b)
                 Next b
                 salesTotalNew = rawSum
-                If salesTotalNew <= 0 Then GoTo NextColor
+                'If salesTotalNew <= 0 Then GoTo NextColor
 
                 ' ---- Local gating ----
                 Dim corePass As Boolean, reason As String
