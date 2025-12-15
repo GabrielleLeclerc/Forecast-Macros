@@ -11,7 +11,7 @@ Public Const MAX_BOX As Long = 12                  ' Adjust as needed
 
 'Assuming the average order is a 3-seater sofa. 4 boxes total, 1 box of original arms, 3 boxes of seats
 'Share of new sales/backlog assumed to be Box 1, Box 2, and Box 3
-Public Const BOX1_SHARE As Double = 0.25         ' Original arms, ~25% (changeable)
+Public Const BOX1_SHARE As Double = 0         ' Original arms, ~25% (changeable)
 Public Const BOX3_SHARE As Double = 0.75         ' Seats, ~75% (changeable)
 
 ' ---------- Per-sheet weekly column spans (letters) ----------
