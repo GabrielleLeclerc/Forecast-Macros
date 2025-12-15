@@ -1,0 +1,669 @@
+Option Explicit
+
+'========================= SETTINGS =========================
+Public Const GATE_BY As String = "ENDING"          ' "ENDING" | "BEGINNING" | "EXISTING"
+Public Const EPS_NEG As Double = 0                 ' Any value < EPS_NEG fails (0 = strictly negative fails)
+Public Const IGNORE_MISSING_BOX_ROWS As Boolean = True
+Public Const WRITE_DEBUG As Boolean = True
+Public Const SHOW_ZERO_ELIG_ROWS As Boolean = True
+
+Public Const MAX_BOX As Long = 12                  ' Envelope (we only use the numbers we reference)
+
+' ---------- Per-sheet weekly column spans (letters) ----------
+' Altus mapping you provided:
+' Montreal: EC–HE, Toronto: CF–FH, Vancouver: EV–HZ, Ironlink: BQ–EM, Moreno: CC–EY
+Public Const MTL_START_COL As String = "EC"
+Public Const MTL_END_COL   As String = "HE"
+Public Const TO_START_COL  As String = "CF"
+Public Const TO_END_COL    As String = "FH"
+Public Const VAN_START_COL As String = "EV"
+Public Const VAN_END_COL   As String = "HZ"
+Public Const IRN_START_COL As String = "BQ"
+Public Const IRN_END_COL   As String = "EM"
+Public Const MOR_START_COL As String = "CC"
+Public Const MOR_END_COL   As String = "EY"
+
+' ---------- Altus groups ----------
+Private Function CoreGroup() As Variant
+    CoreGroup = VBA.Array(1, 3, 5, 6)
+End Function
+
+Private Function AddOnBoxes() As Variant
+    AddOnBoxes = VBA.Array(4, 7, 8)
+End Function
+
+' DC partner priority
+Private Function PartnersFor(ByVal sheetName As String) As Variant
+    Select Case sheetName
+        Case "Altus-Montreal":  PartnersFor = VBA.Array("Altus-Toronto", "Altus-Vancouver")
+        Case "Altus-Toronto":   PartnersFor = VBA.Array("Altus-Montreal", "Altus-Vancouver")
+        Case "Altus-Vancouver": PartnersFor = VBA.Array("Altus-Montreal", "Altus-Toronto")
+        Case "Altus-Ironlink":  PartnersFor = VBA.Array("Altus-Moreno")
+        Case "Altus-Moreno":    PartnersFor = VBA.Array("Altus-Ironlink")
+        Case Else:              PartnersFor = VBA.Array()
+    End Select
+End Function
+'============================================================
+
+
+'========================= ENTRY ============================
+Public Sub BuildWeeklyBoxesShipped_ColsOnly()
+    Const OUT_SHIP As String = "Boxes_Shipped"      ' partner-credited shipments
+    Const OUT_ELIG As String = "Boxes_Eligible"     ' per-DC eligible totals
+    Const DBG_SHEET As String = "Boxes_Shipped_DEBUG"
+
+    Dim dcSheets As Variant, dcNames As Variant
+    dcSheets = VBA.Array("Altus-Montreal", "Altus-Toronto", "Altus-Vancouver", "Altus-Ironlink", "Altus-Moreno")
+    dcNames = VBA.Array("Montreal", "Toronto", "Vancouver", "Ironlink", "Moreno")
+
+    Dim wb As Workbook: Set wb = ThisWorkbook
+
+    ' --- SPEED TOGGLES (no logic change) ---
+    Dim prevCalc As XlCalculation, prevScr As Boolean, prevEvt As Boolean
+    prevScr = Application.ScreenUpdating: Application.ScreenUpdating = False
+    prevEvt = Application.EnableEvents:   Application.EnableEvents = False
+    prevCalc = Application.Calculation:   Application.Calculation = xlCalculationManual
+    On Error GoTo CleanUp
+
+    ' Output: shipments
+    Dim wsShip As Worksheet: Set wsShip = EnsureOutputSheet(wb, OUT_SHIP)
+    wsShip.Cells.Clear
+    wsShip.Range("A1:E1").Value = VBA.Array("City", "Color", "Week Start", "Week End", "Boxes Shipped")
+    Dim shipRow As Long: shipRow = 2
+
+    ' Output: eligibles (per-DC)
+    Dim wsElig As Worksheet: Set wsElig = EnsureOutputSheet(wb, OUT_ELIG)
+    wsElig.Cells.Clear
+    wsElig.Range("A1:F1").Value = VBA.Array("City", "Color", "Week Start", "Week End", "EligTotal", "CorePass")
+    Dim eligRow As Long: eligRow = 2
+
+    ' Debug
+    Dim wsDbg As Worksheet, dbgRow As Long
+    If WRITE_DEBUG Then
+        Set wsDbg = EnsureOutputSheet(wb, DBG_SHEET)
+        wsDbg.Cells.Clear
+
+        ' -------- DEBUG header ----------
+        Dim hdr() As Variant, k As Long, iCol As Long
+        ReDim hdr(1 To 12 + 4 * MAX_BOX)
+
+        hdr(1) = "City": hdr(2) = "Color": hdr(3) = "Week Start": hdr(4) = "Week End"
+        hdr(5) = "Col":  hdr(6) = "GateBy": hdr(7) = "CorePass": hdr(8) = "Reason"
+        hdr(9) = "PartnerUsed": hdr(10) = "PartnerName"
+        k = 10
+
+        For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "Gate B" & iCol: Next iCol
+        For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "Allowed B" & iCol: Next iCol
+        For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "Raw B" & iCol: Next iCol
+        For iCol = 1 To MAX_BOX: k = k + 1: hdr(k) = "Elig B" & iCol: Next iCol
+        k = k + 1: hdr(k) = "SalesTotal"
+        k = k + 1: hdr(k) = "EligTotal"
+
+        wsDbg.Cells(1, 1).Resize(1, UBound(hdr)).Value = hdr
+        dbgRow = 2
+    End If
+
+    ' Precompute once: Core + AddOns list (used many times)
+    Dim corePlusAdd As Variant
+    corePlusAdd = UnionBoxList(CoreGroup, AddOnBoxes)
+
+    Dim i As Long, p As Long
+    For i = LBound(dcSheets) To UBound(dcSheets)
+
+        Dim citySheet As String: citySheet = CStr(dcSheets(i))
+        Dim cityName  As String: cityName = CStr(dcNames(i))
+        If Not SheetExists(citySheet) Then GoTo NextSheet
+
+        Dim wsDC As Worksheet: Set wsDC = wb.Worksheets(citySheet)
+
+        ' Weekly span
+        Dim cStart As Long, cEnd As Long
+        GetFixedSpan citySheet, cStart, cEnd
+        If cStart <= 0 Or cEnd < cStart Then GoTo NextSheet
+
+        ' Section maps (C header / D desc / E color)
+        Dim salesTbl As Variant, gateTbl As Variant, begTbl As Variant
+        salesTbl = BuildSectionTable_Block(wsDC, "Sales")
+        begTbl = BuildSectionTable_Block(wsDC, "Beginning Stock")
+        Select Case UCase$(GATE_BY)
+            Case "ENDING":    gateTbl = BuildSectionTable_Block(wsDC, "Ending Stock")
+            Case "BEGINNING": gateTbl = begTbl
+            Case "EXISTING":  gateTbl = BuildSectionTable_Block(wsDC, "Existing")
+            Case Else:        gateTbl = BuildSectionTable_Block(wsDC, "Ending Stock")
+        End Select
+
+        Dim colors As Collection: Set colors = UnionColors(salesTbl, gateTbl, begTbl)
+        If colors Is Nothing Or colors.Count = 0 Then GoTo NextSheet
+
+        ' Partners cache
+        Dim partNames As Variant, hasPartners As Boolean, pLB As Long, pUB As Long
+        partNames = PartnersFor(citySheet)
+        hasPartners = GetArrayBounds(partNames, pLB, pUB)
+
+        Dim partners() As Worksheet, partnerGate() As Variant
+        If hasPartners Then
+            ReDim partners(pLB To pUB)
+            ReDim partnerGate(pLB To pUB)
+            For p = pLB To pUB
+                If SheetExists(CStr(partNames(p))) Then
+                    Set partners(p) = wb.Worksheets(CStr(partNames(p)))
+                    Select Case UCase$(GATE_BY)
+                        Case "ENDING":    partnerGate(p) = BuildSectionTable_Block(partners(p), "Ending Stock")
+                        Case "BEGINNING": partnerGate(p) = BuildSectionTable_Block(partners(p), "Beginning Stock")
+                        Case "EXISTING":  partnerGate(p) = BuildSectionTable_Block(partners(p), "Existing")
+                    End Select
+                End If
+            Next p
+        End If
+
+        ' Loop week columns
+        Dim c As Long
+        For c = cStart To cEnd
+
+            ' Week start/end on rows 2 and 4
+            If Not IsDate(wsDC.Cells(2, c).Value) Or Not IsDate(wsDC.Cells(4, c).Value) Then GoTo NextCol
+            Dim wkStart As Date: wkStart = CDate(wsDC.Cells(2, c).Value)
+            Dim wkEnd   As Date: wkEnd   = CDate(wsDC.Cells(4, c).Value)
+
+            ' Loop colors
+            Dim clr As Variant
+            For Each clr In colors
+                Dim colorRaw As String: colorRaw = CStr(clr)
+                Dim colorKey As String: colorKey = NormalizeColor(colorRaw)
+                If Len(colorKey) = 0 Then GoTo NextColor
+
+                ' ---- Raw sales (read once) ----
+                Dim raw() As Double: ReDim raw(1 To MAX_BOX)
+                Dim b As Long, rr As Long, v As Double
+                For b = 1 To MAX_BOX
+                    rr = RowForInTable(salesTbl, colorKey, b)
+                    If rr > 0 Then
+                        v = ValD(wsDC.Cells(rr, c).Value)
+                        If v > 0 Then raw(b) = v
+                    End If
+                Next b
+
+                ' We only count Core + AddOns
+                Dim salesTotalThis As Double
+                salesTotalThis = SumOverBoxes(raw, corePlusAdd)
+                If salesTotalThis <= 0 And Not SHOW_ZERO_ELIG_ROWS Then GoTo NextColor
+
+                ' ---- Local gating (Core group) ----
+                Dim allowedLocal() As Boolean: ReDim allowedLocal(1 To MAX_BOX)
+                Dim corePass As Boolean, reason As String
+                AllowedBoxesForDC_Single wsDC, gateTbl, colorKey, c, CoreGroup(), corePass, reason, allowedLocal
+
+                ' For debug: capture gate values (per-box reading)
+                Dim gateVal() As Variant: ReDim gateVal(1 To MAX_BOX)
+                If WRITE_DEBUG Then
+                    For b = 1 To MAX_BOX
+                        gateVal(b) = GateValueForBox(wsDC, gateTbl, colorKey, b, c)
+                    Next b
+                End If
+
+                ' Local eligibles accumulator
+                Dim elig() As Double: ReDim elig(1 To MAX_BOX)
+                Dim partnerUsed As Boolean: partnerUsed = False
+                Dim partnerName As String: partnerName = ""
+
+                If corePass Then
+                    ' Local eligible first
+                    For b = 1 To MAX_BOX
+                        If allowedLocal(b) Then elig(b) = raw(b)
+                    Next b
+
+                    ' Partners for uncovered pieces (credit to partner only)
+                    If hasPartners Then
+                        Dim missing As Double
+                        missing = salesTotalThis - SumOverBoxes(elig, corePlusAdd)
+                        If missing > 0# Then
+                            For p = pLB To pUB
+                                If partners(p) Is Nothing Then GoTo NextPartnerLocal
+
+                                ' Align partner week column
+                                Dim pStart As Long, pEnd As Long, offset As Long, pCol As Long
+                                GetFixedSpan partners(p).Name, pStart, pEnd
+                                offset = c - cStart
+                                pCol = pStart + offset
+                                If pCol < pStart Or pCol > pEnd Then GoTo NextPartnerLocal
+
+                                Dim allowedP() As Boolean: ReDim allowedP(1 To MAX_BOX)
+                                Dim pCorePass As Boolean, rz As String
+                                AllowedBoxesForDC_Single partners(p), partnerGate(p), colorKey, pCol, CoreGroup(), pCorePass, rz, allowedP
+
+                                If pCorePass Then
+                                    For b = 1 To MAX_BOX
+                                        If allowedP(b) And raw(b) > 0 And elig(b) = 0# Then
+                                            AppendOut wsShip, shipRow, SheetCityName(partners(p).Name), colorRaw, wkStart, wkEnd, raw(b)
+                                            partnerUsed = True: partnerName = SheetCityName(partners(p).Name)
+                                            ' keep local elig at 0 for that box
+                                        End If
+                                    Next b
+                                End If
+
+                                missing = salesTotalThis - SumOverBoxes(elig, corePlusAdd)
+                                If missing <= 0# Then Exit For
+NextPartnerLocal:
+                            Next p
+                        End If
+                    End If
+
+                    ' Local remainder credit (still unshipped but allowed locally)
+                    Dim localShip As Double
+                    For b = 1 To MAX_BOX
+                        If allowedLocal(b) And raw(b) > 0 And elig(b) = 0# Then
+                            localShip = localShip + raw(b)
+                            elig(b) = raw(b)
+                        End If
+                    Next b
+                    If localShip > 0 Then AppendOut wsShip, shipRow, cityName, colorRaw, wkStart, wkEnd, localShip
+
+                Else
+                    ' ---- Local core FAILS: local elig must be 0 ----
+                    Erase elig: ReDim elig(1 To MAX_BOX)
+
+                    ' Try partners (partner gets shipment credit)
+                    If hasPartners Then
+                        For p = pLB To pUB
+                            If partners(p) Is Nothing Then GoTo NextPartnerFail
+
+                            Dim pStart2 As Long, pEnd2 As Long, offset2 As Long, pCol2 As Long
+                            GetFixedSpan partners(p).Name, pStart2, pEnd2
+                            offset2 = c - cStart
+                            pCol2 = pStart2 + offset2
+                            If pCol2 < pStart2 Or pCol2 > pEnd2 Then GoTo NextPartnerFail
+
+                            Dim allowedP2() As Boolean: ReDim allowedP2(1 To MAX_BOX)
+                            Dim pCorePass2 As Boolean, rz2 As String
+                            AllowedBoxesForDC_Single partners(p), partnerGate(p), colorKey, pCol2, CoreGroup(), pCorePass2, rz2, allowedP2
+
+                            If pCorePass2 Then
+                                For b = 1 To MAX_BOX
+                                    If allowedP2(b) And raw(b) > 0 Then
+                                        AppendOut wsShip, shipRow, SheetCityName(partners(p).Name), colorRaw, wkStart, wkEnd, raw(b)
+                                        partnerUsed = True: partnerName = SheetCityName(partners(p).Name)
+                                    End If
+                                Next b
+                                Exit For
+                            End If
+NextPartnerFail:
+                        Next p
+                    End If
+                    reason = "Local core failed"
+                End If
+
+                ' ---- Totals (fresh, DC-only elig) ----
+                Dim eligTotalRow As Double
+                eligTotalRow = SumOverBoxes(elig, corePlusAdd)
+
+                ' ---- Boxes_Eligible row ----
+                If (salesTotalThis > 0) Or SHOW_ZERO_ELIG_ROWS Then
+                    wsElig.Cells(eligRow, 1).Value = cityName
+                    wsElig.Cells(eligRow, 2).Value = colorRaw
+                    wsElig.Cells(eligRow, 3).Value = wkStart
+                    wsElig.Cells(eligRow, 4).Value = wkEnd
+                    wsElig.Cells(eligRow, 5).Value = eligTotalRow     ' 0 when core fails
+                    wsElig.Cells(eligRow, 6).Value = corePass
+                    eligRow = eligRow + 1
+                End If
+
+                ' ---- Debug row ----
+                If WRITE_DEBUG Then
+                    Dim rowArr() As Variant, idx As Long
+                    ReDim rowArr(1 To 12 + 4 * MAX_BOX)
+
+                    rowArr(1) = cityName
+                    rowArr(2) = colorRaw
+                    rowArr(3) = wkStart
+                    rowArr(4) = wkEnd
+                    rowArr(5) = ColN2L(c)
+                    rowArr(6) = UCase$(GATE_BY)
+                    rowArr(7) = corePass
+                    rowArr(8) = reason
+                    rowArr(9) = partnerUsed
+                    rowArr(10) = partnerName
+
+                    idx = 10
+                    Dim bb As Long
+                    For bb = 1 To MAX_BOX: idx = idx + 1: rowArr(idx) = gateVal(bb): Next bb
+                    For bb = 1 To MAX_BOX: idx = idx + 1: rowArr(idx) = IIf(allowedLocal(bb), 1, 0): Next bb
+                    For bb = 1 To MAX_BOX: idx = idx + 1: rowArr(idx) = raw(bb): Next bb
+                    For bb = 1 To MAX_BOX: idx = idx + 1: rowArr(idx) = elig(bb): Next bb
+                    idx = idx + 1: rowArr(idx) = salesTotalThis
+                    idx = idx + 1: rowArr(idx) = eligTotalRow
+
+                    wsDbg.Cells(dbgRow, 1).Resize(1, UBound(rowArr)).Value = rowArr
+                    dbgRow = dbgRow + 1
+                End If
+
+NextColor:
+            Next clr
+
+NextCol:
+        Next c
+
+NextSheet:
+    Next i
+
+    ' Formats
+    With wsShip
+        .Columns("A:E").AutoFit
+        If shipRow > 2 Then .Range("C2:D" & shipRow - 1).NumberFormat = "yyyy-mm-dd"
+    End With
+    With wsElig
+        .Columns("A:F").AutoFit
+        If eligRow > 2 Then .Range("C2:D" & eligRow - 1).NumberFormat = "yyyy-mm-dd"
+    End With
+    If WRITE_DEBUG Then
+        With wsDbg
+            .Columns("A:ZZ").AutoFit
+            .Range("C2:D" & .Cells(.Rows.Count, "A").End(xlUp).Row).NumberFormat = "yyyy-mm-dd"
+        End With
+    End If
+
+    MsgBox "Done. See 'Boxes_Shipped' (partner credits), 'Boxes_Eligible' (per-DC elig), and 'Boxes_Shipped_DEBUG'.", vbInformation
+
+CleanUp:
+    ' restore Excel settings even on error
+    Application.ScreenUpdating = prevScr
+    Application.EnableEvents = prevEvt
+    Application.Calculation = prevCalc
+End Sub
+'============================================================
+
+
+'======================= HELPERS ============================
+Private Sub AppendOut(ws As Worksheet, ByRef outRow As Long, _
+                      ByVal city As String, ByVal color As String, _
+                      ByVal wkStart As Date, ByVal wkEnd As Date, ByVal qty As Double)
+    ws.Cells(outRow, 1).Value = city
+    ws.Cells(outRow, 2).Value = color
+    ws.Cells(outRow, 3).Value = wkStart
+    ws.Cells(outRow, 4).Value = wkEnd
+    ws.Cells(outRow, 5).Value = qty
+    outRow = outRow + 1
+End Sub
+
+' Per-sheet spans (fixed per the mapping above)
+Private Sub GetFixedSpan(ByVal sheetName As String, ByRef startCol As Long, ByRef endCol As Long)
+    Dim sStart As String, sEnd As String
+    Select Case sheetName
+        Case "Altus-Montreal":  sStart = MTL_START_COL: sEnd = MTL_END_COL
+        Case "Altus-Toronto":   sStart = TO_START_COL:  sEnd = TO_END_COL
+        Case "Altus-Vancouver": sStart = VAN_START_COL: sEnd = VAN_END_COL
+        Case "Altus-Ironlink":  sStart = IRN_START_COL: sEnd = IRN_END_COL
+        Case "Altus-Moreno":    sStart = MOR_START_COL: sEnd = MOR_END_COL
+    End Select
+    startCol = ColLetterToNumber(sStart)
+    endCol = ColLetterToNumber(sEnd)
+End Sub
+
+Private Function ColLetterToNumber(ByVal colLetters As String) As Long
+    Dim s As String: s = UCase$(Trim$(colLetters))
+    Dim i As Long, n As Long
+    For i = 1 To Len(s)
+        If Mid$(s, i, 1) < "A" Or Mid$(s, i, 1) > "Z" Then Exit For
+        n = n * 26 + (Asc(Mid$(s, i, 1)) - Asc("A") + 1)
+    Next i
+    ColLetterToNumber = n
+End Function
+
+Private Function ColN2L(ByVal n As Long) As String
+    Dim s As String, r As Long
+    Do While n > 0
+        r = (n - 1) Mod 26
+        s = Chr$(Asc("A") + r) & s
+        n = (n - 1) \ 26
+    Loop
+    ColN2L = s
+End Function
+
+Private Function EnsureOutputSheet(wb As Workbook, ByVal name As String) As Worksheet
+    If SheetExists(name) Then
+        Set EnsureOutputSheet = wb.Worksheets(name)
+    Else
+        Set EnsureOutputSheet = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+        EnsureOutputSheet.Name = name
+    End If
+End Function
+
+Private Function SheetExists(ByVal name As String) As Boolean
+    On Error Resume Next
+    SheetExists = Not ThisWorkbook.Worksheets(name) Is Nothing
+    On Error GoTo 0
+End Function
+
+Private Function NormalizeColor(ByVal s As String) As String
+    Dim t As String
+    t = CStr(s)
+    t = Replace(t, Chr$(160), " ")
+    On Error Resume Next: t = Replace(t, ChrW(160), " "): On Error GoTo 0
+    On Error Resume Next: t = WorksheetFunction.Trim(WorksheetFunction.Clean(t)): On Error GoTo 0
+    NormalizeColor = UCase$(Trim$(t))
+End Function
+
+' -------- Section table (headers in C, description in D, color in E) --------
+Private Function BuildSectionTable_Block(ws As Worksheet, ByVal sectionName As String) As Variant
+    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
+    Dim r As Long, rStart As Long, rEnd As Long
+
+    For r = 1 To lastRow
+        If UCase$(Trim$(CStr(ws.Cells(r, "C").Value))) = UCase$(sectionName) Then
+            rStart = r + 1
+            Exit For
+        End If
+    Next r
+    If rStart = 0 Then BuildSectionTable_Block = Empty: Exit Function
+
+    rEnd = lastRow
+    For r = rStart To lastRow
+        Dim hdr As String: hdr = UCase$(Trim$(CStr(ws.Cells(r, "C").Value)))
+        If hdr = "BEGINNING STOCK" Or hdr = "ENDING STOCK" Or hdr = "SALES" Or _
+           hdr = "EXISTING" Or hdr = "TO BE RECEIVED" Then
+            If r > rStart Then rEnd = r - 1
+            Exit For
+        End If
+    Next r
+
+    Dim tmp() As Variant, cnt As Long: ReDim tmp(1 To 3, 1 To 1)
+    Dim lastColorKey As String: lastColorKey = ""
+
+    For r = rStart To rEnd
+        Dim desc As String: desc = CStr(ws.Cells(r, "D").Value)
+        Dim bx As Long: bx = ParseBoxNum(desc)
+        If bx = 0 Then GoTo NextRow
+
+        Dim colorRaw As String, colorKey As String
+        colorRaw = CStr(ws.Cells(r, "E").Value)
+        colorKey = ""
+        If IsLikelyColor(colorRaw) Then colorKey = NormalizeColor(colorRaw)
+        If Len(colorKey) = 0 And Len(lastColorKey) > 0 Then colorKey = lastColorKey
+        If Len(colorKey) = 0 Then GoTo NextRow
+        lastColorKey = colorKey
+
+        cnt = cnt + 1
+        If cnt > UBound(tmp, 2) Then ReDim Preserve tmp(1 To 3, 1 To cnt)
+        tmp(1, cnt) = colorKey
+        tmp(2, cnt) = bx
+        tmp(3, cnt) = r
+NextRow:
+    Next r
+
+    If cnt = 0 Then BuildSectionTable_Block = Empty Else BuildSectionTable_Block = tmp
+End Function
+
+Private Function IsLikelyColor(ByVal v As Variant) As Boolean
+    Dim s As String: s = Trim$(CStr(v))
+    If Len(s) = 0 Then Exit Function
+    If IsNumeric(s) Then Exit Function
+    On Error Resume Next
+    If IsDate(s) Then Exit Function
+    On Error GoTo 0
+    Dim i As Long, ch As String
+    For i = 1 To Len(s)
+        ch = Mid$(s, i, 1)
+        If ch Like "[A-Za-z]" Then IsLikelyColor = True: Exit Function
+    Next i
+End Function
+
+Private Function ParseBoxNum(ByVal s As String) As Long
+    Dim U As String: U = UCase$(s)
+    Dim p As Long: p = InStr(1, U, "BOX")
+    If p = 0 Then Exit Function
+    Dim i As Long, ch As String, numStr As String
+    For i = p + 3 To Len(U)
+        ch = Mid$(U, i, 1)
+        If ch = " " Or ch = "-" Or ch = ChrW(8211) Or ch = ChrW(8212) Or ch = ChrW(160) Then
+        ElseIf ch Like "#" Then
+            numStr = numStr & ch
+        ElseIf Len(numStr) > 0 Then
+            Exit For
+        End If
+    Next i
+    If Len(numStr) > 0 Then ParseBoxNum = CLng(numStr)
+End Function
+
+Private Function UnionColors(ParamArray tbls() As Variant) As Collection
+    Dim c As New Collection, t As Variant, i As Long, clr As String
+    On Error GoTo done
+    For Each t In tbls
+        If Not IsEmpty(t) Then
+            For i = 1 To UBound(t, 2)
+                clr = CStr(t(1, i))
+                If Len(clr) > 0 Then On Error Resume Next: c.Add clr, clr: On Error GoTo 0
+            Next i
+        End If
+    Next t
+done:
+    Set UnionColors = c
+End Function
+
+Private Function RowForInTable(tbl As Variant, ByVal colorKey As String, ByVal boxNum As Long) As Long
+    If IsEmpty(tbl) Then Exit Function
+    Dim i As Long
+    For i = 1 To UBound(tbl, 2)
+        If CStr(tbl(1, i)) = colorKey And CLng(tbl(2, i)) = boxNum Then
+            RowForInTable = CLng(tbl(3, i))
+            Exit Function
+        End If
+    Next i
+End Function
+
+' ==== Core-group gating + add-ons ====
+Private Sub AllowedBoxesForDC_Single(ws As Worksheet, gateTbl As Variant, ByVal key As String, ByVal colIdx As Long, _
+                                     ByRef coreGrp As Variant, _
+                                     ByRef passCore As Boolean, ByRef reason As String, _
+                                     ByRef allowed() As Boolean)
+    Dim b As Long
+    ReDim allowed(1 To MAX_BOX)
+    For b = 1 To MAX_BOX: allowed(b) = False: Next b
+
+    passCore = SectionAvailable_Table(ws, gateTbl, key, colIdx, coreGrp, reason)
+
+    If passCore Then
+        Dim i As Long
+        For i = LBound(coreGrp) To UBound(coreGrp)
+            b = CLng(coreGrp(i))
+            If b >= 1 And b <= MAX_BOX Then allowed(b) = True
+        Next i
+        Dim ao As Variant
+        For Each ao In AddOnBoxes()
+            b = CLng(ao)
+            If b >= 1 And b <= MAX_BOX Then allowed(b) = True
+        Next ao
+    End If
+End Sub
+
+Private Function SectionAvailable_Table(ws As Worksheet, gateTbl As Variant, ByVal colorKey As String, _
+                                        ByVal colIdx As Long, ByRef grp As Variant, ByRef reason As String) As Boolean
+    reason = ""
+    If IsEmpty(gateTbl) Then reason = "Gate section not found": Exit Function
+
+    Dim hasAny As Boolean, k As Long, b As Long, r As Long, v As Double
+    For k = LBound(grp) To UBound(grp)
+        b = CLng(grp(k))
+        r = RowForInTable(gateTbl, colorKey, b)
+        If r = 0 Then
+            If IGNORE_MISSING_BOX_ROWS Then
+                ' skip missing row
+            Else
+                reason = "Missing box " & b & " row"
+                Exit Function
+            End If
+        Else
+            hasAny = True
+            v = ValD(ws.Cells(r, colIdx).Value)
+            If v < EPS_NEG Then
+                reason = "Box " & b & " < 0 at " & ws.Name & "!" & ws.Cells(r, colIdx).Address(False, False)
+                Exit Function
+            End If
+        End If
+    Next k
+
+    If Not hasAny Then reason = "No boxes from group found": Exit Function
+    SectionAvailable_Table = True
+End Function
+
+Private Function GateValueForBox(ws As Worksheet, gateTbl As Variant, ByVal colorKey As String, ByVal boxNum As Long, ByVal colIdx As Long) As Variant
+    If IsEmpty(gateTbl) Then Exit Function
+    Dim r As Long: r = RowForInTable(gateTbl, colorKey, boxNum)
+    If r > 0 Then GateValueForBox = ws.Cells(r, colIdx).Value
+End Function
+
+Private Function ValD(ByVal v As Variant) As Double
+    If IsError(v) Or IsNull(v) Then ValD = 0#: Exit Function
+    Dim s As String: s = CStr(v)
+    s = Replace(s, Chr$(160), " ")
+    s = Replace(s, ",", "")
+    s = Trim$(s)
+    If Len(s) = 0 Or Not IsNumeric(s) Then ValD = 0# Else ValD = CDbl(s)
+End Function
+
+' -------- Totals helpers --------
+Private Function UnionBoxList(core As Variant, addOns As Variant) As Variant
+    Dim tmp() As Long, i As Long, n As Long
+    ReDim tmp(1 To 1): n = 0
+    If Not IsEmpty(core) Then
+        For i = LBound(core) To UBound(core)
+            n = n + 1: If n > UBound(tmp) Then ReDim Preserve tmp(1 To n)
+            tmp(n) = CLng(core(i))
+        Next i
+    End If
+    If Not IsEmpty(addOns) Then
+        For i = LBound(addOns) To UBound(addOns)
+            n = n + 1: If n > UBound(tmp) Then ReDim Preserve tmp(1 To n)
+            tmp(n) = CLng(addOns(i))
+        Next i
+    End If
+    If n = 0 Then UnionBoxList = VBA.Array() Else UnionBoxList = tmp
+End Function
+
+Private Function SumOverBoxes(ByRef arr() As Double, ByVal boxList As Variant) As Double
+    Dim s As Double, i As Long, b As Long
+    If IsEmpty(boxList) Then Exit Function
+    For i = LBound(boxList) To UBound(boxList)
+        b = CLng(boxList(i))
+        If b >= LBound(arr) And b <= UBound(arr) Then s = s + arr(b)
+    Next i
+    SumOverBoxes = s
+End Function
+
+Private Function GetArrayBounds(ByVal arr As Variant, ByRef lb As Long, ByRef ub As Long) As Boolean
+    On Error Resume Next
+    lb = LBound(arr): ub = UBound(arr)
+    GetArrayBounds = (Err.Number = 0 And ub >= lb)
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Function SheetCityName(ByVal sheetName As String) As String
+    Select Case sheetName
+        Case "Altus-Montreal":  SheetCityName = "Montreal"
+        Case "Altus-Toronto":   SheetCityName = "Toronto"
+        Case "Altus-Vancouver": SheetCityName = "Vancouver"
+        Case "Altus-Ironlink":  SheetCityName = "Ironlink"
+        Case "Altus-Moreno":    SheetCityName = "Moreno"
+        Case Else:              SheetCityName = sheetName
+    End Select
+End Function
+'============================================================
