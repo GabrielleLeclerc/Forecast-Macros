@@ -27,6 +27,9 @@ Public Sub BuildWeeklyRugs_Shipped_LabelLocked()
 
     Dim wb As Workbook: Set wb = ThisWorkbook
     Dim i As Long, c As Long
+    Dim wkKey As String
+    Dim wkEnd As Date
+
 
     ' ---- speedup toggles ----
     Dim scrState As Boolean, evtState As Boolean, calcState As XlCalculation
@@ -113,11 +116,11 @@ Public Sub BuildWeeklyRugs_Shipped_LabelLocked()
         For c = 1 To lastCol
             Dim wkStart As Date: wkStart = WeekStartAt(wsDC(i), c)
             If wkStart > 0 Then
-                Dim wkKey As String: wkKey = Format$(wkStart, "yyyymmdd")
+                wkKey = Format$(wkStart, "yyyymmdd")
                 MapSet weekCol(i), wkKey, c
                 AddUniqueDate weekStarts, wkStart
 
-                Dim wkEnd As Date: wkEnd = WeekEndAt(wsDC(i), c)
+                wkEnd = WeekEndAt(wsDC(i), c)
                 If wkEnd > 0 Then
                     If Not MapExists(weekEndByKey, wkKey) Then MapSet weekEndByKey, wkKey, wkEnd
                 End If
@@ -167,8 +170,8 @@ Public Sub BuildWeeklyRugs_Shipped_LabelLocked()
     Dim sku As Variant
     Dim w As Long, j As Long
     For w = LBound(wkArr) To UBound(wkArr)
-        Dim wkKey As String: wkKey = Format$(wkArr(w), "yyyymmdd")
-        Dim wkEnd As Date: wkEnd = MapGetDate(weekEndByKey, wkKey, 0)
+        wkKey = Format$(wkArr(w), "yyyymmdd")
+        wkEnd = MapGetDate(weekEndByKey, wkKey, 0)
 
         ' reset column cache for this week
         Set colCache = Nothing
