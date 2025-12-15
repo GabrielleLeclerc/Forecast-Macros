@@ -1,0 +1,450 @@
+Option Explicit
+
+' =============================== RUGS (range-locked, Mac-safe, single module) ===============================
+
+Private Const ROW_ENDING_START As Long = 346
+Private Const ROW_ENDING_END   As Long = 684
+Private Const ROW_SALES_START  As Long = 686
+Private Const ROW_SALES_END    As Long = 1024
+
+' column cache for speed (cleared per week)
+Private colCache As Collection
+
+Public Sub BuildWeeklyRugsShipped()
+    Const OUT_SHEET As String = "Rugs_Shipped_Weekly"
+
+    ' Sheet indices: 0=MTL, 1=TOR, 2=VAN, 3=Moreno
+    Dim dcSheets As Variant, dcNamesFull As Variant
+    dcSheets = VBA.Array("RUGS-MTL", "RUGS-TOR", "RUGS-VAN", "RUGS-Moreno")
+    dcNamesFull = VBA.Array("Montreal", "Toronto", "Vancouver", "Moreno")
+
+    Dim wb As Workbook: Set wb = ThisWorkbook
+    Dim i As Long, j As Long, c As Long
+
+    ' ---- speedup toggles ----
+    Dim scrState As Boolean, evtState As Boolean, calcState As XlCalculation
+    scrState = Application.ScreenUpdating
+    evtState = Application.EnableEvents
+    calcState = Application.Calculation
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+    On Error GoTo CleanFail
+    ' -------------------------
+
+    ' Validate sheets
+    For i = LBound(dcSheets) To UBound(dcSheets)
+        If Not SheetExists(CStr(dcSheets(i))) Then
+            MsgBox "Missing sheet: " & CStr(dcSheets(i)), vbExclamation
+            GoTo CleanDone
+        End If
+    Next i
+
+    ' Bind sheets
+    Dim wsDC() As Worksheet
+    ReDim wsDC(LBound(dcSheets) To UBound(dcSheets))
+    For i = LBound(dcSheets) To UBound(dcSheets)
+        Set wsDC(i) = wb.Worksheets(CStr(dcSheets(i)))
+    Next i
+
+    ' Range-locked maps + union of SKUs (Collections)
+    Dim salesMap() As Collection, endMap() As Collection
+    ReDim salesMap(LBound(dcSheets) To UBound(dcSheets))
+    ReDim endMap(LBound(dcSheets) To UBound(dcSheets))
+
+    Dim allSKUs As Collection: Set allSKUs = New Collection
+    For i = LBound(dcSheets) To UBound(dcSheets)
+        Set salesMap(i) = BuildSkuRowMapRange(wsDC(i), ROW_SALES_START, ROW_SALES_END, allSKUs)
+        Set endMap(i)   = BuildSkuRowMapRange(wsDC(i), ROW_ENDING_START, ROW_ENDING_END, Nothing)
+    Next i
+    If allSKUs Is Nothing Or allSKUs.Count = 0 Then
+        MsgBox "No SKUs found in Sales rows " & ROW_SALES_START & ":" & ROW_SALES_END, vbExclamation
+        GoTo CleanDone
+    End If
+
+    ' Week columns by DC + union of week dates
+    Dim weekCol() As Collection
+    ReDim weekCol(LBound(dcSheets) To UBound(dcSheets))
+    Dim weekDates As Collection: Set weekDates = New Collection
+
+    Dim cStart As Long, cEnd As Long, dte As Date, wkKey As String
+    For i = LBound(dcSheets) To UBound(dcSheets)
+        Set weekCol(i) = New Collection
+        GetRugsSpanByIndex i, cStart, cEnd                 ' MTL/VAN? CC:FC, TOR/Moreno? CB:EY
+        For c = cStart To cEnd
+            dte = WeekDateAt(wsDC(i), c)
+            If dte > 0 Then
+                wkKey = Format$(dte, "yyyymmdd")
+                MapSet weekCol(i), wkKey, c
+                AddUniqueDate weekDates, dte
+            End If
+        Next c
+    Next i
+    If weekDates.Count = 0 Then
+        MsgBox "No week dates found in rug sheets.", vbExclamation
+        GoTo CleanDone
+    End If
+
+    ' Sort weeks
+    Dim wkArr() As Date
+    wkArr = CollDatesToArray(weekDates)
+    SortDates wkArr
+
+    ' Output buffer: City | Week Start | Shipped  (write once at end)
+    Dim wsOut As Worksheet: Set wsOut = EnsureOutputSheet(wb, OUT_SHEET)
+    wsOut.Cells.Clear
+    wsOut.Range("A1").Value = "City"
+    wsOut.Range("B1").Value = "Week Start"
+    wsOut.Range("C1").Value = "Shipped"
+
+    Dim cityCount As Long: cityCount = UBound(dcSheets) - LBound(dcSheets) + 1
+    Dim weekCount As Long: weekCount = UBound(wkArr) - LBound(wkArr) + 1
+    Dim outRows As Long: outRows = cityCount * weekCount
+    Dim outArr() As Variant: ReDim outArr(1 To outRows, 1 To 3)
+    Dim outPtr As Long: outPtr = 1
+
+    ' ===== per-week loop (identical logic) =====
+    Dim sku As Variant
+    For i = LBound(wkArr) To UBound(wkArr)
+        wkKey = Format$(wkArr(i), "yyyymmdd")
+
+        ' reset column cache for this week
+        Set colCache = Nothing
+
+        ' Credit shipments to the ORIGIN city; no negatives; never exceed its sales
+        Dim shipByDC() As Double
+        ReDim shipByDC(LBound(dcSheets) To UBound(dcSheets))
+
+        ' Stock left & residual demand by DC/SKU
+        Dim stockLeft() As Collection, residual() As Collection
+        ReDim stockLeft(LBound(dcSheets) To UBound(dcSheets))
+        ReDim residual(LBound(dcSheets) To UBound(dcSheets))
+        For j = LBound(dcSheets) To UBound(dcSheets)
+            Set stockLeft(j) = New Collection
+            Set residual(j) = New Collection
+        Next j
+
+        ' 1) Local shipping per DC/SKU (ship = MIN(Sales, Ending))
+        For Each sku In allSKUs
+            Dim dci As Long
+            For dci = LBound(dcSheets) To UBound(dcSheets)
+                Dim colW As Long: colW = MapGetLong(weekCol(dci), wkKey, 0)
+                Dim salesV As Double, endV As Double, shipV As Double
+                salesV = 0#: endV = 0#: shipV = 0#
+                If colW > 0 Then
+                    salesV = WorksheetFunction.Max(0#, GetSectionSumAtRange(wsDC(dci), salesMap(dci), CStr(sku), colW))
+                    endV   = WorksheetFunction.Max(0#, GetSectionSumAtRange(wsDC(dci), endMap(dci),   CStr(sku), colW))
+                    shipV  = WorksheetFunction.Min(salesV, endV)
+                End If
+                shipByDC(dci) = shipByDC(dci) + shipV
+
+                ' track stock left & residual demand (≥0)
+                Dim sl As Double: sl = WorksheetFunction.Max(0#, endV - shipV)
+                Dim rd As Double: rd = WorksheetFunction.Max(0#, salesV - shipV)
+                If sl > 0# Then Call MapSetDouble(stockLeft(dci), CStr(sku), sl)
+                If rd > 0# Then Call MapSetDouble(residual(dci),  CStr(sku), rd)
+            Next dci
+        Next sku
+
+        ' 2) Transfer residual: take from donors' stock; CREDIT the ORIGIN city
+        For Each sku In allSKUs
+            Dim origin As Long
+            For origin = LBound(dcSheets) To UBound(dcSheets)
+                Dim need As Double: need = MapGetDouble(residual(origin), CStr(sku), 0#)
+                If need <= 0# Then GoTo NextOrigin
+
+                Dim donors As Variant: donors = RugsFallbackChain(origin)
+                Dim d As Variant, donorIdx As Long, take As Double
+                For Each d In donors
+                    donorIdx = CLng(d)
+                    If MapExists(weekCol(donorIdx), wkKey) Then
+                        Dim avail As Double: avail = MapGetDouble(stockLeft(donorIdx), CStr(sku), 0#)
+                        If avail > 0# Then
+                            take = WorksheetFunction.Min(need, avail)
+                            shipByDC(origin) = shipByDC(origin) + take      ' credit ORIGIN city
+                            Call MapSetDouble(stockLeft(donorIdx), CStr(sku), avail - take)
+                            need = need - take
+                            If need <= 0# Then Exit For
+                        End If
+                    End If
+                Next d
+                ' leftover need unfilled (OK)
+NextOrigin:
+            Next origin
+        Next sku
+
+        ' 3) Safety clamp (no negatives)
+        For j = LBound(dcSheets) To UBound(dcSheets)
+            If shipByDC(j) < 0# Then shipByDC(j) = 0#
+        Next j
+
+        ' 4) Buffer 4 rows (one per city) for this week
+        For j = LBound(dcSheets) To UBound(dcSheets)
+            outArr(outPtr, 1) = dcNamesFull(j)  ' City
+            outArr(outPtr, 2) = wkArr(i)        ' Week Start
+            outArr(outPtr, 3) = shipByDC(j)     ' Shipped
+            outPtr = outPtr + 1
+        Next j
+    Next i
+
+    ' Dump output in one shot
+    If outRows > 0 Then wsOut.Range("A2").Resize(outRows, 3).Value = outArr
+
+    ' Format
+    wsOut.Columns("A:C").AutoFit
+    wsOut.Range("B2:B" & wsOut.Cells(wsOut.Rows.Count, "B").End(xlUp).Row).NumberFormat = "yyyy-mm-dd"
+
+    MsgBox "Done. See 'Rugs_Shipped_Weekly' (City | Week Start | Shipped).", vbInformation
+
+CleanDone:
+    Application.ScreenUpdating = scrState
+    Application.EnableEvents = evtState
+    Application.Calculation = calcState
+    Exit Sub
+
+CleanFail:
+    MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
+    Resume CleanDone
+End Sub
+
+' ============================ HELPERS (no COM/ActiveX) =============================
+
+' Map SKUs in a fixed row range (column B) -> Collection of row numbers.
+' If keysSink provided, adds unique SKUs into it.
+Private Function BuildSkuRowMapRange(ws As Worksheet, ByVal rStart As Long, ByVal rEnd As Long, _
+                                     ByVal keysSink As Collection) As Collection
+    Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+    If rEnd > lastRow Then rEnd = lastRow
+    If rStart < 1 Or rStart > rEnd Then
+        Set BuildSkuRowMapRange = New Collection
+        Exit Function
+    End If
+
+    Dim map As Collection: Set map = New Collection
+    Dim r As Long, sku As String
+    For r = rStart To rEnd
+        sku = Trim$(CStr(ws.Cells(r, "B").Value))
+        If Len(sku) > 0 Then
+            Dim lst As Collection
+            On Error Resume Next
+            Set lst = map.Item(sku)
+            On Error GoTo 0
+            If lst Is Nothing Then
+                Set lst = New Collection
+                map.Add lst, sku
+                If Not keysSink Is Nothing Then AddUniqueKey keysSink, sku
+            End If
+            lst.Add r
+            Set lst = Nothing
+        End If
+    Next r
+
+    Set BuildSkuRowMapRange = map
+End Function
+
+' Sum values for a SKU at a given column across all its rows in a range-based map.
+' **Optimized**: caches each column (per sheet/col) in memory for this run.
+Private Function GetSectionSumAtRange(ws As Worksheet, m As Collection, ByVal sku As String, ByVal colIdx As Long) As Double
+    If m Is Nothing Then Exit Function
+
+    Dim lst As Collection
+    On Error Resume Next
+    Set lst = m.Item(sku)
+    On Error GoTo 0
+    If lst Is Nothing Then Exit Function
+
+    Dim colArr As Variant
+    colArr = ColCacheGet(ws, colIdx)   ' [1..MaxDataRow,1]
+
+    Dim i As Long, rr As Long, v As Double
+    For i = 1 To lst.Count
+        rr = CLng(lst.Item(i))
+        If rr >= 1 And rr <= UBound(colArr, 1) Then
+            v = v + ValD(colArr(rr, 1))
+        End If
+    Next i
+    GetSectionSumAtRange = v
+End Function
+
+' Return a cached column array for a sheet/column. Cache resets each week.
+Private Function ColCacheGet(ws As Worksheet, ByVal colIdx As Long) As Variant
+    Dim key As String: key = ws.Name & "|" & CStr(colIdx)
+    If colCache Is Nothing Then Set colCache = New Collection
+
+    Dim v As Variant
+    On Error Resume Next
+    v = colCache.Item(key)
+    If Err.Number = 0 Then
+        On Error GoTo 0
+        ColCacheGet = v
+        Exit Function
+    End If
+    Err.Clear: On Error GoTo 0
+
+    v = ws.Range(ws.Cells(1, colIdx), ws.Cells(MaxDataRow(), colIdx)).Value2
+    MapSet colCache, key, v
+    ColCacheGet = v
+End Function
+
+Private Function MaxDataRow() As Long
+    If ROW_SALES_END >= ROW_ENDING_END Then
+        MaxDataRow = ROW_SALES_END
+    Else
+        MaxDataRow = ROW_ENDING_END
+    End If
+End Function
+
+' Week span by DC index: 0=MTL,1=TOR,2=VAN,3=Moreno
+Private Sub GetRugsSpanByIndex(ByVal dcIdx As Long, ByRef startCol As Long, ByRef endCol As Long)
+    If dcIdx = 0 Or dcIdx = 2 Then          ' MTL or VAN
+        startCol = ColLetterToNumber("CC")
+        endCol   = ColLetterToNumber("FC")
+    Else                                     ' TOR or Moreno
+        startCol = ColLetterToNumber("CB")
+        endCol   = ColLetterToNumber("EY")
+    End If
+End Sub
+
+' Per-origin fallback:
+' 0=MTL?TOR?VAN, 1=TOR?MTL?VAN, 2=VAN?TOR?MTL, 3=Moreno?(none)
+Private Function RugsFallbackChain(ByVal origin As Long) As Variant
+    Select Case origin
+        Case 0: RugsFallbackChain = VBA.Array(1, 2)
+        Case 1: RugsFallbackChain = VBA.Array(0, 2)
+        Case 2: RugsFallbackChain = VBA.Array(1, 0)
+        Case 3: RugsFallbackChain = VBA.Array()
+        Case Else: RugsFallbackChain = VBA.Array()
+    End Select
+End Function
+
+' Pull the week date from likely header rows for a given column.
+Private Function WeekDateAt(ws As Worksheet, ByVal colIdx As Long) As Date
+    Dim r As Variant
+    For Each r In Array(2, 3, 4, 5, 47, 48)
+        If IsDate(ws.Cells(CLng(r), colIdx).Value) Then
+            WeekDateAt = CDate(ws.Cells(CLng(r), colIdx).Value)
+            Exit Function
+        End If
+    Next r
+    WeekDateAt = 0
+End Function
+
+' ------------------ Collection "map" utilities (Mac-safe) ------------------
+
+Private Sub MapSet(ByRef m As Collection, ByVal key As String, ByVal val As Variant)
+    If m Is Nothing Then Set m = New Collection
+    On Error Resume Next
+    m.Remove key
+    On Error GoTo 0
+    m.Add val, key
+End Sub
+
+Private Function MapExists(ByRef m As Collection, ByVal key As String) As Boolean
+    On Error Resume Next
+    Dim tmp As Variant: tmp = m.Item(key)
+    MapExists = (Err.Number = 0)
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Function MapGetLong(ByRef m As Collection, ByVal key As String, ByVal def As Long) As Long
+    On Error Resume Next
+    MapGetLong = CLng(m.Item(key))
+    If Err.Number <> 0 Then MapGetLong = def
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Function MapGetDouble(ByRef m As Collection, ByVal key As String, ByVal def As Double) As Double
+    On Error Resume Next
+    MapGetDouble = CDbl(m.Item(key))
+    If Err.Number <> 0 Then MapGetDouble = def
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Sub MapSetDouble(ByRef m As Collection, ByVal key As String, ByVal val As Double)
+    MapSet m, key, CDbl(val)
+End Sub
+
+Private Sub AddUniqueKey(ByRef c As Collection, ByVal key As String)
+    On Error Resume Next
+    Dim tmp As Variant: tmp = c.Item(key)
+    If Err.Number <> 0 Then
+        Err.Clear
+        c.Add key, key
+    Else
+        Err.Clear
+    End If
+End Sub
+
+Private Sub AddUniqueDate(ByRef c As Collection, ByVal d As Date)
+    Dim key As String: key = Format$(d, "yyyymmdd")
+    On Error Resume Next
+    Dim tmp As Variant: tmp = c.Item(key)
+    If Err.Number <> 0 Then
+        Err.Clear
+        c.Add d, key
+    Else
+        Err.Clear
+    End If
+End Sub
+
+Private Function CollDatesToArray(ByRef c As Collection) As Date()
+    Dim arr() As Date
+    Dim i As Long
+    ReDim arr(0 To c.Count - 1)
+    For i = 1 To c.Count
+        arr(i - 1) = CDate(c.Item(i))
+    Next i
+    CollDatesToArray = arr
+End Function
+
+' ------------------ Misc utils ------------------
+
+Private Function ColLetterToNumber(ByVal colLetters As String) As Long
+    Dim s As String: s = UCase$(Trim$(colLetters))
+    Dim i As Long, n As Long
+    For i = 1 To Len(s)
+        If Mid$(s, i, 1) < "A" Or Mid$(s, i, 1) > "Z" Then Exit For
+        n = n * 26 + (Asc(Mid$(s, i, 1)) - Asc("A") + 1)
+    Next i
+    ColLetterToNumber = n
+End Function
+
+Private Function SheetExists(ByVal name As String) As Boolean
+    On Error Resume Next
+    SheetExists = Not ThisWorkbook.Worksheets(name) Is Nothing
+    On Error GoTo 0
+End Function
+
+Private Function EnsureOutputSheet(wb As Workbook, ByVal name As String) As Worksheet
+    If SheetExists(name) Then
+        Set EnsureOutputSheet = wb.Worksheets(name)
+    Else
+        Set EnsureOutputSheet = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+        EnsureOutputSheet.Name = name
+    End If
+End Function
+
+Private Sub SortDates(arr() As Date)
+    Dim i As Long, j As Long
+    Dim key As Date
+    For i = LBound(arr) + 1 To UBound(arr)
+        key = arr(i): j = i - 1
+        Do While j >= LBound(arr) And arr(j) > key
+            arr(j + 1) = arr(j)
+            j = j - 1
+        Loop
+        arr(j + 1) = key
+    Next i
+End Sub
+
+Private Function ValD(ByVal v As Variant) As Double
+    If IsError(v) Or IsNull(v) Then ValD = 0#: Exit Function
+    Dim s As String: s = CStr(v)
+    s = Replace$(s, Chr$(160), " ")
+    s = Replace$(s, ",", "")
+    s = Trim$(s)
+    If Len(s) = 0 Or Not IsNumeric(s) Then ValD = 0# Else ValD = CDbl(s)
+End Function
