@@ -162,9 +162,19 @@ Next i
     Dim dbgArr() As Variant: ReDim dbgArr(1 To outRows, 1 To 12)
 
     Dim outPtr As Long: outPtr = 1
+    Dim w As Long, j As Long
+    
+    '==================== NEW: persistent backlog per city (SKU-specific) ====================
+    Dim backlogByCity() As Collection
+    ReDim backlogByCity(LBound(dcSheets) To UBound(dcSheets))
+    
+    For j = LBound(dcSheets) To UBound(dcSheets)
+        Set backlogByCity(j) = New Collection   ' map: sku -> backlog qty
+    Next j
+    '========================================================================================
+
 
     ' ===== Per-week loop =====
-    Dim w As Long, j As Long
     For w = LBound(wkArr) To UBound(wkArr)
         wkKey = Format$(wkArr(w), "yyyymmdd")
         wkEnd = MapGetDate(weekEndByKey, wkKey, 0)
@@ -254,9 +264,15 @@ For j = LBound(dcSheets) To UBound(dcSheets)
 
         availV = begV + poV
 
-        If salesV < availV Then shipLocal = salesV Else shipLocal = availV
-        remaining = salesV - shipLocal
+        Dim backlogSku As Double, demandV As Double
+        backlogSku = MapGetDbl(backlogByCity(j), skuKey, 0#)
+        
+        demandV = salesV + backlogSku
+        
+        If demandV < availV Then shipLocal = demandV Else shipLocal = availV
+        remaining = demandV - shipLocal
         If remaining < 0# Then remaining = 0#
+
 
         ' totals for output/debug
         salesByDC(j) = salesByDC(j) + salesV
@@ -343,8 +359,9 @@ NextPartner:
 
         ' update remaining demand map (optional, but keeps it consistent)
         If need > 0# Then
-            MapSet remDemandByCity(j), skuKey, need
+            MapSetRounded3 remDemandByCity(j), skuKey, need
         Else
+            MapRemove remDemandByCity(j), skuKey
         End If
 
 NextSkuPartner:
@@ -352,21 +369,29 @@ NextSkuPartner:
 
 Next j
 
+'==================== NEW: carry SKU backlog forward to next week ====================
+For j = LBound(dcSheets) To UBound(dcSheets)
+    Set backlogByCity(j) = remDemandByCity(j)  ' remaining demand per SKU becomes next week's backlog
+Next j
+'=====================================================================================
+
+
 
         ' Emit one row per city for this week
         For j = LBound(dcSheets) To UBound(dcSheets)
             outArr(outPtr, 1) = CStr(dcNames(j))
             outArr(outPtr, 2) = wkArr(w)
             outArr(outPtr, 3) = wkEnd
-            outArr(outPtr, 4) = shippedByDC(j)
-            outArr(outPtr, 5) = unfulByDC(j)
+            outArr(outPtr, 4) = Round3(shippedByDC(j))
+            outArr(outPtr, 5) = Round3(unfulByDC(j))
+
 
             dbgArr(outPtr, 1) = CStr(dcNames(j))
             dbgArr(outPtr, 2) = wkArr(w)
             dbgArr(outPtr, 3) = wkEnd
-            dbgArr(outPtr, 4) = salesByDC(j)
-            dbgArr(outPtr, 5) = availByDC(j)
-            dbgArr(outPtr, 6) = shippedLocalByDC(j)
+            dbgArr(outPtr, 4) = Round3(salesByDC(j))
+            dbgArr(outPtr, 5) = Round3(availByDC(j))
+            dbgArr(outPtr, 6) = Round3(shippedLocalByDC(j))
 
 '==================== NEW: write partner shipped breakdown ====================
 Dim partnersEmit As Variant
@@ -390,15 +415,15 @@ If Not IsEmpty(partnersEmit) Then
 End If
 
 dbgArr(outPtr, 7) = p1City
-dbgArr(outPtr, 8) = p1Ship
+dbgArr(outPtr, 8) = Round3(p1Ship)
 dbgArr(outPtr, 9) = p2City
-dbgArr(outPtr, 10) = p2Ship
+dbgArr(outPtr, 10) = Round3(p2Ship)
 
 Dim boxesShipped As Double
 boxesShipped = shippedLocalByDC(j) + p1Ship + p2Ship
 
-dbgArr(outPtr, 11) = boxesShipped
-dbgArr(outPtr, 12) = unfulByDC(j)
+dbgArr(outPtr, 11) = Round3(boxesShipped)
+dbgArr(outPtr, 12) = Round3(unfulByDC(j))
 
 outPtr = outPtr + 1
 
@@ -707,6 +732,26 @@ Private Sub MapAddDbl(ByRef m As Collection, ByVal key As String, ByVal addVal A
     cur = MapGetDbl(m, key, 0#) + addVal
     MapSet m, key, cur
 End Sub
+
+Private Sub MapRemove(ByRef m As Collection, ByVal key As String)
+    On Error Resume Next
+    m.Remove key
+    On Error GoTo 0
+End Sub
+
+Private Function Round3(ByVal x As Double) As Double
+    ' Round to 3 decimals and snap tiny floating noise to 0
+    Dim y As Double
+    y = WorksheetFunction.Round(x, 3)
+    If Abs(y) < 0.0005 Then y = 0#
+    Round3 = y
+End Function
+
+Private Sub MapSetRounded3(ByRef m As Collection, ByVal key As String, ByVal val As Double)
+    ' store a backlog value already rounded/cleaned
+    MapSet m, key, Round3(val)
+End Sub
+
 
 Private Function ToDoubleFast(ByVal v As Variant) As Double
     ' Faster than ValD for typical numeric cells; falls back to lightweight string handling.
