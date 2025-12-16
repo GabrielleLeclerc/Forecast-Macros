@@ -143,13 +143,19 @@ Next i
     wsDbg.Cells.Clear
 
     wsOut.Range("A1:E1").Value = Array("City", "Week Start", "Week End", "Shipped", "Unfulfilled")
-    wsDbg.Range("A1:L1").Value = Array( _
-    "City", "Week Start", "Week End", "Sales_Total", "Avail_Total", _
+    wsDbg.Range("A1:N1").Value = Array( _
+    "City", "Week Start", "Week End", _
+    "Backlog", _
+    "Sales_Total", _
+    "Effective_Demand", _
+    "Avail_Total", _
     "ShippedFromLocal", _
     "P1 City", "ShippedFromP1", _
     "P2 City", "ShippedFromP2", _
-    "Boxes_Shipped", "Unfulfilled" _
+    "Boxes_Shipped", _
+    "Unfulfilled" _
 )
+
 
 
 
@@ -159,18 +165,21 @@ Next i
     Dim outRows As Long: outRows = cityCount * weekCount
 
     Dim outArr() As Variant: ReDim outArr(1 To outRows, 1 To 5)
-    Dim dbgArr() As Variant: ReDim dbgArr(1 To outRows, 1 To 12)
+    Dim dbgArr() As Variant: ReDim dbgArr(1 To outRows, 1 To 14)
 
     Dim outPtr As Long: outPtr = 1
     Dim w As Long, j As Long
     
     '==================== NEW: persistent backlog per city (SKU-specific) ====================
-    Dim backlogByCity() As Collection
+    Dim backlogByCity() As Collection, backlogKeysByCity() As Collection
     ReDim backlogByCity(LBound(dcSheets) To UBound(dcSheets))
-    
+    ReDim backlogKeysByCity(LBound(dcSheets) To UBound(dcSheets))
+        
     For j = LBound(dcSheets) To UBound(dcSheets)
-        Set backlogByCity(j) = New Collection   ' map: sku -> backlog qty
+        Set backlogByCity(j) = New Collection        ' sku -> qty
+        Set backlogKeysByCity(j) = New Collection    ' list of sku keys in backlog
     Next j
+
     '========================================================================================
 
 
@@ -184,12 +193,17 @@ Next i
         ' Totals per DC
         Dim shippedByDC() As Double, shippedLocalByDC() As Double
         Dim unfulByDC() As Double, salesByDC() As Double, availByDC() As Double
+        Dim backlogTotalByDC() As Double, effectiveDemandByDC() As Double
+
         
         ReDim shippedByDC(LBound(dcSheets) To UBound(dcSheets))
         ReDim shippedLocalByDC(LBound(dcSheets) To UBound(dcSheets))
         ReDim unfulByDC(LBound(dcSheets) To UBound(dcSheets))
         ReDim salesByDC(LBound(dcSheets) To UBound(dcSheets))
         ReDim availByDC(LBound(dcSheets) To UBound(dcSheets))
+        ReDim backlogTotalByDC(LBound(dcSheets) To UBound(dcSheets))
+        ReDim effectiveDemandByDC(LBound(dcSheets) To UBound(dcSheets))
+
 
 '==================== NEW: partner shipment totals per demand city ====================
 Dim shippedFromPartnerByDemand() As Collection
@@ -237,6 +251,8 @@ Next j
 ' remDemandByCity(j): remaining demand per SKU after local shipping
 ' donatedByCity(j): how much city j has already donated to others per SKU
 Dim selfShipByCity() As Collection, remDemandByCity() As Collection, donatedByCity() As Collection
+Dim remKeysByCity() As Collection
+ReDim remKeysByCity(LBound(dcSheets) To UBound(dcSheets))
 ReDim selfShipByCity(LBound(dcSheets) To UBound(dcSheets))
 ReDim remDemandByCity(LBound(dcSheets) To UBound(dcSheets))
 ReDim donatedByCity(LBound(dcSheets) To UBound(dcSheets))
@@ -245,9 +261,26 @@ For j = LBound(dcSheets) To UBound(dcSheets)
     Set selfShipByCity(j) = New Collection
     Set remDemandByCity(j) = New Collection
     Set donatedByCity(j) = New Collection
+    Set remKeysByCity(j) = New Collection
 
     Dim k As Variant
-    For Each k In salesKeysByCity(j)
+    Dim processKeys As Collection
+    Set processKeys = New Collection
+    
+    ' add sales SKUs
+    Dim tmp As Variant
+    For Each tmp In salesKeysByCity(j)
+        AddUniqueKey processKeys, CStr(tmp)
+    Next tmp
+    
+    ' add backlog-only SKUs
+    For Each tmp In backlogKeysByCity(j)
+        AddUniqueKey processKeys, CStr(tmp)
+    Next tmp
+    
+    ' now process union
+    For Each k In processKeys
+
 
         skuKey = CStr(k)
 
@@ -268,6 +301,8 @@ For j = LBound(dcSheets) To UBound(dcSheets)
         backlogSku = MapGetDbl(backlogByCity(j), skuKey, 0#)
         
         demandV = salesV + backlogSku
+        backlogTotalByDC(j) = backlogTotalByDC(j) + backlogSku
+        effectiveDemandByDC(j) = effectiveDemandByDC(j) + demandV
         
         If demandV < availV Then shipLocal = demandV Else shipLocal = availV
         remaining = demandV - shipLocal
@@ -283,7 +318,11 @@ For j = LBound(dcSheets) To UBound(dcSheets)
 
         ' store per-SKU for partner logic
         If shipLocal <> 0# Then MapSet selfShipByCity(j), skuKey, shipLocal
-        If remaining <> 0# Then MapSet remDemandByCity(j), skuKey, remaining
+        If remaining <> 0# Then
+            MapSet remDemandByCity(j), skuKey, remaining
+            AddUniqueKey remKeysByCity(j), skuKey
+        End If
+
 
     Next k
 Next j
@@ -296,7 +335,8 @@ For j = LBound(dcSheets) To UBound(dcSheets)
     partners = PartnersFor(CStr(dcSheets(j)))
 
     Dim sku As Variant
-    For Each sku In salesKeysByCity(j)
+    For Each sku In remKeysByCity(j)
+
 
         skuKey = CStr(sku)
 
@@ -371,8 +411,17 @@ Next j
 
 '==================== NEW: carry SKU backlog forward to next week ====================
 For j = LBound(dcSheets) To UBound(dcSheets)
-    Set backlogByCity(j) = remDemandByCity(j)  ' remaining demand per SKU becomes next week's backlog
+    Set backlogByCity(j) = New Collection
+    Set backlogKeysByCity(j) = New Collection
+
+    Dim bk As Variant
+    For Each bk In remKeysByCity(j)
+        skuKey = CStr(bk)
+        MapSet backlogByCity(j), skuKey, MapGetDbl(remDemandByCity(j), skuKey, 0#)
+        AddUniqueKey backlogKeysByCity(j), skuKey
+    Next bk
 Next j
+
 '=====================================================================================
 
 
@@ -389,9 +438,12 @@ Next j
             dbgArr(outPtr, 1) = CStr(dcNames(j))
             dbgArr(outPtr, 2) = wkArr(w)
             dbgArr(outPtr, 3) = wkEnd
-            dbgArr(outPtr, 4) = Round3(salesByDC(j))
-            dbgArr(outPtr, 5) = Round3(availByDC(j))
-            dbgArr(outPtr, 6) = Round3(shippedLocalByDC(j))
+
+            dbgArr(outPtr, 4) = Round3(backlogTotalByDC(j))
+            dbgArr(outPtr, 5) = Round3(salesByDC(j))
+            dbgArr(outPtr, 6) = Round3(effectiveDemandByDC(j))
+            dbgArr(outPtr, 7) = Round3(availByDC(j))
+            dbgArr(outPtr, 8) = Round3(shippedLocalByDC(j))
 
 '==================== NEW: write partner shipped breakdown ====================
 Dim partnersEmit As Variant
@@ -414,16 +466,16 @@ If Not IsEmpty(partnersEmit) Then
     End If
 End If
 
-dbgArr(outPtr, 7) = p1City
-dbgArr(outPtr, 8) = Round3(p1Ship)
-dbgArr(outPtr, 9) = p2City
-dbgArr(outPtr, 10) = Round3(p2Ship)
+dbgArr(outPtr, 9) = p1City
+dbgArr(outPtr, 10) = Round3(p1Ship)
+dbgArr(outPtr, 11) = p2City
+dbgArr(outPtr, 12) = Round3(p2Ship)
 
 Dim boxesShipped As Double
 boxesShipped = shippedLocalByDC(j) + p1Ship + p2Ship
 
-dbgArr(outPtr, 11) = Round3(boxesShipped)
-dbgArr(outPtr, 12) = Round3(unfulByDC(j))
+dbgArr(outPtr, 13) = Round3(boxesShipped)
+dbgArr(outPtr, 14) = Round3(unfulByDC(j))
 
 outPtr = outPtr + 1
 
@@ -433,12 +485,12 @@ outPtr = outPtr + 1
     ' Write results
     If outRows > 0 Then
         wsOut.Range("A2").Resize(outRows, 5).Value = outArr
-        wsDbg.Range("A2").Resize(outRows, 12).Value = dbgArr
+        wsDbg.Range("A2").Resize(outRows, 14).Value = dbgArr
     End If
 
     ' Format
     wsOut.Columns("A:E").AutoFit
-    wsDbg.Columns("A:L").AutoFit
+    wsDbg.Columns("A:N").AutoFit
 
     wsOut.Range("B:C").NumberFormat = "yyyy-mm-dd"
     wsDbg.Range("B:C").NumberFormat = "yyyy-mm-dd"
