@@ -143,10 +143,14 @@ Next i
     wsDbg.Cells.Clear
 
     wsOut.Range("A1:E1").Value = Array("City", "Week Start", "Week End", "Shipped", "Unfulfilled")
-    wsDbg.Range("A1:K1").Value = Array( _
-    "City", "Week Start", "Week End", "Sales_Total", "Avail_Total", "ShippedFromLocal", "Unfulfilled", _
-    "P1 City", "ShippedFromP1", "P2 City", "ShippedFromP2" _
-    )
+    wsDbg.Range("A1:L1").Value = Array( _
+    "City", "Week Start", "Week End", "Sales_Total", "Avail_Total", _
+    "ShippedFromLocal", _
+    "P1 City", "ShippedFromP1", _
+    "P2 City", "ShippedFromP2", _
+    "Boxes_Shipped", "Unfulfilled" _
+)
+
 
 
     ' Output buffers
@@ -155,7 +159,7 @@ Next i
     Dim outRows As Long: outRows = cityCount * weekCount
 
     Dim outArr() As Variant: ReDim outArr(1 To outRows, 1 To 5)
-    Dim dbgArr() As Variant: ReDim dbgArr(1 To outRows, 1 To 11)
+    Dim dbgArr() As Variant: ReDim dbgArr(1 To outRows, 1 To 12)
 
     Dim outPtr As Long: outPtr = 1
 
@@ -363,7 +367,6 @@ Next j
             dbgArr(outPtr, 4) = salesByDC(j)
             dbgArr(outPtr, 5) = availByDC(j)
             dbgArr(outPtr, 6) = shippedLocalByDC(j)
-            dbgArr(outPtr, 7) = unfulByDC(j)
 
 '==================== NEW: write partner shipped breakdown ====================
 Dim partnersEmit As Variant
@@ -386,25 +389,31 @@ If Not IsEmpty(partnersEmit) Then
     End If
 End If
 
-dbgArr(outPtr, 8) = p1City
-dbgArr(outPtr, 9) = p1Ship
-dbgArr(outPtr, 10) = p2City
-dbgArr(outPtr, 11) = p2Ship
-'================================================================
+dbgArr(outPtr, 7) = p1City
+dbgArr(outPtr, 8) = p1Ship
+dbgArr(outPtr, 9) = p2City
+dbgArr(outPtr, 10) = p2Ship
 
-            outPtr = outPtr + 1
+Dim boxesShipped As Double
+boxesShipped = shippedLocalByDC(j) + p1Ship + p2Ship
+
+dbgArr(outPtr, 11) = boxesShipped
+dbgArr(outPtr, 12) = unfulByDC(j)
+
+outPtr = outPtr + 1
+
         Next j
     Next w
 
     ' Write results
     If outRows > 0 Then
         wsOut.Range("A2").Resize(outRows, 5).Value = outArr
-        wsDbg.Range("A2").Resize(outRows, 11).Value = dbgArr
+        wsDbg.Range("A2").Resize(outRows, 12).Value = dbgArr
     End If
 
     ' Format
     wsOut.Columns("A:E").AutoFit
-    wsDbg.Columns("A:K").AutoFit
+    wsDbg.Columns("A:L").AutoFit
 
     wsOut.Range("B:C").NumberFormat = "yyyy-mm-dd"
     wsDbg.Range("B:C").NumberFormat = "yyyy-mm-dd"
