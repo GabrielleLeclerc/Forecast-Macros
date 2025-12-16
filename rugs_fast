@@ -501,6 +501,9 @@ outPtr = outPtr + 1
     wsOut.Range("B:C").NumberFormat = "yyyy-mm-dd"
     wsDbg.Range("B:C").NumberFormat = "yyyy-mm-dd"
 
+    ' Hide the weekly output sheet after refresh
+    wsOut.Visible = xlSheetHidden      ' user can unhide in Excel UI
+
     MsgBox "Done. Start week Dec 1t 2025. See '" & OUT_SHEET & "' and '" & DBG_SHEET & "'.", vbInformation
 
 CleanDone:
