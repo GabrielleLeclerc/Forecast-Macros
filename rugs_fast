@@ -148,13 +148,14 @@ Next i
     "Backlog", _
     "Sales_Total", _
     "Effective_Demand", _
-    "Avail_Total", _
     "ShippedFromLocal", _
     "P1 City", "ShippedFromP1", _
     "P2 City", "ShippedFromP2", _
     "Boxes_Shipped", _
-    "Unfulfilled" _
+    "Unfulfilled", _
+    "OutOfCityTotal" _
 )
+
 
 
 
@@ -194,6 +195,7 @@ Next i
         Dim shippedByDC() As Double, shippedLocalByDC() As Double
         Dim unfulByDC() As Double, salesByDC() As Double, availByDC() As Double
         Dim backlogTotalByDC() As Double, effectiveDemandByDC() As Double
+        Dim outOfCityByDC() As Double
 
         
         ReDim shippedByDC(LBound(dcSheets) To UBound(dcSheets))
@@ -203,6 +205,7 @@ Next i
         ReDim availByDC(LBound(dcSheets) To UBound(dcSheets))
         ReDim backlogTotalByDC(LBound(dcSheets) To UBound(dcSheets))
         ReDim effectiveDemandByDC(LBound(dcSheets) To UBound(dcSheets))
+        ReDim outOfCityByDC(LBound(dcSheets) To UBound(dcSheets))
 
 
 '==================== NEW: partner shipment totals per demand city ====================
@@ -380,6 +383,9 @@ For j = LBound(dcSheets) To UBound(dcSheets)
             shippedByDC(j) = shippedByDC(j) + shipFromPartner
             unfulByDC(j) = unfulByDC(j) - shipFromPartner
             need = need - shipFromPartner
+            ' NEW: outbound from the partner city (pj) to fulfill other cities
+            outOfCityByDC(pj) = outOfCityByDC(pj) + shipFromPartner
+
 
 '==================== NEW: accumulate shipped-from-partner totals ====================
 Dim partnerCity As String
@@ -442,8 +448,7 @@ Next j
             dbgArr(outPtr, 4) = Round3(backlogTotalByDC(j))
             dbgArr(outPtr, 5) = Round3(salesByDC(j))
             dbgArr(outPtr, 6) = Round3(effectiveDemandByDC(j))
-            dbgArr(outPtr, 7) = Round3(availByDC(j))
-            dbgArr(outPtr, 8) = Round3(shippedLocalByDC(j))
+            dbgArr(outPtr, 7) = Round3(shippedLocalByDC(j))
 
 '==================== NEW: write partner shipped breakdown ====================
 Dim partnersEmit As Variant
@@ -466,16 +471,17 @@ If Not IsEmpty(partnersEmit) Then
     End If
 End If
 
-dbgArr(outPtr, 9) = p1City
-dbgArr(outPtr, 10) = Round3(p1Ship)
-dbgArr(outPtr, 11) = p2City
-dbgArr(outPtr, 12) = Round3(p2Ship)
+dbgArr(outPtr, 8) = p1City
+dbgArr(outPtr, 9) = Round3(p1Ship)
+dbgArr(outPtr, 10) = p2City
+dbgArr(outPtr, 11) = Round3(p2Ship)
 
 Dim boxesShipped As Double
 boxesShipped = shippedLocalByDC(j) + p1Ship + p2Ship
 
-dbgArr(outPtr, 13) = Round3(boxesShipped)
-dbgArr(outPtr, 14) = Round3(unfulByDC(j))
+dbgArr(outPtr, 12) = Round3(boxesShipped)
+dbgArr(outPtr, 13) = Round3(unfulByDC(j))
+dbgArr(outPtr, 14) = Round3(shippedLocalByDC(j) + outOfCityByDC(j))
 
 outPtr = outPtr + 1
 
