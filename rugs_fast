@@ -337,6 +337,9 @@ For j = LBound(dcSheets) To UBound(dcSheets)
     Dim partners As Variant
     partners = PartnersFor(CStr(dcSheets(j)))
 
+    Dim keysToDrop As Collection
+    Set keysToDrop = New Collection
+
     Dim sku As Variant
     For Each sku In remKeysByCity(j)
 
@@ -408,10 +411,18 @@ NextPartner:
             MapSetRounded3 remDemandByCity(j), skuKey, need
         Else
             MapRemove remDemandByCity(j), skuKey
+            AddUniqueKey keysToDrop, skuKey
         End If
 
 NextSkuPartner:
     Next sku
+
+    ' NEW: now it is safe to remove keys from remKeysByCity(j)
+    Dim dropK As Variant
+    For Each dropK In keysToDrop
+        MapRemove remKeysByCity(j), CStr(dropK)
+    Next dropK
+
 
 Next j
 
@@ -423,8 +434,14 @@ For j = LBound(dcSheets) To UBound(dcSheets)
     Dim bk As Variant
     For Each bk In remKeysByCity(j)
         skuKey = CStr(bk)
-        MapSet backlogByCity(j), skuKey, MapGetDbl(remDemandByCity(j), skuKey, 0#)
-        AddUniqueKey backlogKeysByCity(j), skuKey
+
+        Dim vBk As Double
+        vBk = Round3(MapGetDbl(remDemandByCity(j), skuKey, 0#))
+
+        If vBk <> 0# Then
+            MapSet backlogByCity(j), skuKey, vBk
+            AddUniqueKey backlogKeysByCity(j), skuKey
+        End If
     Next bk
 Next j
 
@@ -504,7 +521,7 @@ outPtr = outPtr + 1
     ' Hide the weekly output sheet after refresh
     wsOut.Visible = xlSheetHidden      ' user can unhide in Excel UI
 
-    MsgBox "Done. Start week Dec 1t 2025. See '" & OUT_SHEET & "' and '" & DBG_SHEET & "'.", vbInformation
+    MsgBox "Done. Start week Dec 1st 2025.", vbInformation
 
 CleanDone:
     Application.ScreenUpdating = scrState
