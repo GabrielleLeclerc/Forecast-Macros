@@ -144,7 +144,7 @@ Next i
 
     wsOut.Range("A1:E1").Value = Array("City", "Week Start", "Week End", "Shipped", "Unfulfilled")
     wsDbg.Range("A1:K1").Value = Array( _
-    "City", "Week Start", "Week End", "Sales_Total", "Avail_Total", "Shipped", "Unfulfilled", _
+    "City", "Week Start", "Week End", "Sales_Total", "Avail_Total", "ShippedFromLocal", "Unfulfilled", _
     "P1 City", "ShippedFromP1", "P2 City", "ShippedFromP2" _
     )
 
@@ -168,8 +168,11 @@ Next i
 
 
         ' Totals per DC
-        Dim shippedByDC() As Double, unfulByDC() As Double, salesByDC() As Double, availByDC() As Double
+        Dim shippedByDC() As Double, shippedLocalByDC() As Double
+        Dim unfulByDC() As Double, salesByDC() As Double, availByDC() As Double
+        
         ReDim shippedByDC(LBound(dcSheets) To UBound(dcSheets))
+        ReDim shippedLocalByDC(LBound(dcSheets) To UBound(dcSheets))
         ReDim unfulByDC(LBound(dcSheets) To UBound(dcSheets))
         ReDim salesByDC(LBound(dcSheets) To UBound(dcSheets))
         ReDim availByDC(LBound(dcSheets) To UBound(dcSheets))
@@ -255,6 +258,7 @@ For j = LBound(dcSheets) To UBound(dcSheets)
         salesByDC(j) = salesByDC(j) + salesV
         availByDC(j) = availByDC(j) + availV
         shippedByDC(j) = shippedByDC(j) + shipLocal
+        shippedLocalByDC(j) = shippedLocalByDC(j) + shipLocal
         unfulByDC(j) = unfulByDC(j) + remaining
 
         ' store per-SKU for partner logic
@@ -358,7 +362,7 @@ Next j
             dbgArr(outPtr, 3) = wkEnd
             dbgArr(outPtr, 4) = salesByDC(j)
             dbgArr(outPtr, 5) = availByDC(j)
-            dbgArr(outPtr, 6) = shippedByDC(j)
+            dbgArr(outPtr, 6) = shippedLocalByDC(j)
             dbgArr(outPtr, 7) = unfulByDC(j)
 
 '==================== NEW: write partner shipped breakdown ====================
