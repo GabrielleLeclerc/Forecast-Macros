@@ -143,7 +143,11 @@ Next i
     wsDbg.Cells.Clear
 
     wsOut.Range("A1:E1").Value = Array("City", "Week Start", "Week End", "Shipped", "Unfulfilled")
-    wsDbg.Range("A1:G1").Value = Array("City", "Week Start", "Week End", "Sales_Total", "Avail_Total", "Shipped", "Unfulfilled")
+    wsDbg.Range("A1:K1").Value = Array( _
+    "City", "Week Start", "Week End", "Sales_Total", "Avail_Total", "Shipped", "Unfulfilled", _
+    "P1 City", "ShippedFromP1", "P2 City", "ShippedFromP2" _
+    )
+
 
     ' Output buffers
     Dim cityCount As Long: cityCount = UBound(dcSheets) - LBound(dcSheets) + 1
@@ -151,7 +155,7 @@ Next i
     Dim outRows As Long: outRows = cityCount * weekCount
 
     Dim outArr() As Variant: ReDim outArr(1 To outRows, 1 To 5)
-    Dim dbgArr() As Variant: ReDim dbgArr(1 To outRows, 1 To 7)
+    Dim dbgArr() As Variant: ReDim dbgArr(1 To outRows, 1 To 11)
 
     Dim outPtr As Long: outPtr = 1
 
@@ -160,6 +164,8 @@ Next i
     For w = LBound(wkArr) To UBound(wkArr)
         wkKey = Format$(wkArr(w), "yyyymmdd")
         wkEnd = MapGetDate(weekEndByKey, wkKey, 0)
+    Dim skuKey As String
+
 
         ' Totals per DC
         Dim shippedByDC() As Double, unfulByDC() As Double, salesByDC() As Double, availByDC() As Double
@@ -168,61 +174,175 @@ Next i
         ReDim salesByDC(LBound(dcSheets) To UBound(dcSheets))
         ReDim availByDC(LBound(dcSheets) To UBound(dcSheets))
 
-        ' ===== FAST per-week loop (scan each section once per DC) =====
-        For j = LBound(dcSheets) To UBound(dcSheets)
+'==================== NEW: partner shipment totals per demand city ====================
+Dim shippedFromPartnerByDemand() As Collection
+ReDim shippedFromPartnerByDemand(LBound(dcSheets) To UBound(dcSheets))
 
-            Dim colW As Long
-            colW = MapGetLong(weekCol(j), wkKey, 0)
+For j = LBound(dcSheets) To UBound(dcSheets)
+    Set shippedFromPartnerByDemand(j) = New Collection
+Next j
+'=====================================================================================
 
-            If colW > 0 Then
 
-                Dim skuCol As Long
-                skuCol = ColLetterToNumber(CStr(skuColLetters(j)))
+        '==================== PHASE A: Read Sales/Beg/PO maps for ALL cities ====================
 
-                ' We will iterate Sales SKUs using this key list (see Step B)
-                Dim salesKeys As Collection
-                Set salesKeys = New Collection
+Dim mSalesByCity() As Collection, mBegByCity() As Collection, mPOByCity() As Collection
+Dim salesKeysByCity() As Collection
 
-                Dim mSales As Collection, mBeg As Collection, mPO As Collection
-                Set mSales = SumSectionBySkuMap(wsDC(j), salesS(j), salesE(j), skuCol, colW, salesKeys)
-                Set mBeg = SumSectionBySkuMap(wsDC(j), begS(j), begE(j), skuCol, colW, Nothing)
-                Set mPO = SumSectionBySkuMap(wsDC(j), poS(j), poE(j), skuCol, colW, Nothing)
+ReDim mSalesByCity(LBound(dcSheets) To UBound(dcSheets))
+ReDim mBegByCity(LBound(dcSheets) To UBound(dcSheets))
+ReDim mPOByCity(LBound(dcSheets) To UBound(dcSheets))
+ReDim salesKeysByCity(LBound(dcSheets) To UBound(dcSheets))
 
-                Dim k As Variant
-                For Each k In salesKeys
+For j = LBound(dcSheets) To UBound(dcSheets)
 
-                    Dim skuKey As String
-                    skuKey = CStr(k)
+    Dim colW As Long
+    colW = MapGetLong(weekCol(j), wkKey, 0)
 
-                    Dim salesV As Double, begV As Double, poV As Double
-                    Dim availV As Double, shipV As Double, unV As Double
+    Set salesKeysByCity(j) = New Collection
+    Set mSalesByCity(j) = New Collection
+    Set mBegByCity(j) = New Collection
+    Set mPOByCity(j) = New Collection
 
-                    salesV = MapGetDbl(mSales, skuKey, 0#)
-                    begV = MapGetDbl(mBeg, skuKey, 0#)
-                    poV = MapGetDbl(mPO, skuKey, 0#)
+    If colW > 0 Then
+        Dim skuCol As Long
+        skuCol = ColLetterToNumber(CStr(skuColLetters(j)))
 
-                    ' Clamp negatives (replaces WorksheetFunction.Max)
-                    If salesV < 0# Then salesV = 0#
-                    If begV < 0# Then begV = 0#
-                    If poV < 0# Then poV = 0#
+        Set mSalesByCity(j) = SumSectionBySkuMap(wsDC(j), salesS(j), salesE(j), skuCol, colW, salesKeysByCity(j))
+        Set mBegByCity(j) = SumSectionBySkuMap(wsDC(j), begS(j), begE(j), skuCol, colW, Nothing)
+        Set mPOByCity(j) = SumSectionBySkuMap(wsDC(j), poS(j), poE(j), skuCol, colW, Nothing)
+    End If
+Next j
 
-                    availV = begV + poV
+'==================== PHASE B: Local shipping first + store remaining demand ====================
 
-                    ' shipV = Min(salesV, availV)
-                    If salesV < availV Then shipV = salesV Else shipV = availV
+' selfShipByCity(j): how much city j used to cover its OWN demand per SKU
+' remDemandByCity(j): remaining demand per SKU after local shipping
+' donatedByCity(j): how much city j has already donated to others per SKU
+Dim selfShipByCity() As Collection, remDemandByCity() As Collection, donatedByCity() As Collection
+ReDim selfShipByCity(LBound(dcSheets) To UBound(dcSheets))
+ReDim remDemandByCity(LBound(dcSheets) To UBound(dcSheets))
+ReDim donatedByCity(LBound(dcSheets) To UBound(dcSheets))
 
-                    ' unV = Max(0, salesV - availV)
-                    unV = salesV - availV
-                    If unV < 0# Then unV = 0#
+For j = LBound(dcSheets) To UBound(dcSheets)
+    Set selfShipByCity(j) = New Collection
+    Set remDemandByCity(j) = New Collection
+    Set donatedByCity(j) = New Collection
 
-                    salesByDC(j) = salesByDC(j) + salesV
-                    availByDC(j) = availByDC(j) + availV
-                    shippedByDC(j) = shippedByDC(j) + shipV
-                    unfulByDC(j) = unfulByDC(j) + unV
+    Dim k As Variant
+    For Each k In salesKeysByCity(j)
 
-                Next k
-            End If
-        Next j
+        skuKey = CStr(k)
+
+        Dim salesV As Double, begV As Double, poV As Double, availV As Double
+        Dim shipLocal As Double, remaining As Double
+
+        salesV = MapGetDbl(mSalesByCity(j), skuKey, 0#)
+        If salesV < 0# Then salesV = 0#
+
+        begV = MapGetDbl(mBegByCity(j), skuKey, 0#)
+        poV = MapGetDbl(mPOByCity(j), skuKey, 0#)
+        If begV < 0# Then begV = 0#
+        If poV < 0# Then poV = 0#
+
+        availV = begV + poV
+
+        If salesV < availV Then shipLocal = salesV Else shipLocal = availV
+        remaining = salesV - shipLocal
+        If remaining < 0# Then remaining = 0#
+
+        ' totals for output/debug
+        salesByDC(j) = salesByDC(j) + salesV
+        availByDC(j) = availByDC(j) + availV
+        shippedByDC(j) = shippedByDC(j) + shipLocal
+        unfulByDC(j) = unfulByDC(j) + remaining
+
+        ' store per-SKU for partner logic
+        If shipLocal <> 0# Then MapSet selfShipByCity(j), skuKey, shipLocal
+        If remaining <> 0# Then MapSet remDemandByCity(j), skuKey, remaining
+
+    Next k
+Next j
+
+'==================== PHASE C: Partner allocation (uses partner leftover AFTER own demand) ====================
+
+For j = LBound(dcSheets) To UBound(dcSheets)
+
+    Dim partners As Variant
+    partners = PartnersFor(CStr(dcSheets(j)))
+
+    Dim sku As Variant
+    For Each sku In salesKeysByCity(j)
+
+        skuKey = CStr(sku)
+
+        Dim need As Double
+        need = MapGetDbl(remDemandByCity(j), skuKey, 0#)
+        If need <= 0# Then GoTo NextSkuPartner
+
+        Dim p As Long
+        For p = LBound(partners) To UBound(partners)
+
+            Dim pSheet As String: pSheet = CStr(partners(p))
+            Dim pj As Long: pj = FindDCIndexBySheetName(pSheet)
+            If pj < 0 Then GoTo NextPartner
+
+            ' partner total availability for this SKU
+            Dim pBegV As Double, pPoV As Double, pAvail As Double
+            pBegV = MapGetDbl(mBegByCity(pj), skuKey, 0#)
+            pPoV = MapGetDbl(mPOByCity(pj), skuKey, 0#)
+            If pBegV < 0# Then pBegV = 0#
+            If pPoV < 0# Then pPoV = 0#
+            pAvail = pBegV + pPoV
+
+            If pAvail <= 0# Then GoTo NextPartner
+
+            ' partner has to keep enough to cover its OWN demand first (selfShip)
+            Dim pSelfShip As Double
+            pSelfShip = MapGetDbl(selfShipByCity(pj), skuKey, 0#)
+
+            ' and can’t donate the same stock twice
+            Dim pAlreadyDonated As Double
+            pAlreadyDonated = MapGetDbl(donatedByCity(pj), skuKey, 0#)
+
+            Dim pRemaining As Double
+            pRemaining = pAvail - pSelfShip - pAlreadyDonated
+            If pRemaining <= 0# Then GoTo NextPartner
+
+            Dim shipFromPartner As Double
+            If need < pRemaining Then shipFromPartner = need Else shipFromPartner = pRemaining
+
+            ' apply partner shipment
+            shippedByDC(j) = shippedByDC(j) + shipFromPartner
+            unfulByDC(j) = unfulByDC(j) - shipFromPartner
+            need = need - shipFromPartner
+
+'==================== NEW: accumulate shipped-from-partner totals ====================
+Dim partnerCity As String
+partnerCity = CStr(dcNames(pj)) ' or use pSheet if you prefer sheet labels
+
+MapAddDbl shippedFromPartnerByDemand(j), partnerCity, shipFromPartner
+'====================================================================================
+
+
+            ' track donation so we don't double-count partner inventory
+            MapSet donatedByCity(pj), skuKey, pAlreadyDonated + shipFromPartner
+
+            If need <= 0# Then Exit For
+
+NextPartner:
+        Next p
+
+        ' update remaining demand map (optional, but keeps it consistent)
+        If need > 0# Then
+            MapSet remDemandByCity(j), skuKey, need
+        Else
+        End If
+
+NextSkuPartner:
+    Next sku
+
+Next j
 
 
         ' Emit one row per city for this week
@@ -241,6 +361,33 @@ Next i
             dbgArr(outPtr, 6) = shippedByDC(j)
             dbgArr(outPtr, 7) = unfulByDC(j)
 
+'==================== NEW: write partner shipped breakdown ====================
+Dim partnersEmit As Variant
+partnersEmit = PartnersFor(CStr(dcSheets(j)))
+
+Dim p1City As String, p2City As String
+Dim p1Ship As Double, p2Ship As Double
+
+p1City = "": p2City = ""
+p1Ship = 0#: p2Ship = 0#
+
+If Not IsEmpty(partnersEmit) Then
+    If UBound(partnersEmit) >= 0 Then
+        p1City = CStr(dcNames(FindDCIndexBySheetName(CStr(partnersEmit(0)))))
+        p1Ship = MapGetDbl(shippedFromPartnerByDemand(j), p1City, 0#)
+    End If
+    If UBound(partnersEmit) >= 1 Then
+        p2City = CStr(dcNames(FindDCIndexBySheetName(CStr(partnersEmit(1)))))
+        p2Ship = MapGetDbl(shippedFromPartnerByDemand(j), p2City, 0#)
+    End If
+End If
+
+dbgArr(outPtr, 8) = p1City
+dbgArr(outPtr, 9) = p1Ship
+dbgArr(outPtr, 10) = p2City
+dbgArr(outPtr, 11) = p2Ship
+'================================================================
+
             outPtr = outPtr + 1
         Next j
     Next w
@@ -248,12 +395,12 @@ Next i
     ' Write results
     If outRows > 0 Then
         wsOut.Range("A2").Resize(outRows, 5).Value = outArr
-        wsDbg.Range("A2").Resize(outRows, 7).Value = dbgArr
+        wsDbg.Range("A2").Resize(outRows, 11).Value = dbgArr
     End If
 
     ' Format
     wsOut.Columns("A:E").AutoFit
-    wsDbg.Columns("A:G").AutoFit
+    wsDbg.Columns("A:K").AutoFit
 
     wsOut.Range("B:C").NumberFormat = "yyyy-mm-dd"
     wsDbg.Range("B:C").NumberFormat = "yyyy-mm-dd"
@@ -362,6 +509,30 @@ Private Function WeekEndAt(ws As Worksheet, ByVal colIdx As Long) As Date
     Else
         WeekEndAt = 0
     End If
+End Function
+
+'============================= PARTNER RULES =============================
+
+Private Function PartnersFor(ByVal demandSheetName As String) As Variant
+    Select Case UCase$(demandSheetName)
+        Case "RUGS-MTL":     PartnersFor = VBA.Array("RUGS-TOR", "RUGS-VAN")
+        Case "RUGS-TOR":     PartnersFor = VBA.Array("RUGS-MTL", "RUGS-VAN")
+        Case "RUGS-VAN":     PartnersFor = VBA.Array("RUGS-TOR", "RUGS-MTL")
+        Case "RUGS-DAYTON":  PartnersFor = VBA.Array("RUGS-MORENO")
+        Case "RUGS-MORENO":  PartnersFor = VBA.Array("RUGS-DAYTON")
+        Case Else:           PartnersFor = VBA.Array()
+    End Select
+End Function
+
+Private Function FindDCIndexBySheetName(ByVal sheetName As String) As Long
+    Dim i As Long
+    For i = LBound(dcSheets) To UBound(dcSheets)
+        If UCase$(CStr(dcSheets(i))) = UCase$(sheetName) Then
+            FindDCIndexBySheetName = i
+            Exit Function
+        End If
+    Next i
+    FindDCIndexBySheetName = -1
 End Function
 
 '============================= COLLECTION MAP UTILS =============================
