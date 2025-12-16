@@ -17,6 +17,18 @@ Private Const LBL_PO    As String = "PO TO BE RECEIVED" ' in your file: "PO to b
 ' Column where section headers are found
 Private Const HEADER_COL As String = "B"
 
+'============================= WEEK COLUMN LIMITS =============================
+
+Private Const MTL_START_COL As String = "CT"  ' Week of 2025-12-01
+Private Const MTL_END_COL   As String = "FC"
+Private Const TO_START_COL  As String = "CS"  ' Week of 2025-12-01
+Private Const TO_END_COL    As String = "EY"
+Private Const VAN_START_COL As String = "CT"  ' Week of 2025-12-01
+Private Const VAN_END_COL   As String = "EY"
+Private Const DAY_START_COL As String = "CS"  ' Week of 2025-12-01
+Private Const DAY_END_COL   As String = "EY"
+Private Const MOR_START_COL As String = "CS"  ' Week of 2025-12-01
+Private Const MOR_END_COL   As String = "EY"
 
 
 '============================= ENTRY =============================
@@ -90,23 +102,28 @@ Public Sub BuildWeeklyRugs_Shipped_LabelLocked()
     Dim weekEndByKey As Collection: Set weekEndByKey = New Collection ' wkKey -> weekEnd
 
     For i = LBound(dcSheets) To UBound(dcSheets)
-        Set weekCol(i) = New Collection
-        Dim lastCol As Long: lastCol = wsDC(i).UsedRange.Columns(wsDC(i).UsedRange.Columns.Count).Column
+    Set weekCol(i) = New Collection
+    Dim lastCol As Long: lastCol = wsDC(i).UsedRange.Columns(wsDC(i).UsedRange.Columns.Count).Column
 
-        For c = 1 To lastCol
-            Dim wkStart As Date: wkStart = WeekStartAt(wsDC(i), c)
-            If wkStart > 0 Then
-                wkKey = Format$(wkStart, "yyyymmdd")
-                MapSet weekCol(i), wkKey, c
-                AddUniqueDate weekStarts, wkStart
+    Dim firstCol As Long, endCol As Long
+    firstCol = WeekStartColBySheet(CStr(dcSheets(i)))
+    endCol = WeekEndColBySheet(CStr(dcSheets(i)), lastCol)
 
-                wkEnd = WeekEndAt(wsDC(i), c)
-                If wkEnd > 0 Then
-                    If Not MapExists(weekEndByKey, wkKey) Then MapSet weekEndByKey, wkKey, wkEnd
-                End If
+    For c = firstCol To endCol
+        Dim wkStart As Date: wkStart = WeekStartAt(wsDC(i), c)
+        If wkStart > 0 Then
+            wkKey = Format$(wkStart, "yyyymmdd")
+            MapSet weekCol(i), wkKey, c
+            AddUniqueDate weekStarts, wkStart
+
+            wkEnd = WeekEndAt(wsDC(i), c)
+            If wkEnd > 0 Then
+                If Not MapExists(weekEndByKey, wkKey) Then MapSet weekEndByKey, wkKey, wkEnd
             End If
-        Next c
-    Next i
+        End If
+    Next c
+Next i
+
 
     If weekStarts.Count = 0 Then
         MsgBox "No week start dates found in row 2.", vbExclamation
@@ -241,7 +258,7 @@ Public Sub BuildWeeklyRugs_Shipped_LabelLocked()
     wsOut.Range("B:C").NumberFormat = "yyyy-mm-dd"
     wsDbg.Range("B:C").NumberFormat = "yyyy-mm-dd"
 
-    MsgBox "Done. See '" & OUT_SHEET & "' and '" & DBG_SHEET & "'.", vbInformation
+    MsgBox "Done. Start week Dec 1t 2025. See '" & OUT_SHEET & "' and '" & DBG_SHEET & "'.", vbInformation
 
 CleanDone:
     Application.ScreenUpdating = scrState
@@ -437,6 +454,32 @@ Private Function ColLetterToNumber(ByVal colLetters As String) As Long
         n = n * 26 + (Asc(Mid$(s, i, 1)) - Asc("A") + 1)
     Next i
     ColLetterToNumber = n
+End Function
+
+Private Function WeekStartColBySheet(ByVal sheetName As String) As Long
+    Select Case UCase$(sheetName)
+        Case "RUGS-MTL":     WeekStartColBySheet = ColLetterToNumber(MTL_START_COL)
+        Case "RUGS-TOR":     WeekStartColBySheet = ColLetterToNumber(TO_START_COL)
+        Case "RUGS-VAN":     WeekStartColBySheet = ColLetterToNumber(VAN_START_COL)
+        Case "RUGS-DAYTON":  WeekStartColBySheet = ColLetterToNumber(DAY_START_COL)
+        Case "RUGS-MORENO":  WeekStartColBySheet = ColLetterToNumber(MOR_START_COL)
+        Case Else:           WeekStartColBySheet = 1
+    End Select
+End Function
+
+Private Function WeekEndColBySheet(ByVal sheetName As String, ByVal lastUsedCol As Long) As Long
+    Select Case UCase$(sheetName)
+        Case "RUGS-MTL":     WeekEndColBySheet = ColLetterToNumber(MTL_END_COL)
+        Case "RUGS-TOR":     WeekEndColBySheet = ColLetterToNumber(TO_END_COL)
+        Case "RUGS-VAN":     WeekEndColBySheet = ColLetterToNumber(VAN_END_COL)
+        Case "RUGS-DAYTON":  WeekEndColBySheet = ColLetterToNumber(DAY_END_COL)
+        Case "RUGS-MORENO":  WeekEndColBySheet = ColLetterToNumber(MOR_END_COL)
+        Case Else:           WeekEndColBySheet = lastUsedCol
+    End Select
+
+    ' safety clamp so we don't loop past the sheet
+    If WeekEndColBySheet > lastUsedCol Then WeekEndColBySheet = lastUsedCol
+    If WeekEndColBySheet < 1 Then WeekEndColBySheet = 1
 End Function
 
 Private Function SheetExists(ByVal name As String) As Boolean
