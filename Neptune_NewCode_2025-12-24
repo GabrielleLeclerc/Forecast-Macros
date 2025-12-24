@@ -1,0 +1,28 @@
+Option Explicit
+
+Sub Read_Sheets_From_Table()
+    Dim wsA As Worksheet: Set wsA = ThisWorkbook.Worksheets("Boxes_Shipped_Assumptions")
+    Dim lo As ListObject: Set lo = wsA.ListObjects("WorksheetNames")
+    
+    Dim c As Range
+    For Each c In lo.ListColumns("Worksheet").DataBodyRange.Cells
+        Dim worksheet As String
+        worksheet = Trim(CStr(c.Value))
+        If Len(worksheet) = 0 Then GoTo NextOne
+        
+        Dim wsT As Worksheet
+        On Error Resume Next
+        Set wsT = ThisWorkbook.Worksheets(worksheet)
+        On Error GoTo 0
+        
+        If wsT Is Nothing Then
+            Debug.Print "Missing sheet:", worksheet
+        Else
+            '--- read from the sheet (example)
+            Debug.Print "Reading:", wsT.Name, "A1=", wsT.Range("A1").Value
+        End If
+        
+NextOne:
+        Set wsT = Nothing
+    Next c
+End Sub
