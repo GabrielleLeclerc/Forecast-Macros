@@ -1,8 +1,25 @@
 Option Explicit
 
-Sub Read_Sheets_From_Table()
+Sub Boxes_Shipped_Forecast()
     Dim wsA As Worksheet: Set wsA = ThisWorkbook.Worksheets("Boxes_Shipped_Assumptions")
     Dim lo As ListObject: Set lo = wsA.ListObjects("WorksheetNames")
+
+'=== Set up / create the Debug sheet and the output row counter ===
+    Dim wsDebug As Worksheet
+    On Error Resume Next
+    Set wsDebug = ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG")
+    On Error GoTo 0
+    
+    If wsDebug Is Nothing Then
+        Set wsDebug = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+        wsDebug.Name = "Boxes_Shipped_DEBUG"
+    End If
+    
+    wsDebug.Cells.Clear
+    wsDebug.Range("A1").Value = "Demand City"
+    
+    Dim outRow As Long
+    outRow = 2
     
     Dim c As Range
     For Each c In lo.ListColumns("Worksheet").DataBodyRange.Cells
@@ -20,9 +37,30 @@ Sub Read_Sheets_From_Table()
         Else
             '--- read from the sheet (example)
             Debug.Print "Reading:", wsT.Name, "A1=", wsT.Range("A1").Value
+
+            Dim demandCity As String
+            demandCity = DemandCityFromSheetName(wsT.Name)
+            
+            wsDebug.Cells(outRow, "A").Value = demandCity
+            outRow = outRow + 1
+            
         End If
         
 NextOne:
         Set wsT = Nothing
     Next c
 End Sub
+
+'=== City Name Mapping ===
+Private Function DemandCityFromSheetName(ByVal sheetName As String) As String
+    Select Case sheetName
+        Case "Neptune-Montreal":  DemandCityFromSheetName = "Montreal"
+        Case "Neptune-Vancouver": DemandCityFromSheetName = "Vancouver"
+        Case "Neptune-Toronto":   DemandCityFromSheetName = "Toronto"
+        Case "Neptune-Moreno":    DemandCityFromSheetName = "Moreno"
+        Case "Neptune-Dayton":    DemandCityFromSheetName = "Dayton"
+        Case Else
+            'Fallback if a new sheet name appears that you haven't mapped yet:
+            DemandCityFromSheetName = "UNKNOWN (" & sheetName & ")"
+    End Select
+End Function
