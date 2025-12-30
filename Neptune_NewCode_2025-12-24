@@ -71,7 +71,11 @@ Sub Boxes_Shipped_Forecast()
         wsDebug.Cells(1, hdrCol).Value = "IB B" & b
         hdrCol = hdrCol + 1
     Next b
-
+    
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "AvailStock B" & b
+        hdrCol = hdrCol + 1
+    Next b
     
     wsDebug.Columns("C:D").NumberFormat = "yyyy-mm-dd"
 
@@ -207,6 +211,18 @@ Sub Boxes_Shipped_Forecast()
                             Else
                                 wsDebug.Cells(outRow, writeCol).Value = 0
                             End If
+                        
+                            writeCol = writeCol + 1
+                        Next b
+
+                        '--- AvailStock B1..Bn = Beg Stock + IB ---
+                        Dim begCol As Long, ibCol As Long
+                        For b = 1 To MAX_BOX
+                            begCol = 6 + MAX_BOX + (b - 1)         'Beg Stock block starts after Sales
+                            ibCol  = 6 + (2 * MAX_BOX) + (b - 1)   'IB block starts after Sales+Beg
+                        
+                            wsDebug.Cells(outRow, writeCol).Value = _
+                                Val(wsDebug.Cells(outRow, begCol).Value) + Val(wsDebug.Cells(outRow, ibCol).Value)
                         
                             writeCol = writeCol + 1
                         Next b
