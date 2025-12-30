@@ -34,6 +34,28 @@ Sub Boxes_Shipped_Forecast()
     wsDebug.Range("C1").Value = "Week Start"
     wsDebug.Range("D1").Value = "Week End"
     wsDebug.Range("E1").Value = "Col"
+
+    '=== NEW: Add box columns ===
+    Const MAX_BOX As Long = 12   ' <-- set this to your max box count
+    Dim b As Long, hdrCol As Long
+    
+    hdrCol = 6 ' Column F = first new header
+    
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "Sales B" & b
+        hdrCol = hdrCol + 1
+    Next b
+    
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "Beginning Stock B" & b
+        hdrCol = hdrCol + 1
+    Next b
+    
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "Inbound B" & b
+        hdrCol = hdrCol + 1
+    Next b
+
     
     wsDebug.Columns("C:D").NumberFormat = "yyyy-mm-dd"
 
@@ -72,7 +94,15 @@ Sub Boxes_Shipped_Forecast()
             If begTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'Beginning Stock'"
             If endTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'Ending Stock'"
             If poTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'POs to be received'"
-           
+
+            '=== Build section INDEX tables (Color+Box -> Row) ===
+            Dim salesIdx As Variant, begIdx As Variant, endIdx As Variant, poIdx As Variant
+            
+            salesIdx = BuildSectionIndex_FromRange(salesTbl)
+            begIdx   = BuildSectionIndex_FromRange(begTbl)
+            endIdx   = BuildSectionIndex_FromRange(endTbl)
+            poIdx    = BuildSectionIndex_FromRange(poTbl)
+            
             '=== Find the forecast start column on row 2 (match forecastStart) ===
             Dim startCol As Long, lastCol As Long, col As Long
             startCol = 0
@@ -100,11 +130,55 @@ Sub Boxes_Shipped_Forecast()
                     
                     Dim i As Long
                     For i = 1 To colors.Count
+                        
+                        Dim colorKey As String
+                        colorKey = NormalizeColor(colors(i))  ' make sure it matches index normalization
+                        
                         wsDebug.Cells(outRow, "A").Value = demandCity
                         wsDebug.Cells(outRow, "B").Value = colors(i)
                         wsDebug.Cells(outRow, "C").Value = wsT.Cells(2, col).Value
                         wsDebug.Cells(outRow, "D").Value = wsT.Cells(4, col).Value
                         wsDebug.Cells(outRow, "E").Value = colLetter
+                        
+                        '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
+                        Dim writeCol As Long
+                        writeCol = 6   ' Column F = first box data column
+                        
+                        Dim rr As Long, v As Variant
+                        
+                        '--- Sales B1..Bn ---
+                        For b = 1 To MAX_BOX
+                            rr = RowForInTable(salesIdx, colorKey, b)
+                            If rr > 0 Then
+                                wsDebug.Cells(outRow, writeCol).Value = wsT.Cells(rr, col).Value
+                            Else
+                                wsDebug.Cells(outRow, writeCol).Value = 0
+                            End If
+                            writeCol = writeCol + 1
+                        Next b
+                        
+                        '--- Beginning Stock B1..Bn ---
+                        For b = 1 To MAX_BOX
+                            rr = RowForInTable(begIdx, colorKey, b)
+                            If rr > 0 Then
+                                wsDebug.Cells(outRow, writeCol).Value = wsT.Cells(rr, col).Value
+                            Else
+                                wsDebug.Cells(outRow, writeCol).Value = 0
+                            End If
+                            writeCol = writeCol + 1
+                        Next b
+                        
+                        '--- Inbound B1..Bn (POs to be received) ---
+                        For b = 1 To MAX_BOX
+                            rr = RowForInTable(poIdx, colorKey, b)
+                            If rr > 0 Then
+                                wsDebug.Cells(outRow, writeCol).Value = wsT.Cells(rr, col).Value
+                            Else
+                                wsDebug.Cells(outRow, writeCol).Value = 0
+                            End If
+                            writeCol = writeCol + 1
+                        Next b
+                        
                         outRow = outRow + 1
                     Next i
                 Next col
@@ -178,7 +252,7 @@ Private Function FindInColumnExact(ByVal ws As Worksheet, ByVal colLetter As Str
     
     Dim r As Long
     For r = 1 To lastRow
-        If Trim$(CStr(ws.Cells(r, colLetter).Value)) = textToFind Then
+        If UCase$(Trim$(CStr(ws.Cells(r, colLetter).Value))) = UCase$(Trim$(textToFind)) Then
             Set FindInColumnExact = ws.Cells(r, colLetter)
             Exit Function
         End If
@@ -316,3 +390,115 @@ Private Function GetActiveColorsFromTable(ByVal tableName As String, _
     
     Set GetActiveColorsFromTable = result
 End Function
+
+'Builds a 3 x N variant table:
+'   tbl(1,i) = colorKey
+'   tbl(2,i) = boxNum
+'   tbl(3,i) = worksheetRow
+Private Function BuildSectionIndex_FromRange(ByVal sectionRng As Range) As Variant
+    If sectionRng Is Nothing Then
+        BuildSectionIndex_FromRange = Empty
+        Exit Function
+    End If
+
+    Dim tmp() As Variant, cnt As Long
+    ReDim tmp(1 To 3, 1 To 1)
+
+    Dim lastColorKey As String
+    lastColorKey = ""
+
+    Dim r As Long
+    For r = 1 To sectionRng.Rows.Count
+
+        'In your sectionRng: C=1, D=2, E=3
+        Dim desc As String
+        desc = CStr(sectionRng.Cells(r, 2).Value)   'Column D on sheet
+        Dim bx As Long
+        bx = ParseBoxNum(desc)
+        If bx = 8 Then
+            Dim U8 As String: U8 = UCase$(desc)
+            If (InStr(1, U8, "NEW") > 0) And (InStr(1, U8, "ARMS") > 0 Or InStr(1, U8, "SRMS") > 0) Then
+                GoTo NextRow
+            End If
+        End If
+        If bx = 0 Then GoTo NextRow
+
+        'Read color from Column E with fill-down
+        Dim colorRaw As String, colorKey As String
+        colorRaw = CStr(sectionRng.Cells(r, 3).Value) 'Column E on sheet
+        colorKey = ""
+
+        If IsLikelyColor(colorRaw) Then colorKey = NormalizeColor(colorRaw)
+        If Len(colorKey) = 0 And Len(lastColorKey) > 0 Then colorKey = lastColorKey
+        If Len(colorKey) = 0 Then GoTo NextRow
+
+        lastColorKey = colorKey
+
+        cnt = cnt + 1
+        If cnt > UBound(tmp, 2) Then ReDim Preserve tmp(1 To 3, 1 To cnt)
+
+        tmp(1, cnt) = colorKey
+        tmp(2, cnt) = bx
+        tmp(3, cnt) = sectionRng.Cells(r, 1).Row   'worksheet row number
+
+NextRow:
+    Next r
+
+    If cnt = 0 Then
+        BuildSectionIndex_FromRange = Empty
+    Else
+        BuildSectionIndex_FromRange = tmp
+    End If
+End Function
+
+Private Function ParseBoxNum(ByVal s As String) As Long
+    Dim U As String: U = UCase$(s)
+    Dim p As Long: p = InStr(1, U, "BOX")
+    If p = 0 Then Exit Function
+
+    Dim i As Long, ch As String, numStr As String
+    For i = p + 3 To Len(U)
+        ch = Mid$(U, i, 1)
+
+        'skip separators
+        If ch = " " Or ch = "-" Or ch = ChrW(8211) Or ch = ChrW(8212) Or ch = ChrW(160) Then
+            'skip
+        ElseIf ch Like "#" Then
+            numStr = numStr & ch
+        ElseIf Len(numStr) > 0 Then
+            Exit For
+        End If
+    Next i
+
+    If Len(numStr) > 0 Then ParseBoxNum = CLng(numStr)
+End Function
+
+Private Function IsLikelyColor(ByVal v As Variant) As Boolean
+    Dim s As String: s = Trim$(CStr(v))
+    If Len(s) = 0 Then Exit Function
+    If IsNumeric(s) Then Exit Function
+    On Error Resume Next
+    If IsDate(s) Then Exit Function
+    On Error GoTo 0
+
+    Dim i As Long, ch As String
+    For i = 1 To Len(s)
+        ch = Mid$(s, i, 1)
+        If ch Like "[A-Za-z]" Then IsLikelyColor = True: Exit Function
+    Next i
+End Function
+
+Private Function RowForInTable(ByVal tbl As Variant, ByVal colorKey As String, ByVal boxNum As Long) As Long
+    If IsEmpty(tbl) Then Exit Function
+
+    Dim i As Long
+    For i = 1 To UBound(tbl, 2)
+        If CStr(tbl(1, i)) = colorKey And CLng(tbl(2, i)) = boxNum Then
+            RowForInTable = CLng(tbl(3, i))
+            Exit Function
+        End If
+    Next i
+End Function
+
+
+
