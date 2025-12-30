@@ -3,6 +3,14 @@ Option Explicit
 Public MAX_BOX As Long
 
 Sub Boxes_Shipped_Forecast()
+    Dim oldCalc As XlCalculation
+    oldCalc = Application.Calculation
+    
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+    Application.DisplayStatusBar = True
+
     Dim wsA As Worksheet: Set wsA = ThisWorkbook.Worksheets("Boxes_Shipped_Assumptions")
     Dim lo As ListObject: Set lo = wsA.ListObjects("WorksheetNames")
 
@@ -110,6 +118,12 @@ Sub Boxes_Shipped_Forecast()
             begIdx   = BuildSectionIndex_FromRange(begTbl)
             endIdx   = BuildSectionIndex_FromRange(endTbl)
             poIdx    = BuildSectionIndex_FromRange(poTbl)
+
+            '=== FAST MAPS (Color|Box -> Row) to avoid scanning arrays repeatedly ===
+            Dim salesMap As Object, begMap As Object, poMap As Object
+            Set salesMap = BuildRowMap(salesIdx)
+            Set begMap   = BuildRowMap(begIdx)
+            Set poMap    = BuildRowMap(poIdx)
             
             '=== Find the forecast start column on row 2 (match forecastStart) ===
             Dim startCol As Long, lastCol As Long, col As Long
@@ -155,38 +169,48 @@ Sub Boxes_Shipped_Forecast()
                         Dim rr As Long, v As Variant
                         
                         '--- Sales B1..Bn ---
+                        Dim key As String
                         For b = 1 To MAX_BOX
-                            rr = RowForInTable(salesIdx, colorKey, b)
+                            key = colorKey & "|" & CStr(b)
+                        
+                            rr = MapGetLong(salesMap, key, 0)
                             If rr > 0 Then
                                 wsDebug.Cells(outRow, writeCol).Value = wsT.Cells(rr, col).Value
                             Else
                                 wsDebug.Cells(outRow, writeCol).Value = 0
                             End If
+                        
                             writeCol = writeCol + 1
                         Next b
-                        
+                    
                         '--- Beginning Stock B1..Bn ---
                         For b = 1 To MAX_BOX
-                            rr = RowForInTable(begIdx, colorKey, b)
+                            key = colorKey & "|" & CStr(b)
+                        
+                            rr = MapGetLong(begMap, key, 0)
                             If rr > 0 Then
                                 wsDebug.Cells(outRow, writeCol).Value = wsT.Cells(rr, col).Value
                             Else
                                 wsDebug.Cells(outRow, writeCol).Value = 0
                             End If
+                        
                             writeCol = writeCol + 1
                         Next b
-                        
+
                         '--- Inbound B1..Bn (POs to be received) ---
                         For b = 1 To MAX_BOX
-                            rr = RowForInTable(poIdx, colorKey, b)
+                            key = colorKey & "|" & CStr(b)
+                        
+                            rr = MapGetLong(poMap, key, 0)
                             If rr > 0 Then
                                 wsDebug.Cells(outRow, writeCol).Value = wsT.Cells(rr, col).Value
                             Else
                                 wsDebug.Cells(outRow, writeCol).Value = 0
                             End If
+                        
                             writeCol = writeCol + 1
                         Next b
-                        
+                                                                        
                         outRow = outRow + 1
                     Next i
                 Next col
@@ -196,6 +220,11 @@ Sub Boxes_Shipped_Forecast()
 NextOne:
         Set wsT = Nothing
     Next c
+
+    Application.Calculation = oldCalc
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+    Application.StatusBar = False
 
     MsgBox "Boxes Shipped Forecast Ran Successfully", vbInformation
 End Sub
@@ -498,18 +527,6 @@ Private Function IsLikelyColor(ByVal v As Variant) As Boolean
     Next i
 End Function
 
-Private Function RowForInTable(ByVal tbl As Variant, ByVal colorKey As String, ByVal boxNum As Long) As Long
-    If IsEmpty(tbl) Then Exit Function
-
-    Dim i As Long
-    For i = 1 To UBound(tbl, 2)
-        If CStr(tbl(1, i)) = colorKey And CLng(tbl(2, i)) = boxNum Then
-            RowForInTable = CLng(tbl(3, i))
-            Exit Function
-        End If
-    Next i
-End Function
-
 Private Function GetBoxCountFromTable(ByVal tableName As String) As Long
     Dim ws As Worksheet, lo As ListObject
 
@@ -534,5 +551,96 @@ Private Function GetBoxCountFromTable(ByVal tableName As String) As Long
     GetBoxCountFromTable = 0
 End Function
 
+'Builds a fast lookup:
+'   key = "COLOR|BOX"  ->  worksheetRow
+'First match wins (handles duplicates like discontinued items).
+Private Function BuildRowMap(ByVal tbl As Variant) As Object
+    Dim m As Object
+    Set m = MapCreate()
 
+    If IsEmpty(tbl) Then
+        Set BuildRowMap = m
+        Exit Function
+    End If
 
+    Dim i As Long, k As String
+    For i = 1 To UBound(tbl, 2)
+        k = CStr(tbl(1, i)) & "|" & CStr(tbl(2, i))
+        MapAddFirst m, k, CLng(tbl(3, i))
+    Next i
+
+    Set BuildRowMap = m
+End Function
+
+'==================== CROSS-PLATFORM MAP ====================
+' Uses Scripting.Dictionary if available; otherwise falls back to Collection of [key,value] pairs.
+
+Private Function MapCreate() As Object
+    'Try Dictionary first (Windows)
+    On Error Resume Next
+    Dim d As Object
+    Set d = CreateObject("Scripting.Dictionary")
+    On Error GoTo 0
+
+    If Not d Is Nothing Then
+        d.CompareMode = 1 ' vbTextCompare
+        Set MapCreate = d
+    Else
+        Dim c As Collection
+        Set c = New Collection
+        Set MapCreate = c
+    End If
+End Function
+
+Private Function MapIsDictionary(ByVal m As Object) As Boolean
+    MapIsDictionary = (TypeName(m) = "Dictionary")
+End Function
+
+Private Function MapExists(ByVal m As Object, ByVal key As String) As Boolean
+    If MapIsDictionary(m) Then
+        MapExists = m.Exists(key)
+    Else
+        Dim i As Long, pair As Variant
+        For i = 1 To m.Count
+            pair = m(i) ' pair = Array(key, value)
+            If StrComp(CStr(pair(0)), key, vbTextCompare) = 0 Then
+                MapExists = True
+                Exit Function
+            End If
+        Next i
+        MapExists = False
+    End If
+End Function
+
+Private Sub MapAddFirst(ByVal m As Object, ByVal key As String, ByVal value As Long)
+    'Add only if missing (first match wins)
+    If MapExists(m, key) Then Exit Sub
+
+    If MapIsDictionary(m) Then
+        m.Add key, value
+    Else
+        Dim pair As Variant
+        pair = Array(key, value)
+        m.Add pair
+    End If
+End Sub
+
+Private Function MapGetLong(ByVal m As Object, ByVal key As String, Optional ByVal defaultValue As Long = 0) As Long
+    If MapIsDictionary(m) Then
+        If m.Exists(key) Then
+            MapGetLong = CLng(m(key))
+        Else
+            MapGetLong = defaultValue
+        End If
+    Else
+        Dim i As Long, pair As Variant
+        For i = 1 To m.Count
+            pair = m(i)
+            If StrComp(CStr(pair(0)), key, vbTextCompare) = 0 Then
+                MapGetLong = CLng(pair(1))
+                Exit Function
+            End If
+        Next i
+        MapGetLong = defaultValue
+    End If
+End Function
