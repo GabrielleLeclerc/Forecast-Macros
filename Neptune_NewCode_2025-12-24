@@ -76,6 +76,11 @@ Sub Boxes_Shipped_Forecast()
         wsDebug.Cells(1, hdrCol).Value = "AvailStock B" & b
         hdrCol = hdrCol + 1
     Next b
+
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "Backlog B" & b
+        hdrCol = hdrCol + 1
+    Next b
     
     wsDebug.Columns("C:D").NumberFormat = "yyyy-mm-dd"
 
@@ -215,14 +220,36 @@ Sub Boxes_Shipped_Forecast()
                             writeCol = writeCol + 1
                         Next b
 
-                        '--- AvailStock B1..Bn = Beg Stock + IB ---
+                        '--- AvailStock B1..Bn = MAX(0, Beg Stock + IB) ---
                         Dim begCol As Long, ibCol As Long
+                        Dim sumAvail As Double
+                        
                         For b = 1 To MAX_BOX
                             begCol = 6 + MAX_BOX + (b - 1)         'Beg Stock block starts after Sales
                             ibCol  = 6 + (2 * MAX_BOX) + (b - 1)   'IB block starts after Sales+Beg
                         
-                            wsDebug.Cells(outRow, writeCol).Value = _
-                                Val(wsDebug.Cells(outRow, begCol).Value) + Val(wsDebug.Cells(outRow, ibCol).Value)
+                            sumAvail = Val(wsDebug.Cells(outRow, begCol).Value) + Val(wsDebug.Cells(outRow, ibCol).Value)
+                        
+                            If sumAvail < 0 Then
+                                wsDebug.Cells(outRow, writeCol).Value = 0
+                            Else
+                                wsDebug.Cells(outRow, writeCol).Value = sumAvail
+                            End If
+                        
+                            writeCol = writeCol + 1
+                        Next b
+
+                        '--- Backlog B1..Bn = IF(Beg Stock < 0, ABS(Beg Stock), 0) ---
+                        Dim begVal As Double
+                        For b = 1 To MAX_BOX
+                            begCol = 6 + MAX_BOX + (b - 1) 'same begCol logic as above
+                            begVal = Val(wsDebug.Cells(outRow, begCol).Value)
+                        
+                            If begVal < 0 Then
+                                wsDebug.Cells(outRow, writeCol).Value = Abs(begVal)
+                            Else
+                                wsDebug.Cells(outRow, writeCol).Value = 0
+                            End If
                         
                             writeCol = writeCol + 1
                         Next b
