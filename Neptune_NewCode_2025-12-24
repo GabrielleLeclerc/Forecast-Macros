@@ -21,12 +21,13 @@ Sub Boxes_Shipped_Forecast()
     
     wsDebug.Cells.Clear
     wsDebug.Range("A1").Value = "Demand City"
-    wsDebug.Range("B1").Value = "Week Start"
-    wsDebug.Range("C1").Value = "Week End"
-    wsDebug.Range("D1").Value = "Col"
-
-    wsDebug.Columns("B:C").NumberFormat = "yyyy-mm-dd"
+    wsDebug.Range("B1").Value = "Color"
+    wsDebug.Range("C1").Value = "Week Start"
+    wsDebug.Range("D1").Value = "Week End"
+    wsDebug.Range("E1").Value = "Col"
     
+    wsDebug.Columns("C:D").NumberFormat = "yyyy-mm-dd"
+
     Dim outRow As Long
     outRow = 2
     
@@ -63,6 +64,15 @@ Sub Boxes_Shipped_Forecast()
             If endTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'Ending Stock'"
             If poTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'POs to be received'"
 
+            '=== Compile unique normalized colors from Sales, Beginning Stock, and Ending Stock ===
+            Dim colors As Collection
+            Set colors = New Collection
+            
+            If Not salesTbl Is Nothing Then AddColorsFromSection colors, salesTbl
+            If Not begTbl Is Nothing Then AddColorsFromSection colors, begTbl
+            If Not endTbl Is Nothing Then AddColorsFromSection colors, endTbl
+            If Not poTbl Is Nothing Then AddColorsFromSection colors, poTbl 
+
             
             '=== Find the forecast start column on row 2 (match forecastStart) ===
             Dim startCol As Long, lastCol As Long, col As Long
@@ -86,12 +96,18 @@ Sub Boxes_Shipped_Forecast()
                 For col = startCol To lastCol
                     If Not IsDate(wsT.Cells(2, col).Value) Then Exit For
                     
-                    wsDebug.Cells(outRow, "A").Value = demandCity
-                    wsDebug.Cells(outRow, "B").Value = wsT.Cells(2, col).Value
-                    wsDebug.Cells(outRow, "C").Value = wsT.Cells(4, col).Value
-                    wsDebug.Cells(outRow, "D").Value = Split(wsT.Cells(1, col).Address(False, False), "1")(0)
+                    Dim colLetter As String
+                    colLetter = Split(wsT.Cells(1, col).Address(False, False), "1")(0)
                     
-                    outRow = outRow + 1
+                    Dim i As Long
+                    For i = 1 To colors.Count
+                        wsDebug.Cells(outRow, "A").Value = demandCity
+                        wsDebug.Cells(outRow, "B").Value = colors(i)
+                        wsDebug.Cells(outRow, "C").Value = wsT.Cells(2, col).Value
+                        wsDebug.Cells(outRow, "D").Value = wsT.Cells(4, col).Value
+                        wsDebug.Cells(outRow, "E").Value = colLetter
+                        outRow = outRow + 1
+                    Next i
                 Next col
             End If
         End If
@@ -178,7 +194,7 @@ Private Function IsSectionHeader(ByVal v As Variant) As Boolean
     s = Trim$(CStr(v))
     
     Select Case s
-        Case "Beginning Stock", "Ending Stock", "Sales", "POs to be received"
+        Case "Beginning Stock", "Ending Stock", "Sales", "POs to be received", "Stock Turnover"
             IsSectionHeader = True
         Case Else
             IsSectionHeader = False
@@ -202,3 +218,45 @@ Private Function FindLastDateColumnInRow(ByVal ws As Worksheet, ByVal rowNum As 
     FindLastDateColumnInRow = 0
 End Function
 
+'Adds unique normalized colors found in column E of a section range.
+'Implements fill-down: blank color cells inherit the most recent non-blank color above within that section scan.
+Private Sub AddColorsFromSection(ByRef colors As Collection, ByVal sectionRng As Range)
+    Dim lastSeen As String
+    lastSeen = ""
+    
+    Dim r As Long
+    For r = 1 To sectionRng.Rows.Count
+        Dim raw As String
+        raw = Trim$(CStr(sectionRng.Cells(r, 3).Value)) 'Column E relative to sectionRng (C=1, D=2, E=3)
+        
+        If Len(raw) > 0 Then
+            lastSeen = NormalizeColor(raw)
+        ElseIf Len(lastSeen) > 0 Then
+            'fill-down: use lastSeen
+        Else
+            'still nothing to use
+        End If
+        
+        If Len(lastSeen) > 0 Then
+            AddUniqueKeyed colors, lastSeen
+        End If
+    Next r
+End Sub
+
+'Normalize color strings so duplicates like " fog ", "FOG", "Fog" collapse to one key.
+Private Function NormalizeColor(ByVal s As String) As String
+    s = Trim$(s)
+    If Len(s) = 0 Then
+        NormalizeColor = ""
+    Else
+        NormalizeColor = UCase$(s)
+    End If
+End Function
+
+'Cross-platform uniqueness using Collection keys (no Dictionary required).
+Private Sub AddUniqueKeyed(ByRef col As Collection, ByVal key As String)
+    On Error Resume Next
+    col.Add key, key   'keyed add: duplicates throw error
+    Err.Clear
+    On Error GoTo 0
+End Sub
