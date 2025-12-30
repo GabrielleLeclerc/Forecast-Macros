@@ -63,12 +63,12 @@ Sub Boxes_Shipped_Forecast()
     Next b
     
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Beginning Stock B" & b
+        wsDebug.Cells(1, hdrCol).Value = "Beg Stock B" & b
         hdrCol = hdrCol + 1
     Next b
     
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Inbound B" & b
+        wsDebug.Cells(1, hdrCol).Value = "IB B" & b
         hdrCol = hdrCol + 1
     Next b
 
