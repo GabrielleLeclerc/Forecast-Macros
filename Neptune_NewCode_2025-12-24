@@ -8,6 +8,15 @@ Sub Boxes_Shipped_Forecast()
     Dim forecastStart As Date
     forecastStart = CDate(wsA.Range("B1").Value)
 
+    '=== Active colors list from table "Colors" (Status = Active) ===
+    Dim colors As Collection
+    Set colors = GetActiveColorsFromTable("Colors", "Colors", "Status")
+
+    If colors.Count = 0 Then
+        MsgBox "No Active colors found in table 'Colors'.", vbExclamation
+        Exit Sub
+    End If
+    
     '=== Set up / create the Debug sheet and the output row counter ===
     Dim wsDebug As Worksheet
     On Error Resume Next
@@ -63,17 +72,7 @@ Sub Boxes_Shipped_Forecast()
             If begTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'Beginning Stock'"
             If endTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'Ending Stock'"
             If poTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'POs to be received'"
-
-            '=== Compile unique normalized colors from Sales, Beginning Stock, and Ending Stock ===
-            Dim colors As Collection
-            Set colors = New Collection
-            
-            If Not salesTbl Is Nothing Then AddColorsFromSection colors, salesTbl
-            If Not begTbl Is Nothing Then AddColorsFromSection colors, begTbl
-            If Not endTbl Is Nothing Then AddColorsFromSection colors, endTbl
-            If Not poTbl Is Nothing Then AddColorsFromSection colors, poTbl 
-
-            
+           
             '=== Find the forecast start column on row 2 (match forecastStart) ===
             Dim startCol As Long, lastCol As Long, col As Long
             startCol = 0
@@ -260,3 +259,60 @@ Private Sub AddUniqueKeyed(ByRef col As Collection, ByVal key As String)
     Err.Clear
     On Error GoTo 0
 End Sub
+
+'Returns a UNIQUE list of colors from a ListObject table where Status = "Active".
+'TableName: name of the Excel table (ListObject), e.g. "Colors"
+'ColorColName: header name for the color column, e.g. "Colors"
+'StatusColName: header name for status, e.g. "Status"
+Private Function GetActiveColorsFromTable(ByVal tableName As String, _
+                                         ByVal colorColName As String, _
+                                         ByVal statusColName As String) As Collection
+    Dim result As New Collection
+    
+    Dim ws As Worksheet, lo As ListObject
+    Dim found As Boolean
+    found = False
+    
+    'Find the table anywhere in ThisWorkbook
+    For Each ws In ThisWorkbook.Worksheets
+        On Error Resume Next
+        Set lo = ws.ListObjects(tableName)
+        On Error GoTo 0
+        
+        If Not lo Is Nothing Then
+            found = True
+            Exit For
+        End If
+    Next ws
+    
+    If Not found Then
+        'Return empty collection (or raise error if you prefer)
+        Set GetActiveColorsFromTable = result
+        Exit Function
+    End If
+    
+    Dim colColor As ListColumn, colStatus As ListColumn
+    Set colColor = lo.ListColumns(colorColName)
+    Set colStatus = lo.ListColumns(statusColName)
+    
+    If lo.DataBodyRange Is Nothing Then
+        Set GetActiveColorsFromTable = result
+        Exit Function
+    End If
+    
+    Dim i As Long
+    For i = 1 To lo.DataBodyRange.Rows.Count
+        Dim statusVal As String
+        statusVal = Trim$(CStr(colStatus.DataBodyRange.Cells(i, 1).Value))
+        
+        If UCase$(statusVal) = "ACTIVE" Then
+            Dim clr As String
+            clr = NormalizeColor(CStr(colColor.DataBodyRange.Cells(i, 1).Value))
+            If Len(clr) > 0 Then
+                AddUniqueKeyed result, clr
+            End If
+        End If
+    Next i
+    
+    Set GetActiveColorsFromTable = result
+End Function
