@@ -4,6 +4,10 @@ Sub Boxes_Shipped_Forecast()
     Dim wsA As Worksheet: Set wsA = ThisWorkbook.Worksheets("Boxes_Shipped_Assumptions")
     Dim lo As ListObject: Set lo = wsA.ListObjects("WorksheetNames")
 
+    '=== Forecast start date from assumptions ===
+    Dim forecastStart As Date
+    forecastStart = CDate(wsA.Range("B1").Value)
+
     '=== Set up / create the Debug sheet and the output row counter ===
     Dim wsDebug As Worksheet
     On Error Resume Next
@@ -19,6 +23,8 @@ Sub Boxes_Shipped_Forecast()
     wsDebug.Range("A1").Value = "Demand City"
     wsDebug.Range("B1").Value = "Week Start"
     wsDebug.Range("C1").Value = "Week End"
+    wsDebug.Range("D1").Value = "Col"
+
     wsDebug.Columns("B:C").NumberFormat = "yyyy-mm-dd"
     
     Dim outRow As Long
@@ -43,7 +49,7 @@ Sub Boxes_Shipped_Forecast()
             Dim demandCity As String
             demandCity = DemandCityFromSheetName(wsT.Name)
             
-            '=== Find the first week column on row 2 (first date) ===
+            '=== Find the forecast start column on row 2 (match forecastStart) ===
             Dim startCol As Long, lastCol As Long, col As Long
             startCol = 0
             
@@ -51,21 +57,24 @@ Sub Boxes_Shipped_Forecast()
             
             For col = 1 To lastCol
                 If IsDate(wsT.Cells(2, col).Value) Then
-                    startCol = col
-                    Exit For
+                    If DateValue(wsT.Cells(2, col).Value) = DateValue(forecastStart) Then
+                        startCol = col
+                        Exit For
+                    End If
                 End If
             Next col
             
             If startCol = 0 Then
-                Debug.Print "No week-start dates found on row 2 for sheet:", wsT.Name
+                Debug.Print "Forecast start date not found on row 2 for sheet:", wsT.Name, "Start:", Format(forecastStart, "yyyy-mm-dd")
             Else
-                '=== Loop all week columns and write one Debug row per week ===
+                '=== Loop week columns from forecastStart onward ===
                 For col = startCol To lastCol
                     If Not IsDate(wsT.Cells(2, col).Value) Then Exit For
                     
                     wsDebug.Cells(outRow, "A").Value = demandCity
                     wsDebug.Cells(outRow, "B").Value = wsT.Cells(2, col).Value
                     wsDebug.Cells(outRow, "C").Value = wsT.Cells(4, col).Value
+                    wsDebug.Cells(outRow, "D").Value = Split(wsT.Cells(1, col).Address(False, False), "1")(0)
                     
                     outRow = outRow + 1
                 Next col
