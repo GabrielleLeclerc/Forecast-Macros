@@ -48,6 +48,21 @@ Sub Boxes_Shipped_Forecast()
 
             Dim demandCity As String
             demandCity = DemandCityFromSheetName(wsT.Name)
+
+            '=== NEW: Build section tables (ranges) from column C headers ===
+            Dim salesTbl As Range, begTbl As Range, endTbl As Range, poTbl As Range
+            
+            Set salesTbl = BuildSectionTable_Block(wsT, "Sales")
+            Set begTbl = BuildSectionTable_Block(wsT, "Beginning Stock")
+            Set endTbl = BuildSectionTable_Block(wsT, "Ending Stock")
+            Set poTbl = BuildSectionTable_Block(wsT, "POs to be received")
+            
+            'Optional: quick debug if any section is missing
+            If salesTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'Sales'"
+            If begTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'Beginning Stock'"
+            If endTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'Ending Stock'"
+            If poTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'POs to be received'"
+
             
             '=== Find the forecast start column on row 2 (match forecastStart) ===
             Dim startCol As Long, lastCol As Long, col As Long
@@ -97,5 +112,77 @@ Private Function DemandCityFromSheetName(ByVal sheetName As String) As String
         Case Else
             DemandCityFromSheetName = "UNKNOWN (" & sheetName & ")"
     End Select
+End Function
+
+'=== Section Table Builder ===
+'Finds a section header in column C (exact match),
+'then returns the block of rows for that section down to the row before the next section header,
+'and out to the last week-start date column (last date in row 2).
+Private Function BuildSectionTable_Block(ByVal ws As Worksheet, ByVal sectionHeader As String) As Range
+    Dim headerCell As Range
+    Set headerCell = FindInColumnExact(ws, "C", sectionHeader)
+    
+    If headerCell Is Nothing Then
+        Set BuildSectionTable_Block = Nothing
+        Exit Function
+    End If
+    
+    Dim startRow As Long
+    startRow = headerCell.Row + 1
+    
+    'Find end row: stop right before the next section header (or at last used row in column C)
+    Dim lastRowC As Long
+    lastRowC = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
+    
+    Dim r As Long, endRow As Long
+    endRow = lastRowC
+    
+    For r = startRow + 1 To lastRowC
+        If IsSectionHeader(ws.Cells(r, "C").Value) Then
+            endRow = r - 1
+            Exit For
+        End If
+    Next r
+    
+    'Find the rightmost column: last week-start entry (last date in row 2)
+    Dim lastWeekCol As Long
+    lastWeekCol = FindLastDateColumnInRow(ws, 2)
+    
+    If lastWeekCol = 0 Then
+        'Fallback: if row 2 has no dates, just return columns C:E
+        lastWeekCol = ws.Range("E1").Column
+    End If
+    
+    Set BuildSectionTable_Block = ws.Range(ws.Cells(startRow, "C"), ws.Cells(endRow, lastWeekCol))
+End Function
+
+'Helper: defines what counts as a section header in column C
+Private Function IsSectionHeader(ByVal v As Variant) As Boolean
+    Dim s As String
+    s = Trim$(CStr(v))
+    
+    Select Case s
+        Case "Beginning Stock", "Ending Stock", "Sales", "POs to be received"
+            IsSectionHeader = True
+        Case Else
+            IsSectionHeader = False
+    End Select
+End Function
+
+'Returns the column number of the rightmost cell in a row that contains a date.
+'If no date is found, returns 0.
+Private Function FindLastDateColumnInRow(ByVal ws As Worksheet, ByVal rowNum As Long) As Long
+    Dim lastCol As Long
+    lastCol = ws.Cells(rowNum, ws.Columns.Count).End(xlToLeft).Column
+    
+    Dim c As Long
+    For c = lastCol To 1 Step -1
+        If IsDate(ws.Cells(rowNum, c).Value) Then
+            FindLastDateColumnInRow = c
+            Exit Function
+        End If
+    Next c
+    
+    FindLastDateColumnInRow = 0
 End Function
 
