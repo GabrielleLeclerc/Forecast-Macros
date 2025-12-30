@@ -1,5 +1,7 @@
 Option Explicit
 
+Public MAX_BOX As Long
+
 Sub Boxes_Shipped_Forecast()
     Dim wsA As Worksheet: Set wsA = ThisWorkbook.Worksheets("Boxes_Shipped_Assumptions")
     Dim lo As ListObject: Set lo = wsA.ListObjects("WorksheetNames")
@@ -16,7 +18,14 @@ Sub Boxes_Shipped_Forecast()
         MsgBox "No Active colors found in table 'Colors'.", vbExclamation
         Exit Sub
     End If
-    
+
+    '=== MAX_BOX driven by table "Boxes" row count (data rows only) ===
+    MAX_BOX = GetBoxCountFromTable("Boxes")
+    If MAX_BOX <= 0 Then
+        MsgBox "Table 'Boxes' not found or has no rows.", vbExclamation
+        Exit Sub
+    End If
+            
     '=== Set up / create the Debug sheet and the output row counter ===
     Dim wsDebug As Worksheet
     On Error Resume Next
@@ -35,8 +44,7 @@ Sub Boxes_Shipped_Forecast()
     wsDebug.Range("D1").Value = "Week End"
     wsDebug.Range("E1").Value = "Col"
 
-    '=== NEW: Add box columns ===
-    Const MAX_BOX As Long = 12   ' <-- set this to your max box count
+    '=== NEW: Add box columns ===  
     Dim b As Long, hdrCol As Long
     
     hdrCol = 6 ' Column F = first new header
@@ -188,6 +196,8 @@ Sub Boxes_Shipped_Forecast()
 NextOne:
         Set wsT = Nothing
     Next c
+
+    MsgBox "Boxes Shipped Forecast Ran Successfully", vbInformation
 End Sub
 
 '=== City Name Mapping ===
@@ -498,6 +508,30 @@ Private Function RowForInTable(ByVal tbl As Variant, ByVal colorKey As String, B
             Exit Function
         End If
     Next i
+End Function
+
+Private Function GetBoxCountFromTable(ByVal tableName As String) As Long
+    Dim ws As Worksheet, lo As ListObject
+
+    'Find the table anywhere in ThisWorkbook
+    For Each ws In ThisWorkbook.Worksheets
+        On Error Resume Next
+        Set lo = ws.ListObjects(tableName)
+        On Error GoTo 0
+
+        If Not lo Is Nothing Then
+            'DataBodyRange excludes header row
+            If lo.DataBodyRange Is Nothing Then
+                GetBoxCountFromTable = 0
+            Else
+                GetBoxCountFromTable = lo.DataBodyRange.Rows.Count
+            End If
+            Exit Function
+        End If
+    Next ws
+
+    'Not found
+    GetBoxCountFromTable = 0
 End Function
 
 
