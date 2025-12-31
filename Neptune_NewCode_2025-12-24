@@ -39,7 +39,7 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_BL_SHIP As Long, COL_AVAIL_POSTBL As Long, COL_BL_P1 As Long
     Dim COL_SALES_SHIP As Long, COL_AVAIL_POSTSALES As Long, COL_SALES_P1 As Long
     
-    COL_SALES = 6
+    COL_SALES = 7
     COL_BEG = COL_SALES + MAX_BOX
     COL_IB = COL_BEG + MAX_BOX
     COL_AVAIL = COL_IB + MAX_BOX
@@ -65,15 +65,16 @@ Sub Boxes_Shipped_Forecast()
     
     wsDebug.Cells.Clear
     wsDebug.Range("A1").value = "Demand City"
-    wsDebug.Range("B1").value = "Color"
-    wsDebug.Range("C1").value = "Week Start"
-    wsDebug.Range("D1").value = "Week End"
-    wsDebug.Range("E1").value = "Col"
+    wsDebug.Range("B1").value = "Country"
+    wsDebug.Range("C1").value = "Color"
+    wsDebug.Range("D1").value = "Week Start"
+    wsDebug.Range("E1").value = "Week End"
+    wsDebug.Range("F1").value = "Col"
 
     '=== NEW: Add box columns ===
     Dim b As Long, hdrCol As Long
     
-    hdrCol = 6 ' Column F = first new header
+    hdrCol = 7 ' Column G = first new header
     
     For b = 1 To MAX_BOX
         wsDebug.Cells(1, hdrCol).value = "Sales B" & b
@@ -170,6 +171,9 @@ Sub Boxes_Shipped_Forecast()
         Worksheet = Trim(CStr(c.value))
         If Len(Worksheet) = 0 Then GoTo NextOne
         
+        Dim country As String
+        country = Trim$(CStr(lo.ListColumns("Country").DataBodyRange.Cells(c.Row - lo.DataBodyRange.Row + 1, 1).Value))
+
         Dim wsT As Worksheet
         On Error Resume Next
         Set wsT = ThisWorkbook.Worksheets(Worksheet)
@@ -249,17 +253,17 @@ Sub Boxes_Shipped_Forecast()
                             ReDim Preserve outArr(1 To outCapacity, 1 To totalCols)
                         End If
                         
-                        'Write columns A:E into the array
+                        'Write columns A:F into the array
                         outArr(outUsed, 1) = demandCity
-                        outArr(outUsed, 2) = colors(i)
-                        outArr(outUsed, 3) = wsT.Cells(2, col).value
-                        outArr(outUsed, 4) = wsT.Cells(4, col).value
-                        outArr(outUsed, 5) = colLetter
-
+                        outArr(outUsed, 2) = country
+                        outArr(outUsed, 3) = colors(i)
+                        outArr(outUsed, 4) = wsT.Cells(2, col).value
+                        outArr(outUsed, 5) = wsT.Cells(4, col).value
+                        outArr(outUsed, 6) = colLetter
                         
                         '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
                         Dim writeCol As Long
-                        writeCol = 6
+                        writeCol = 7
                         
                         Dim rr As Long, v As Variant
                         
@@ -503,8 +507,8 @@ NextOne:
     
     '=== Format only the used rows (fast) ===
     If outUsed >= 2 Then
-        wsDebug.Range(wsDebug.Cells(2, 6), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
-        wsDebug.Range(wsDebug.Cells(2, 3), wsDebug.Cells(outUsed, 4)).NumberFormat = "yyyy-mm-dd"
+        wsDebug.Range(wsDebug.Cells(2, 7), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
+        wsDebug.Range(wsDebug.Cells(2, 4), wsDebug.Cells(outUsed, 5)).NumberFormat = "yyyy-mm-dd"
     End If
 
     Application.Calculation = oldCalc
