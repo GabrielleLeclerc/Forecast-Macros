@@ -124,13 +124,27 @@ Sub Boxes_Shipped_Forecast()
     wsDebug.Cells(1, hdrCol).Value = "TotalShipped_FromLocal"
     hdrCol = hdrCol + 1
 
-    'Force integer display for all box metric columns (Sales..Backlog)
-    wsDebug.Range(wsDebug.Cells(2, 6), wsDebug.Cells(wsDebug.Rows.Count, hdrCol - 1)).NumberFormat = "0"
+    '=== FINAL column count (A..last header) ===
+    Dim totalCols As Long
+    totalCols = hdrCol - 1   'hdrCol is the NEXT empty column
     
-    wsDebug.Columns("C:D").NumberFormat = "yyyy-mm-dd"
+    '=== Output buffer (write once at the end) ===
+    Dim outArr() As Variant
+    Dim outCapacity As Long, outUsed As Long
+    outCapacity = 5000
+    ReDim outArr(1 To outCapacity, 1 To totalCols)
+    
+    '=== Copy headers into outArr row 1 ===
+    Dim h As Long
+    For h = 1 To totalCols
+        outArr(1, h) = wsDebug.Cells(1, h).Value
+    Next h
+    
+    'We will NOT write row-by-row to the sheet anymore.
+    'We'll fill outArr, then dump it at the end.
 
-    Dim outRow As Long
-    outRow = 2
+    'Row 1 in outArr is headers. Data starts at row 2.
+    outUsed = 1
     
     Dim c As Range
     For Each c In lo.ListColumns("Worksheet").DataBodyRange.Cells
@@ -210,15 +224,24 @@ Sub Boxes_Shipped_Forecast()
                         Dim colorKey As String
                         colorKey = NormalizeColor(colors(i))  ' make sure it matches index normalization
                         
-                        wsDebug.Cells(outRow, "A").Value = demandCity
-                        wsDebug.Cells(outRow, "B").Value = colors(i)
-                        wsDebug.Cells(outRow, "C").Value = wsT.Cells(2, col).Value
-                        wsDebug.Cells(outRow, "D").Value = wsT.Cells(4, col).Value
-                        wsDebug.Cells(outRow, "E").Value = colLetter
+                        'Advance output row (into the array)
+                        outUsed = outUsed + 1
+                        If outUsed > outCapacity Then
+                            outCapacity = outCapacity + 5000
+                            ReDim Preserve outArr(1 To outCapacity, 1 To totalCols)
+                        End If
+                        
+                        'Write columns A:E into the array
+                        outArr(outUsed, 1) = demandCity
+                        outArr(outUsed, 2) = colors(i)
+                        outArr(outUsed, 3) = wsT.Cells(2, col).Value
+                        outArr(outUsed, 4) = wsT.Cells(4, col).Value
+                        outArr(outUsed, 5) = colLetter
+
                         
                         '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
                         Dim writeCol As Long
-                        writeCol = 6   ' Column F = first box data column
+                        writeCol = 6
                         
                         Dim rr As Long, v As Variant
                         
@@ -229,9 +252,9 @@ Sub Boxes_Shipped_Forecast()
                         
                             rr = MapGetLong(salesMap, key, 0)
                             If rr > 0 Then
-                                wsDebug.Cells(outRow, writeCol).Value = ToWhole(wsT.Cells(rr, col).Value)
+                                outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).Value)
                             Else
-                                wsDebug.Cells(outRow, writeCol).Value = 0
+                                outArr(outUsed, writeCol) = 0
                             End If
                         
                             writeCol = writeCol + 1
@@ -243,9 +266,9 @@ Sub Boxes_Shipped_Forecast()
                         
                             rr = MapGetLong(begMap, key, 0)
                             If rr > 0 Then
-                                wsDebug.Cells(outRow, writeCol).Value = ToWhole(wsT.Cells(rr, col).Value)
+                                outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).Value)
                             Else
-                                wsDebug.Cells(outRow, writeCol).Value = 0
+                                outArr(outUsed, writeCol) = 0
                             End If
                         
                             writeCol = writeCol + 1
@@ -257,9 +280,9 @@ Sub Boxes_Shipped_Forecast()
                         
                             rr = MapGetLong(poMap, key, 0)
                             If rr > 0 Then
-                                wsDebug.Cells(outRow, writeCol).Value = ToWhole(wsT.Cells(rr, col).Value)
+                                outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).Value)
                             Else
-                                wsDebug.Cells(outRow, writeCol).Value = 0
+                                outArr(outUsed, writeCol) = 0
                             End If
                         
                             writeCol = writeCol + 1
@@ -273,12 +296,12 @@ Sub Boxes_Shipped_Forecast()
                             begCol = 6 + MAX_BOX + (b - 1)         'Beg Stock block starts after Sales
                             ibCol  = 6 + (2 * MAX_BOX) + (b - 1)   'IB block starts after Sales+Beg
                         
-                            sumAvail = CLng(wsDebug.Cells(outRow, begCol).Value) + CLng(wsDebug.Cells(outRow, ibCol).Value)
+                            sumAvail = CLng(outArr(outUsed, begCol)) + CLng(outArr(outUsed, ibCol))
 
                             If sumAvail < 0 Then
-                                wsDebug.Cells(outRow, writeCol).Value = 0
+                                outArr(outUsed, writeCol) = 0
                             Else
-                                wsDebug.Cells(outRow, writeCol).Value = CLng(sumAvail)
+                                outArr(outUsed, writeCol) = CLng(sumAvail)
                             End If
                         
                             writeCol = writeCol + 1
@@ -288,15 +311,14 @@ Sub Boxes_Shipped_Forecast()
                         Dim begVal As Double
                         For b = 1 To MAX_BOX
                             begCol = 6 + MAX_BOX + (b - 1) 'same begCol logic as above
-                            begVal = CLng(wsDebug.Cells(outRow, begCol).Value)
+                            begVal = CLng(outArr(outUsed, begCol))
 
                             If begVal < 0 Then
-                                wsDebug.Cells(outRow, writeCol).Value = CLng(Abs(begVal))
+                                outArr(outUsed, writeCol) = CLng(Abs(begVal))
                             Else
-                                wsDebug.Cells(outRow, writeCol).Value = 0
+                                outArr(outUsed, writeCol) = 0
                             End If
-
-                        
+                      
                             writeCol = writeCol + 1
                         Next b
 
@@ -319,13 +341,13 @@ Sub Boxes_Shipped_Forecast()
                             availCol = 6 + (3 * MAX_BOX) + (b - 1)
                             backlogCol = 6 + (4 * MAX_BOX) + (b - 1)
                         
-                            availVal = CLng(wsDebug.Cells(outRow, availCol).Value)
-                            backlogVal = CLng(wsDebug.Cells(outRow, backlogCol).Value)
+                            availVal = CLng(outArr(outUsed, availCol))
+                            backlogVal = CLng(outArr(outUsed, backlogCol))
                         
                             shippedBacklog = availVal
                             If backlogVal < shippedBacklog Then shippedBacklog = backlogVal
                         
-                            wsDebug.Cells(outRow, writeCol).Value = shippedBacklog
+                            outArr(outUsed, writeCol) = shippedBacklog
                             writeCol = writeCol + 1
                         Next b
                         
@@ -334,13 +356,13 @@ Sub Boxes_Shipped_Forecast()
                             availCol = 6 + (3 * MAX_BOX) + (b - 1)
                             backlogCol = 6 + (4 * MAX_BOX) + (b - 1)
                         
-                            availVal = CLng(wsDebug.Cells(outRow, availCol).Value)
-                            backlogVal = CLng(wsDebug.Cells(outRow, backlogCol).Value)
+                            availVal = CLng(outArr(outUsed, availCol))
+                            backlogVal = CLng(outArr(outUsed, backlogCol))
                         
                             availPost = availVal - backlogVal
                             If availPost < 0 Then availPost = 0
                         
-                            wsDebug.Cells(outRow, writeCol).Value = availPost
+                            outArr(outUsed, writeCol) = availPost
                             writeCol = writeCol + 1
                         Next b
                         
@@ -349,13 +371,13 @@ Sub Boxes_Shipped_Forecast()
                             availCol = 6 + (3 * MAX_BOX) + (b - 1)
                             backlogCol = 6 + (4 * MAX_BOX) + (b - 1)
                         
-                            availVal = CLng(wsDebug.Cells(outRow, availCol).Value)
-                            backlogVal = CLng(wsDebug.Cells(outRow, backlogCol).Value)
+                            availVal = CLng(outArr(outUsed, availCol))
+                            backlogVal = CLng(outArr(outUsed, backlogCol))
                         
                             backlogP1 = backlogVal - availVal
                             If backlogP1 < 0 Then backlogP1 = 0
                         
-                            wsDebug.Cells(outRow, writeCol).Value = backlogP1
+                            outArr(outUsed, writeCol) = backlogP1
                             writeCol = writeCol + 1
                         Next b
 
@@ -381,13 +403,13 @@ Sub Boxes_Shipped_Forecast()
                             salesCol = 6 + (0 * MAX_BOX) + (b - 1)
                             availPostBacklogCol = 6 + (6 * MAX_BOX) + (b - 1)
                         
-                            salesVal = CLng(wsDebug.Cells(outRow, salesCol).Value)
-                            availPostBacklogVal = CLng(wsDebug.Cells(outRow, availPostBacklogCol).Value)
+                            salesVal = CLng(outArr(outUsed, salesCol))
+                            availPostBacklogVal = CLng(outArr(outUsed, availPostBacklogCol))
                         
                             shippedSales = availPostBacklogVal
                             If salesVal < shippedSales Then shippedSales = salesVal
                         
-                            wsDebug.Cells(outRow, writeCol).Value = shippedSales
+                            outArr(outUsed, writeCol) = shippedSales
                             writeCol = writeCol + 1
                         Next b
                         
@@ -396,13 +418,13 @@ Sub Boxes_Shipped_Forecast()
                             salesCol = 6 + (0 * MAX_BOX) + (b - 1)
                             availPostBacklogCol = 6 + (6 * MAX_BOX) + (b - 1)
                         
-                            salesVal = CLng(wsDebug.Cells(outRow, salesCol).Value)
-                            availPostBacklogVal = CLng(wsDebug.Cells(outRow, availPostBacklogCol).Value)
+                            salesVal = CLng(outArr(outUsed, salesCol))
+                            availPostBacklogVal = CLng(outArr(outUsed, availPostBacklogCol))
                         
                             availPostSales = availPostBacklogVal - salesVal
                             If availPostSales < 0 Then availPostSales = 0
                         
-                            wsDebug.Cells(outRow, writeCol).Value = availPostSales
+                            outArr(outUsed, writeCol) = availPostSales
                             writeCol = writeCol + 1
                         Next b
                         
@@ -411,13 +433,13 @@ Sub Boxes_Shipped_Forecast()
                             salesCol = 6 + (0 * MAX_BOX) + (b - 1)
                             availPostBacklogCol = 6 + (6 * MAX_BOX) + (b - 1)
                         
-                            salesVal = CLng(wsDebug.Cells(outRow, salesCol).Value)
-                            availPostBacklogVal = CLng(wsDebug.Cells(outRow, availPostBacklogCol).Value)
+                            salesVal = CLng(outArr(outUsed, salesCol))
+                            availPostBacklogVal = CLng(outArr(outUsed, availPostBacklogCol))
                         
                             salesP1 = salesVal - availPostBacklogVal
                             If salesP1 < 0 Then salesP1 = 0
                         
-                            wsDebug.Cells(outRow, writeCol).Value = salesP1
+                            outArr(outUsed, writeCol) = salesP1
                             writeCol = writeCol + 1
                         Next b
 
@@ -434,22 +456,21 @@ Sub Boxes_Shipped_Forecast()
                             backlogShippedCol = 6 + (5 * MAX_BOX) + (b - 1)
                             salesShippedCol = 6 + (8 * MAX_BOX) + (b - 1)
                         
-                            totalBacklogShipped = totalBacklogShipped + CLng(wsDebug.Cells(outRow, backlogShippedCol).Value)
-                            totalSalesShipped = totalSalesShipped + CLng(wsDebug.Cells(outRow, salesShippedCol).Value)
+                            totalBacklogShipped = totalBacklogShipped + CLng(outArr(outUsed, backlogShippedCol))
+                            totalSalesShipped = totalSalesShipped + CLng(outArr(outUsed, salesShippedCol))
                         Next b
                         
                         'Write totals into the next 2 columns at the end of the row
-                        wsDebug.Cells(outRow, writeCol).Value = totalBacklogShipped
+                        outArr(outUsed, writeCol) = totalBacklogShipped
                         writeCol = writeCol + 1
                         
-                        wsDebug.Cells(outRow, writeCol).Value = totalSalesShipped
+                        outArr(outUsed, writeCol) = totalSalesShipped
                         writeCol = writeCol + 1
 
                         'TotalShipped_FromLocal = TotalLocalBacklogShipped + TotalLocalSalesShipped
-                        wsDebug.Cells(outRow, writeCol).Value = totalBacklogShipped + totalSalesShipped
+                        outArr(outUsed, writeCol) = totalBacklogShipped + totalSalesShipped
                         writeCol = writeCol + 1
-                                                                     
-                        outRow = outRow + 1
+                                     
                     Next i
                 Next col
             End If
@@ -458,6 +479,15 @@ Sub Boxes_Shipped_Forecast()
 NextOne:
         Set wsT = Nothing
     Next c
+    '=== Dump output array to sheet in one shot ===
+    wsDebug.Cells.Clear
+    wsDebug.Range("A1").Resize(outUsed, totalCols).Value = outArr
+    
+    '=== Format only the used rows (fast) ===
+    If outUsed >= 2 Then
+        wsDebug.Range(wsDebug.Cells(2, 6), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
+        wsDebug.Range(wsDebug.Cells(2, 3), wsDebug.Cells(outUsed, 4)).NumberFormat = "yyyy-mm-dd"
+    End If
 
     Application.Calculation = oldCalc
     Application.EnableEvents = True
