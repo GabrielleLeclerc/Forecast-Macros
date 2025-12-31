@@ -33,6 +33,24 @@ Sub Boxes_Shipped_Forecast()
         MsgBox "Table 'Boxes' not found or has no rows.", vbExclamation
         Exit Sub
     End If
+
+    '=== Pre-calc column starts (only once) ===
+    Dim COL_SALES As Long, COL_BEG As Long, COL_IB As Long, COL_AVAIL As Long, COL_BACKLOG As Long
+    Dim COL_BL_SHIP As Long, COL_AVAIL_POSTBL As Long, COL_BL_P1 As Long
+    Dim COL_SALES_SHIP As Long, COL_AVAIL_POSTSALES As Long, COL_SALES_P1 As Long
+    
+    COL_SALES = 6
+    COL_BEG = COL_SALES + MAX_BOX
+    COL_IB = COL_BEG + MAX_BOX
+    COL_AVAIL = COL_IB + MAX_BOX
+    COL_BACKLOG = COL_AVAIL + MAX_BOX
+    COL_BL_SHIP = COL_BACKLOG + MAX_BOX
+    COL_AVAIL_POSTBL = COL_BL_SHIP + MAX_BOX
+    COL_BL_P1 = COL_AVAIL_POSTBL + MAX_BOX
+    COL_SALES_SHIP = COL_BL_P1 + MAX_BOX
+    COL_AVAIL_POSTSALES = COL_SALES_SHIP + MAX_BOX
+    COL_SALES_P1 = COL_AVAIL_POSTSALES + MAX_BOX
+
             
     '=== Set up / create the Debug sheet and the output row counter ===
     Dim wsDebug As Worksheet
@@ -293,8 +311,8 @@ Sub Boxes_Shipped_Forecast()
                         Dim sumAvail As Double
                         
                         For b = 1 To MAX_BOX
-                            begCol = 6 + MAX_BOX + (b - 1)         'Beg Stock block starts after Sales
-                            ibCol  = 6 + (2 * MAX_BOX) + (b - 1)   'IB block starts after Sales+Beg
+                            begCol = COL_BEG + (b - 1)         'Beg Stock block starts after Sales
+                            ibCol  = COL_IB + (b - 1)   'IB block starts after Sales+Beg
                         
                             sumAvail = CLng(outArr(outUsed, begCol)) + CLng(outArr(outUsed, ibCol))
 
@@ -310,7 +328,7 @@ Sub Boxes_Shipped_Forecast()
                         '--- Backlog B1..Bn = IF(Beg Stock < 0, ABS(Beg Stock), 0) ---
                         Dim begVal As Double
                         For b = 1 To MAX_BOX
-                            begCol = 6 + MAX_BOX + (b - 1) 'same begCol logic as above
+                            begCol = COL_BEG + (b - 1) 'same begCol logic as above
                             begVal = CLng(outArr(outUsed, begCol))
 
                             If begVal < 0 Then
@@ -338,8 +356,8 @@ Sub Boxes_Shipped_Forecast()
                         
                         '--- BacklogShipped B1..Bn = MIN(AvailStock, Backlog) ---
                         For b = 1 To MAX_BOX
-                            availCol = 6 + (3 * MAX_BOX) + (b - 1)
-                            backlogCol = 6 + (4 * MAX_BOX) + (b - 1)
+                            availCol = COL_AVAIL + (b - 1)
+                            backlogCol = COL_BACKLOG + (b - 1)
                         
                             availVal = CLng(outArr(outUsed, availCol))
                             backlogVal = CLng(outArr(outUsed, backlogCol))
@@ -353,8 +371,8 @@ Sub Boxes_Shipped_Forecast()
                         
                         '--- AvailStock_PostBacklog B1..Bn = MAX(AvailStock - Backlog, 0) ---
                         For b = 1 To MAX_BOX
-                            availCol = 6 + (3 * MAX_BOX) + (b - 1)
-                            backlogCol = 6 + (4 * MAX_BOX) + (b - 1)
+                            availCol = COL_AVAIL + (b - 1)
+                            backlogCol = COL_BACKLOG + (b - 1)
                         
                             availVal = CLng(outArr(outUsed, availCol))
                             backlogVal = CLng(outArr(outUsed, backlogCol))
@@ -368,8 +386,8 @@ Sub Boxes_Shipped_Forecast()
                         
                         '--- Backlog_P1 B1..Bn = MAX(Backlog - AvailStock, 0) ---
                         For b = 1 To MAX_BOX
-                            availCol = 6 + (3 * MAX_BOX) + (b - 1)
-                            backlogCol = 6 + (4 * MAX_BOX) + (b - 1)
+                            availCol = COL_AVAIL + (b - 1)
+                            backlogCol = COL_BACKLOG + (b - 1)
                         
                             availVal = CLng(outArr(outUsed, availCol))
                             backlogVal = CLng(outArr(outUsed, backlogCol))
@@ -400,8 +418,8 @@ Sub Boxes_Shipped_Forecast()
                         
                         '--- SalesShipped B1..Bn = MIN(AvailStock_PostBacklog, Sales) ---
                         For b = 1 To MAX_BOX
-                            salesCol = 6 + (0 * MAX_BOX) + (b - 1)
-                            availPostBacklogCol = 6 + (6 * MAX_BOX) + (b - 1)
+                            salesCol = COL_SALES + (b - 1)
+                            availPostBacklogCol = COL_AVAIL_POSTBL + (b - 1)
                         
                             salesVal = CLng(outArr(outUsed, salesCol))
                             availPostBacklogVal = CLng(outArr(outUsed, availPostBacklogCol))
@@ -415,8 +433,8 @@ Sub Boxes_Shipped_Forecast()
                         
                         '--- AvailStock_PostSales B1..Bn = MAX(AvailStock_PostBacklog - Sales, 0) ---
                         For b = 1 To MAX_BOX
-                            salesCol = 6 + (0 * MAX_BOX) + (b - 1)
-                            availPostBacklogCol = 6 + (6 * MAX_BOX) + (b - 1)
+                            salesCol = COL_SALES + (b - 1)
+                            availPostBacklogCol = COL_AVAIL_POSTBL + (b - 1)
                         
                             salesVal = CLng(outArr(outUsed, salesCol))
                             availPostBacklogVal = CLng(outArr(outUsed, availPostBacklogCol))
@@ -430,8 +448,8 @@ Sub Boxes_Shipped_Forecast()
                         
                         '--- Sales_P1 B1..Bn = MAX(Sales - AvailStock_PostBacklog, 0) ---
                         For b = 1 To MAX_BOX
-                            salesCol = 6 + (0 * MAX_BOX) + (b - 1)
-                            availPostBacklogCol = 6 + (6 * MAX_BOX) + (b - 1)
+                            salesCol = COL_SALES + (b - 1)
+                            availPostBacklogCol = COL_AVAIL_POSTBL + (b - 1)
                         
                             salesVal = CLng(outArr(outUsed, salesCol))
                             availPostBacklogVal = CLng(outArr(outUsed, availPostBacklogCol))
@@ -453,8 +471,8 @@ Sub Boxes_Shipped_Forecast()
                         'BacklogShipped block starts at: 6 + 5*MAX_BOX
                         'SalesShipped block starts at:   6 + 8*MAX_BOX
                         For b = 1 To MAX_BOX
-                            backlogShippedCol = 6 + (5 * MAX_BOX) + (b - 1)
-                            salesShippedCol = 6 + (8 * MAX_BOX) + (b - 1)
+                            backlogShippedCol = COL_BL_SHIP + (b - 1)
+                            salesShippedCol = COL_SALES_SHIP + (b - 1)
                         
                             totalBacklogShipped = totalBacklogShipped + CLng(outArr(outUsed, backlogShippedCol))
                             totalSalesShipped = totalSalesShipped + CLng(outArr(outUsed, salesShippedCol))
