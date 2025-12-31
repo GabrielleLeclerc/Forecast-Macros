@@ -81,6 +81,9 @@ Sub Boxes_Shipped_Forecast()
         wsDebug.Cells(1, hdrCol).Value = "Backlog B" & b
         hdrCol = hdrCol + 1
     Next b
+
+    'Force integer display for all box metric columns (Sales..Backlog)
+    wsDebug.Range(wsDebug.Cells(2, 6), wsDebug.Cells(wsDebug.Rows.Count, hdrCol - 1)).NumberFormat = "0"
     
     wsDebug.Columns("C:D").NumberFormat = "yyyy-mm-dd"
 
@@ -184,7 +187,7 @@ Sub Boxes_Shipped_Forecast()
                         
                             rr = MapGetLong(salesMap, key, 0)
                             If rr > 0 Then
-                                wsDebug.Cells(outRow, writeCol).Value = wsT.Cells(rr, col).Value
+                                wsDebug.Cells(outRow, writeCol).Value = ToWhole(wsT.Cells(rr, col).Value)
                             Else
                                 wsDebug.Cells(outRow, writeCol).Value = 0
                             End If
@@ -198,7 +201,7 @@ Sub Boxes_Shipped_Forecast()
                         
                             rr = MapGetLong(begMap, key, 0)
                             If rr > 0 Then
-                                wsDebug.Cells(outRow, writeCol).Value = wsT.Cells(rr, col).Value
+                                wsDebug.Cells(outRow, writeCol).Value = ToWhole(wsT.Cells(rr, col).Value)
                             Else
                                 wsDebug.Cells(outRow, writeCol).Value = 0
                             End If
@@ -212,7 +215,7 @@ Sub Boxes_Shipped_Forecast()
                         
                             rr = MapGetLong(poMap, key, 0)
                             If rr > 0 Then
-                                wsDebug.Cells(outRow, writeCol).Value = wsT.Cells(rr, col).Value
+                                wsDebug.Cells(outRow, writeCol).Value = ToWhole(wsT.Cells(rr, col).Value)
                             Else
                                 wsDebug.Cells(outRow, writeCol).Value = 0
                             End If
@@ -228,12 +231,12 @@ Sub Boxes_Shipped_Forecast()
                             begCol = 6 + MAX_BOX + (b - 1)         'Beg Stock block starts after Sales
                             ibCol  = 6 + (2 * MAX_BOX) + (b - 1)   'IB block starts after Sales+Beg
                         
-                            sumAvail = Val(wsDebug.Cells(outRow, begCol).Value) + Val(wsDebug.Cells(outRow, ibCol).Value)
-                        
+                            sumAvail = CLng(wsDebug.Cells(outRow, begCol).Value) + CLng(wsDebug.Cells(outRow, ibCol).Value)
+
                             If sumAvail < 0 Then
                                 wsDebug.Cells(outRow, writeCol).Value = 0
                             Else
-                                wsDebug.Cells(outRow, writeCol).Value = sumAvail
+                                wsDebug.Cells(outRow, writeCol).Value = CLng(sumAvail)
                             End If
                         
                             writeCol = writeCol + 1
@@ -243,13 +246,14 @@ Sub Boxes_Shipped_Forecast()
                         Dim begVal As Double
                         For b = 1 To MAX_BOX
                             begCol = 6 + MAX_BOX + (b - 1) 'same begCol logic as above
-                            begVal = Val(wsDebug.Cells(outRow, begCol).Value)
-                        
+                            begVal = CLng(wsDebug.Cells(outRow, begCol).Value)
+
                             If begVal < 0 Then
-                                wsDebug.Cells(outRow, writeCol).Value = Abs(begVal)
+                                wsDebug.Cells(outRow, writeCol).Value = CLng(Abs(begVal))
                             Else
                                 wsDebug.Cells(outRow, writeCol).Value = 0
                             End If
+
                         
                             writeCol = writeCol + 1
                         Next b
@@ -687,3 +691,13 @@ Private Function MapGetLong(ByVal m As Object, ByVal key As String, Optional ByV
         MapGetLong = defaultValue
     End If
 End Function
+
+Private Function ToWhole(ByVal v As Variant) As Long
+    'Round to nearest whole number; handles blanks/errors safely
+    If IsError(v) Or Len(Trim$(CStr(v))) = 0 Then
+        ToWhole = 0
+    Else
+        ToWhole = CLng(Application.WorksheetFunction.Round(CDbl(v), 0))
+    End If
+End Function
+
