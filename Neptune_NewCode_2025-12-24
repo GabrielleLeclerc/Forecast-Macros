@@ -82,6 +82,22 @@ Sub Boxes_Shipped_Forecast()
         hdrCol = hdrCol + 1
     Next b
 
+    '=== Allocation Round 1 columns (Backlog first) ===
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "BacklogShipped B" & b
+        hdrCol = hdrCol + 1
+    Next b
+    
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "AvailStock_PostBacklog B" & b
+        hdrCol = hdrCol + 1
+    Next b
+    
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "Backlog_P1 B" & b
+        hdrCol = hdrCol + 1
+    Next b
+
     'Force integer display for all box metric columns (Sales..Backlog)
     wsDebug.Range(wsDebug.Cells(2, 6), wsDebug.Cells(wsDebug.Rows.Count, hdrCol - 1)).NumberFormat = "0"
     
@@ -255,6 +271,65 @@ Sub Boxes_Shipped_Forecast()
                             End If
 
                         
+                            writeCol = writeCol + 1
+                        Next b
+
+                        '=== Allocation Round 1 (Backlog-first) ===
+                        'Uses the already-written AvailStock and Backlog values from this same row.
+                        
+                        Dim availCol As Long, backlogCol As Long
+                        Dim availVal As Long, backlogVal As Long
+                        Dim shippedBacklog As Long, availPost As Long, backlogP1 As Long
+                        
+                        'Column block start positions (based on your layout):
+                        'Sales:      6
+                        'Beg Stock:  6 + 1*MAX_BOX
+                        'IB:         6 + 2*MAX_BOX
+                        'AvailStock: 6 + 3*MAX_BOX
+                        'Backlog:    6 + 4*MAX_BOX
+                        
+                        '--- BacklogShipped B1..Bn = MIN(AvailStock, Backlog) ---
+                        For b = 1 To MAX_BOX
+                            availCol = 6 + (3 * MAX_BOX) + (b - 1)
+                            backlogCol = 6 + (4 * MAX_BOX) + (b - 1)
+                        
+                            availVal = CLng(wsDebug.Cells(outRow, availCol).Value)
+                            backlogVal = CLng(wsDebug.Cells(outRow, backlogCol).Value)
+                        
+                            shippedBacklog = availVal
+                            If backlogVal < shippedBacklog Then shippedBacklog = backlogVal
+                        
+                            wsDebug.Cells(outRow, writeCol).Value = shippedBacklog
+                            writeCol = writeCol + 1
+                        Next b
+                        
+                        '--- AvailStock_PostBacklog B1..Bn = MAX(AvailStock - Backlog, 0) ---
+                        For b = 1 To MAX_BOX
+                            availCol = 6 + (3 * MAX_BOX) + (b - 1)
+                            backlogCol = 6 + (4 * MAX_BOX) + (b - 1)
+                        
+                            availVal = CLng(wsDebug.Cells(outRow, availCol).Value)
+                            backlogVal = CLng(wsDebug.Cells(outRow, backlogCol).Value)
+                        
+                            availPost = availVal - backlogVal
+                            If availPost < 0 Then availPost = 0
+                        
+                            wsDebug.Cells(outRow, writeCol).Value = availPost
+                            writeCol = writeCol + 1
+                        Next b
+                        
+                        '--- Backlog_P1 B1..Bn = MAX(Backlog - AvailStock, 0) ---
+                        For b = 1 To MAX_BOX
+                            availCol = 6 + (3 * MAX_BOX) + (b - 1)
+                            backlogCol = 6 + (4 * MAX_BOX) + (b - 1)
+                        
+                            availVal = CLng(wsDebug.Cells(outRow, availCol).Value)
+                            backlogVal = CLng(wsDebug.Cells(outRow, backlogCol).Value)
+                        
+                            backlogP1 = backlogVal - availVal
+                            If backlogP1 < 0 Then backlogP1 = 0
+                        
+                            wsDebug.Cells(outRow, writeCol).Value = backlogP1
                             writeCol = writeCol + 1
                         Next b
                                                                         
