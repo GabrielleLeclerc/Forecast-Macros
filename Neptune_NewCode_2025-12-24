@@ -39,7 +39,7 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_BL_SHIP As Long, COL_AVAIL_POSTBL As Long, COL_BL_P1 As Long
     Dim COL_SALES_SHIP As Long, COL_AVAIL_POSTSALES As Long, COL_SALES_P1 As Long
     
-    COL_SALES = 6
+    COL_SALES = 8
     COL_BEG = COL_SALES + MAX_BOX
     COL_IB = COL_BEG + MAX_BOX
     COL_AVAIL = COL_IB + MAX_BOX
@@ -69,11 +69,13 @@ Sub Boxes_Shipped_Forecast()
     wsDebug.Range("C1").Value = "Week Start"
     wsDebug.Range("D1").Value = "Week End"
     wsDebug.Range("E1").Value = "Col"
+    wsDebug.Range("F1").Value = "P1 City"
+    wsDebug.Range("G1").Value = "P2 City"
 
     '=== NEW: Add box columns ===  
     Dim b As Long, hdrCol As Long
     
-    hdrCol = 6 ' Column F = first new header
+    hdrCol = 8 ' Column F = first new header
     
     For b = 1 To MAX_BOX
         wsDebug.Cells(1, hdrCol).Value = "Sales B" & b
@@ -256,10 +258,22 @@ Sub Boxes_Shipped_Forecast()
                         outArr(outUsed, 4) = wsT.Cells(4, col).Value
                         outArr(outUsed, 5) = colLetter
 
+                        Dim partners As Variant
+                        partners = PartnersFor(Worksheet)
+                        
+                        'Default blanks
+                        outArr(outUsed, 6) = ""
+                        outArr(outUsed, 7) = ""
+                        
+                        'Fill P1 / P2 if they exist
+                        If IsArray(partners) Then
+                            If UBound(partners) >= 0 Then outArr(outUsed, 6) = DemandCityFromSheetName(CStr(partners(0)))
+                            If UBound(partners) >= 1 Then outArr(outUsed, 7) = DemandCityFromSheetName(CStr(partners(1)))
+                        End If
                         
                         '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
                         Dim writeCol As Long
-                        writeCol = 6
+                        writeCol = COL_SALES
                         
                         Dim rr As Long, v As Variant
                         
@@ -503,7 +517,7 @@ NextOne:
     
     '=== Format only the used rows (fast) ===
     If outUsed >= 2 Then
-        wsDebug.Range(wsDebug.Cells(2, 6), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
+        wsDebug.Range(wsDebug.Cells(2, COL_SALES), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
         wsDebug.Range(wsDebug.Cells(2, 3), wsDebug.Cells(outUsed, 4)).NumberFormat = "yyyy-mm-dd"
     End If
 
@@ -946,4 +960,16 @@ Private Function ToWhole(ByVal v As Variant) As Long
             ToWhole = -CLng(Abs(d) + 0.5)
         End If
     End If
+End Function
+
+' ---------- Partner rules (priority order) ----------
+Private Function PartnersFor(ByVal sheetName As String) As Variant
+    Select Case sheetName
+        Case "Neptune-Montreal":  PartnersFor = VBA.Array("Neptune-Toronto", "Neptune-Vancouver")
+        Case "Neptune-Toronto":   PartnersFor = VBA.Array("Neptune-Montreal", "Neptune-Vancouver")
+        Case "Neptune-Vancouver": PartnersFor = VBA.Array("Neptune-Toronto", "Neptune-Montreal")  ' <-- order swapped
+        Case "Neptune-Dayton":  PartnersFor = VBA.Array("Neptune-Moreno")
+        Case "Neptune-Moreno":    PartnersFor = VBA.Array("Neptune-Dayton")
+        Case Else:                PartnersFor = VBA.Array()
+    End Select
 End Function
