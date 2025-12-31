@@ -2,6 +2,164 @@ Option Explicit
 
 Public MAX_BOX As Long
 
+'==================== CONFIG (things that vary) ====================
+Private Const CFG_ASSUMPTIONS_SHEET As String = "Boxes_Shipped_Assumptions"
+
+'Preferred table names (fast path). If names change, we’ll fall back to matching by required headers.
+Private Const CFG_TABLE_WORKSHEETS_PREFERRED As String = "WorksheetNames"
+Private Const CFG_TABLE_COLORS_PREFERRED As String = "Colors"
+Private Const CFG_TABLE_BOXES_PREFERRED As String = "Boxes"
+
+'Forecast start cell (in assumptions sheet) - change once here if needed
+Private Const CFG_FORECAST_START_CELL As String = "B1"
+
+'Alias headers (column names can differ across files)
+Private CFG_WORKSHEET_HEADERS As Variant
+Private CFG_COUNTRY_HEADERS As Variant
+Private CFG_COLOR_HEADERS As Variant
+Private CFG_STATUS_HEADERS As Variant
+
+'Section labels (can differ across files)
+Private CFG_SECTION_LABELS As Variant
+
+'How many columns to scan when trying to detect where the section headers live
+Private Const CFG_SECTION_SCAN_FIRST_N_COLS As Long = 20
+
+Private Sub InitConfig()
+    CFG_WORKSHEET_HEADERS = Array("Worksheet", "Sheet", "Tab", "SheetName")
+    CFG_COUNTRY_HEADERS = Array("Country", "Market", "Region")
+
+    CFG_COLOR_HEADERS = Array("Color", "Colour", "Colors", "Variant", "Finish")
+    CFG_STATUS_HEADERS = Array("Status", "Active", "IsActive", "Enabled")
+
+    CFG_SECTION_LABELS = Array("Beginning Stock", "Ending Stock", "Sales", "POs to be received", "Stock Turnover")
+End Sub
+
+
+'==================== TABLE + COLUMN RESOLUTION HELPERS ====================
+
+Private Function FindTableByHeaders(ByVal requiredHeaders As Variant, Optional ByVal preferredName As String = vbNullString) As ListObject
+    Dim ws As Worksheet, lo As ListObject
+
+    'Fast path: try preferred name on any sheet
+    If Len(preferredName) > 0 Then
+        For Each ws In ThisWorkbook.Worksheets
+            On Error Resume Next
+            Set lo = ws.ListObjects(preferredName)
+            On Error GoTo 0
+            If Not lo Is Nothing Then
+                If TableHasAllHeaders(lo, requiredHeaders) Then
+                    Set FindTableByHeaders = lo
+                    Exit Function
+                End If
+            End If
+            Set lo = Nothing
+        Next ws
+    End If
+
+    'Fallback: find any table with required headers
+    For Each ws In ThisWorkbook.Worksheets
+        For Each lo In ws.ListObjects
+            If TableHasAllHeaders(lo, requiredHeaders) Then
+                Set FindTableByHeaders = lo
+                Exit Function
+            End If
+        Next lo
+    Next ws
+End Function
+
+Private Function TableHasAllHeaders(ByVal lo As ListObject, ByVal requiredHeaders As Variant) As Boolean
+    Dim h As Variant
+    For Each h In requiredHeaders
+        If GetListColumnIndexByAliases(lo, Array(CStr(h))) = 0 Then
+            TableHasAllHeaders = False
+            Exit Function
+        End If
+    Next h
+    TableHasAllHeaders = True
+End Function
+
+Private Function GetListColumnIndexByAliases(ByVal lo As ListObject, ByVal aliases As Variant) As Long
+    Dim a As Variant, lc As ListColumn
+    For Each a In aliases
+        For Each lc In lo.ListColumns
+            If StrComp(Trim$(lc.Name), Trim$(CStr(a)), vbTextCompare) = 0 Then
+                GetListColumnIndexByAliases = lc.Index
+                Exit Function
+            End If
+        Next lc
+    Next a
+End Function
+
+
+'==================== SECTION COLUMN / DESC+COLOR COLUMN DETECTION ====================
+
+'Find the column number (on ws) that contains section headers like "Sales", "Beginning Stock", etc.
+Private Function FindSectionHeaderColumn(ByVal ws As Worksheet) As Long
+    Dim c As Long, hits As Long, lbl As Variant
+
+    For c = 1 To CFG_SECTION_SCAN_FIRST_N_COLS
+        hits = 0
+        For Each lbl In CFG_SECTION_LABELS
+            If Not FindInColumnExact_Num(ws, c, CStr(lbl)) Is Nothing Then hits = hits + 1
+        Next lbl
+        If hits >= 2 Then
+            FindSectionHeaderColumn = c
+            Exit Function
+        End If
+    Next c
+
+    FindSectionHeaderColumn = 0
+End Function
+
+'Guess which columns inside a section block are Description vs Color (relative to sectionRng).
+'descRelCol / colorRelCol are 1-based indices within sectionRng.
+Private Sub GuessDescAndColorColumns(ByVal sectionRng As Range, ByRef descRelCol As Long, ByRef colorRelCol As Long)
+    Dim relC As Long, r As Long, s As String
+    Dim maxCols As Long
+    maxCols = Application.Min(sectionRng.Columns.Count, 6) 'only inspect first few columns in the block
+
+    Dim boxHits() As Long, textHits() As Long, blankHits() As Long
+    ReDim boxHits(1 To maxCols)
+    ReDim textHits(1 To maxCols)
+    ReDim blankHits(1 To maxCols)
+
+    For relC = 1 To maxCols
+        For r = 1 To sectionRng.Rows.Count
+            s = Trim$(CStr(sectionRng.Cells(r, relC).Value))
+
+            If Len(s) = 0 Then
+                blankHits(relC) = blankHits(relC) + 1
+            Else
+                If InStr(1, UCase$(s), "BOX") > 0 Then boxHits(relC) = boxHits(relC) + 1
+                If IsLikelyColor(s) Then textHits(relC) = textHits(relC) + 1
+            End If
+        Next r
+    Next relC
+
+    'Description column = most "BOX" hits
+    Dim best As Long, bestScore As Long
+    best = 1: bestScore = -1
+    For relC = 1 To maxCols
+        If boxHits(relC) > bestScore Then bestScore = boxHits(relC): best = relC
+    Next relC
+    descRelCol = best
+
+    'Color column = most text+blank pattern, excluding desc column
+    best = 1: bestScore = -1
+    For relC = 1 To maxCols
+        If relC <> descRelCol Then
+            If (textHits(relC) + blankHits(relC)) > bestScore Then
+                bestScore = (textHits(relC) + blankHits(relC))
+                best = relC
+            End If
+        End If
+    Next relC
+    colorRelCol = best
+End Sub
+
+'===== Boxes_Shipped_Forecast SUB =====
+
 Sub Boxes_Shipped_Forecast()
     Dim oldCalc As XlCalculation
     oldCalc = Application.Calculation
@@ -11,16 +169,34 @@ Sub Boxes_Shipped_Forecast()
     Application.Calculation = xlCalculationManual
     Application.DisplayStatusBar = True
 
-    Dim wsA As Worksheet: Set wsA = ThisWorkbook.Worksheets("Boxes_Shipped_Assumptions")
-    Dim lo As ListObject: Set lo = wsA.ListObjects("WorksheetNames")
+    InitConfig
+
+    Dim wsA As Worksheet: Set wsA = ThisWorkbook.Worksheets(CFG_ASSUMPTIONS_SHEET)
+
+    'Worksheet mapping table: find by headers (Worksheet + Country), name can vary
+    Dim lo As ListObject
+    Set lo = FindTableByHeaders(Array("Worksheet", "Country"), CFG_TABLE_WORKSHEETS_PREFERRED)
+    If lo Is Nothing Then
+        MsgBox "Could not find worksheet mapping table (needs columns like Worksheet/Sheet and Country/Market).", vbExclamation
+        Exit Sub
+    End If
+
+    Dim idxWs As Long, idxCountry As Long
+    idxWs = GetListColumnIndexByAliases(lo, CFG_WORKSHEET_HEADERS)
+    idxCountry = GetListColumnIndexByAliases(lo, CFG_COUNTRY_HEADERS)
+    If idxWs = 0 Or idxCountry = 0 Then
+        MsgBox "Worksheet mapping table found, but could not resolve Worksheet/Country columns by aliases.", vbExclamation
+        Exit Sub
+    End If
+
 
     '=== Forecast start date from assumptions ===
     Dim forecastStart As Date
-    forecastStart = CDate(wsA.Range("B1").value)
+    forecastStart = CDate(wsA.Range(CFG_FORECAST_START_CELL).Value)
 
     '=== Active colors list from table "Colors" (Status = Active) ===
     Dim colors As Collection
-    Set colors = GetActiveColorsFromTable("Colors", "Colors", "Status")
+    Set colors = GetActiveColors_Configured()
 
     If colors.Count = 0 Then
         MsgBox "No Active colors found in table 'Colors'.", vbExclamation
@@ -28,7 +204,7 @@ Sub Boxes_Shipped_Forecast()
     End If
 
     '=== MAX_BOX driven by table "Boxes" row count (data rows only) ===
-    MAX_BOX = GetBoxCountFromTable("Boxes")
+    MAX_BOX = GetBoxCount_Configured()
     If MAX_BOX <= 0 Then
         MsgBox "Table 'Boxes' not found or has no rows.", vbExclamation
         Exit Sub
@@ -166,13 +342,16 @@ Sub Boxes_Shipped_Forecast()
     outUsed = 1
     
     Dim c As Range
-    For Each c In lo.ListColumns("Worksheet").DataBodyRange.Cells
+    Dim rMap As Long
+    For rMap = 1 To lo.DataBodyRange.Rows.Count
+
         Dim Worksheet As String
-        Worksheet = Trim(CStr(c.value))
+        Worksheet = Trim$(CStr(lo.DataBodyRange.Cells(rMap, idxWs).Value))
         If Len(Worksheet) = 0 Then GoTo NextOne
-        
+
         Dim country As String
-        country = Trim$(CStr(lo.ListColumns("Country").DataBodyRange.Cells(c.Row - lo.DataBodyRange.Row + 1, 1).Value))
+        country = Trim$(CStr(lo.DataBodyRange.Cells(rMap, idxCountry).Value))
+
 
         Dim wsT As Worksheet
         On Error Resume Next
@@ -500,7 +679,8 @@ Sub Boxes_Shipped_Forecast()
         
 NextOne:
         Set wsT = Nothing
-    Next c
+    Next rMap
+
     '=== Dump output array to sheet in one shot ===
     wsDebug.Cells.Clear
     wsDebug.Range("A1").Resize(outUsed, totalCols).value = outArr
@@ -537,42 +717,47 @@ End Function
 'then returns the block of rows for that section down to the row before the next section header,
 'and out to the last week-start date column (last date in row 2).
 Private Function BuildSectionTable_Block(ByVal ws As Worksheet, ByVal sectionHeader As String) As Range
+    Dim sectionCol As Long
+    sectionCol = FindSectionHeaderColumn(ws)
+    If sectionCol = 0 Then
+        Set BuildSectionTable_Block = Nothing
+        Exit Function
+    End If
+
     Dim headerCell As Range
-    Set headerCell = FindInColumnExact(ws, "C", sectionHeader)
-    
+    Set headerCell = FindInColumnExact_Num(ws, sectionCol, sectionHeader)
+
     If headerCell Is Nothing Then
         Set BuildSectionTable_Block = Nothing
         Exit Function
     End If
-    
+
     Dim startRow As Long
     startRow = headerCell.Row + 1
-    
-    'Find end row: stop right before the next section header (or at last used row in column C)
-    Dim lastRowC As Long
-    lastRowC = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
-    
+
+    'Find end row: stop right before next section header (or at last used row in sectionCol)
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, sectionCol).End(xlUp).Row
+
     Dim r As Long, endRow As Long
-    endRow = lastRowC
-    
-    For r = startRow + 1 To lastRowC
-        If IsSectionHeader(ws.Cells(r, "C").value) Then
+    endRow = lastRow
+
+    For r = startRow + 1 To lastRow
+        If IsSectionHeader(ws.Cells(r, sectionCol).Value) Then
             endRow = r - 1
             Exit For
         End If
     Next r
-    
-    'Find the rightmost column: last week-start entry (last date in row 2)
+
+    'Rightmost column = last date in row 2
     Dim lastWeekCol As Long
     lastWeekCol = FindLastDateColumnInRow(ws, 2)
-    
-    If lastWeekCol = 0 Then
-        'Fallback: if row 2 has no dates, just return columns C:E
-        lastWeekCol = ws.Range("E1").Column
-    End If
-    
-    Set BuildSectionTable_Block = ws.Range(ws.Cells(startRow, "C"), ws.Cells(endRow, lastWeekCol))
+    If lastWeekCol = 0 Then lastWeekCol = ws.Range("E1").Column 'fallback
+
+    'IMPORTANT: start the block at the *sectionCol* (not hard-coded "C")
+    Set BuildSectionTable_Block = ws.Range(ws.Cells(startRow, sectionCol), ws.Cells(endRow, lastWeekCol))
 End Function
+
 
 'Helper: exact match search in a single column
 Private Function FindInColumnExact(ByVal ws As Worksheet, ByVal colLetter As String, ByVal textToFind As String) As Range
@@ -590,17 +775,36 @@ Private Function FindInColumnExact(ByVal ws As Worksheet, ByVal colLetter As Str
     Set FindInColumnExact = Nothing
 End Function
 
+Private Function FindInColumnExact_Num(ByVal ws As Worksheet, ByVal colNum As Long, ByVal textToFind As String) As Range
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, colNum).End(xlUp).Row
+
+    Dim r As Long
+    For r = 1 To lastRow
+        If UCase$(Trim$(CStr(ws.Cells(r, colNum).Value))) = UCase$(Trim$(textToFind)) Then
+            Set FindInColumnExact_Num = ws.Cells(r, colNum)
+            Exit Function
+        End If
+    Next r
+
+    Set FindInColumnExact_Num = Nothing
+End Function
+
+
 'Helper: defines what counts as a section header in column C
 Private Function IsSectionHeader(ByVal v As Variant) As Boolean
-    Dim s As String
-    s = Trim$(CStr(v))
-    
-    Select Case s
-        Case "Beginning Stock", "Ending Stock", "Sales", "POs to be received", "Stock Turnover"
+    Dim s As String: s = Trim$(CStr(v))
+    If Len(s) = 0 Then Exit Function
+
+    Dim lbl As Variant
+    For Each lbl In CFG_SECTION_LABELS
+        If StrComp(s, CStr(lbl), vbTextCompare) = 0 Then
             IsSectionHeader = True
-        Case Else
-            IsSectionHeader = False
-    End Select
+            Exit Function
+        End If
+    Next lbl
+
+    IsSectionHeader = False
 End Function
 
 'Returns the column number of the rightmost cell in a row that contains a date.
@@ -623,25 +827,24 @@ End Function
 'Adds unique normalized colors found in column E of a section range.
 'Implements fill-down: blank color cells inherit the most recent non-blank color above within that section scan.
 Private Sub AddColorsFromSection(ByRef colors As Collection, ByVal sectionRng As Range)
+    Dim descCol As Long, colorCol As Long
+    GuessDescAndColorColumns sectionRng, descCol, colorCol
+
     Dim lastSeen As String
     lastSeen = ""
-    
+
     Dim r As Long
     For r = 1 To sectionRng.Rows.Count
         Dim raw As String
-        raw = Trim$(CStr(sectionRng.Cells(r, 3).value)) 'Column E relative to sectionRng (C=1, D=2, E=3)
-        
+        raw = Trim$(CStr(sectionRng.Cells(r, colorCol).Value))
+
         If Len(raw) > 0 Then
             lastSeen = NormalizeColor(raw)
         ElseIf Len(lastSeen) > 0 Then
-            'fill-down: use lastSeen
-        Else
-            'still nothing to use
+            'fill-down
         End If
-        
-        If Len(lastSeen) > 0 Then
-            AddUniqueKeyed colors, lastSeen
-        End If
+
+        If Len(lastSeen) > 0 Then AddUniqueKeyed colors, lastSeen
     Next r
 End Sub
 
@@ -662,6 +865,70 @@ Private Sub AddUniqueKeyed(ByRef col As Collection, ByVal key As String)
     Err.Clear
     On Error GoTo 0
 End Sub
+
+Private Function GetActiveColors_Configured() As Collection
+    Dim result As New Collection
+
+    Dim lo As ListObject
+    Set lo = FindTableByHeaders(Array("Color", "Status"), CFG_TABLE_COLORS_PREFERRED)
+    If lo Is Nothing Then
+        Set GetActiveColors_Configured = result
+        Exit Function
+    End If
+
+    Dim idxColor As Long, idxStatus As Long
+    idxColor = GetListColumnIndexByAliases(lo, CFG_COLOR_HEADERS)
+    idxStatus = GetListColumnIndexByAliases(lo, CFG_STATUS_HEADERS)
+
+    If idxColor = 0 Or idxStatus = 0 Then
+        Set GetActiveColors_Configured = result
+        Exit Function
+    End If
+
+    If lo.DataBodyRange Is Nothing Then
+        Set GetActiveColors_Configured = result
+        Exit Function
+    End If
+
+    Dim i As Long, statusVal As String, clr As String
+    For i = 1 To lo.DataBodyRange.Rows.Count
+        statusVal = Trim$(CStr(lo.DataBodyRange.Cells(i, idxStatus).Value))
+
+        If UCase$(statusVal) = "ACTIVE" Or UCase$(statusVal) = "TRUE" Or statusVal = "1" Then
+            clr = NormalizeColor(CStr(lo.DataBodyRange.Cells(i, idxColor).Value))
+            If Len(clr) > 0 Then AddUniqueKeyed result, clr
+        End If
+    Next i
+
+    Set GetActiveColors_Configured = result
+End Function
+
+Private Function GetBoxCount_Configured() As Long
+    'Try preferred name first, else any table with at least one column and a DataBodyRange.
+    'If you have a known header in Boxes table (recommended), swap this to FindTableByHeaders.
+    Dim ws As Worksheet, lo As ListObject
+
+    For Each ws In ThisWorkbook.Worksheets
+        On Error Resume Next
+        Set lo = ws.ListObjects(CFG_TABLE_BOXES_PREFERRED)
+        On Error GoTo 0
+        If Not lo Is Nothing Then Exit For
+    Next ws
+
+    If lo Is Nothing Then
+        'Fallback: if table renamed, pick the first table named like "Boxes" is not possible reliably
+        'Better: make Boxes table have a known header e.g. "Box" and use FindTableByHeaders(Array("Box"))
+        GetBoxCount_Configured = 0
+        Exit Function
+    End If
+
+    If lo.DataBodyRange Is Nothing Then
+        GetBoxCount_Configured = 0
+    Else
+        GetBoxCount_Configured = lo.DataBodyRange.Rows.Count
+    End If
+End Function
+
 
 'Returns a UNIQUE list of colors from a ListObject table where Status = "Active".
 'TableName: name of the Excel table (ListObject), e.g. "Colors"
@@ -730,6 +997,9 @@ Private Function BuildSectionIndex_FromRange(ByVal sectionRng As Range) As Varia
         Exit Function
     End If
 
+    Dim descCol As Long, colorCol As Long
+    GuessDescAndColorColumns sectionRng, descCol, colorCol
+
     Dim tmp() As Variant, cnt As Long
     ReDim tmp(1 To 3, 1 To 1)
 
@@ -739,11 +1009,12 @@ Private Function BuildSectionIndex_FromRange(ByVal sectionRng As Range) As Varia
     Dim r As Long
     For r = 1 To sectionRng.Rows.Count
 
-        'In your sectionRng: C=1, D=2, E=3
         Dim desc As String
-        desc = CStr(sectionRng.Cells(r, 2).value)   'Column D on sheet
+        desc = CStr(sectionRng.Cells(r, descCol).Value)
+
         Dim bx As Long
         bx = ParseBoxNum(desc)
+
         If bx = 8 Then
             Dim U8 As String: U8 = UCase$(desc)
             If (InStr(1, U8, "NEW") > 0) And (InStr(1, U8, "ARMS") > 0 Or InStr(1, U8, "SRMS") > 0) Then
@@ -752,9 +1023,9 @@ Private Function BuildSectionIndex_FromRange(ByVal sectionRng As Range) As Varia
         End If
         If bx = 0 Then GoTo NextRow
 
-        'Read color from Column E with fill-down
+        'Color with fill-down using detected color column
         Dim colorRaw As String, colorKey As String
-        colorRaw = CStr(sectionRng.Cells(r, 3).value) 'Column E on sheet
+        colorRaw = CStr(sectionRng.Cells(r, colorCol).Value)
         colorKey = ""
 
         If IsLikelyColor(colorRaw) Then colorKey = NormalizeColor(colorRaw)
@@ -768,8 +1039,7 @@ Private Function BuildSectionIndex_FromRange(ByVal sectionRng As Range) As Varia
 
         tmp(1, cnt) = colorKey
         tmp(2, cnt) = bx
-        tmp(3, cnt) = sectionRng.Cells(r, 1).Row   'worksheet row number
-
+        tmp(3, cnt) = sectionRng.Cells(r, 1).Row 'worksheet row number (first col of sectionRng)
 NextRow:
     Next r
 
