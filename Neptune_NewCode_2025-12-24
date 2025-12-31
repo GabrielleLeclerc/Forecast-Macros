@@ -113,6 +113,14 @@ Sub Boxes_Shipped_Forecast()
         wsDebug.Cells(1, hdrCol).Value = "Sales_P1 B" & b
         hdrCol = hdrCol + 1
     Next b
+    
+    '=== Totals (across all boxes) ===
+    wsDebug.Cells(1, hdrCol).Value = "TotalLocalBacklogShipped"
+    hdrCol = hdrCol + 1
+    
+    wsDebug.Cells(1, hdrCol).Value = "TotalLocalSalesShipped"
+    hdrCol = hdrCol + 1
+
 
     'Force integer display for all box metric columns (Sales..Backlog)
     wsDebug.Range(wsDebug.Cells(2, 6), wsDebug.Cells(wsDebug.Rows.Count, hdrCol - 1)).NumberFormat = "0"
@@ -410,6 +418,30 @@ Sub Boxes_Shipped_Forecast()
                             wsDebug.Cells(outRow, writeCol).Value = salesP1
                             writeCol = writeCol + 1
                         Next b
+
+                        '=== Totals across boxes ===
+                        Dim totalBacklogShipped As Long, totalSalesShipped As Long
+                        Dim backlogShippedCol As Long, salesShippedCol As Long
+                        
+                        totalBacklogShipped = 0
+                        totalSalesShipped = 0
+                        
+                        'BacklogShipped block starts at: 6 + 5*MAX_BOX
+                        'SalesShipped block starts at:   6 + 8*MAX_BOX
+                        For b = 1 To MAX_BOX
+                            backlogShippedCol = 6 + (5 * MAX_BOX) + (b - 1)
+                            salesShippedCol = 6 + (8 * MAX_BOX) + (b - 1)
+                        
+                            totalBacklogShipped = totalBacklogShipped + CLng(wsDebug.Cells(outRow, backlogShippedCol).Value)
+                            totalSalesShipped = totalSalesShipped + CLng(wsDebug.Cells(outRow, salesShippedCol).Value)
+                        Next b
+                        
+                        'Write totals into the next 2 columns at the end of the row
+                        wsDebug.Cells(outRow, writeCol).Value = totalBacklogShipped
+                        writeCol = writeCol + 1
+                        
+                        wsDebug.Cells(outRow, writeCol).Value = totalSalesShipped
+                        writeCol = writeCol + 1
                                                                      
                         outRow = outRow + 1
                     Next i
