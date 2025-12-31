@@ -16,7 +16,7 @@ Sub Boxes_Shipped_Forecast()
 
     '=== Forecast start date from assumptions ===
     Dim forecastStart As Date
-    forecastStart = CDate(wsA.Range("B1").Value)
+    forecastStart = CDate(wsA.Range("B1").value)
 
     '=== Active colors list from table "Colors" (Status = Active) ===
     Dim colors As Collection
@@ -39,7 +39,7 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_BL_SHIP As Long, COL_AVAIL_POSTBL As Long, COL_BL_P1 As Long
     Dim COL_SALES_SHIP As Long, COL_AVAIL_POSTSALES As Long, COL_SALES_P1 As Long
     
-    COL_SALES = 8
+    COL_SALES = 6
     COL_BEG = COL_SALES + MAX_BOX
     COL_IB = COL_BEG + MAX_BOX
     COL_AVAIL = COL_IB + MAX_BOX
@@ -64,84 +64,82 @@ Sub Boxes_Shipped_Forecast()
     End If
     
     wsDebug.Cells.Clear
-    wsDebug.Range("A1").Value = "Demand City"
-    wsDebug.Range("B1").Value = "Color"
-    wsDebug.Range("C1").Value = "Week Start"
-    wsDebug.Range("D1").Value = "Week End"
-    wsDebug.Range("E1").Value = "Col"
-    wsDebug.Range("F1").Value = "P1 City"
-    wsDebug.Range("G1").Value = "P2 City"
+    wsDebug.Range("A1").value = "Demand City"
+    wsDebug.Range("B1").value = "Color"
+    wsDebug.Range("C1").value = "Week Start"
+    wsDebug.Range("D1").value = "Week End"
+    wsDebug.Range("E1").value = "Col"
 
-    '=== NEW: Add box columns ===  
+    '=== NEW: Add box columns ===
     Dim b As Long, hdrCol As Long
     
-    hdrCol = 8 ' Column F = first new header
+    hdrCol = 6 ' Column F = first new header
     
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Sales B" & b
+        wsDebug.Cells(1, hdrCol).value = "Sales B" & b
         hdrCol = hdrCol + 1
     Next b
     
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Beg Stock B" & b
+        wsDebug.Cells(1, hdrCol).value = "Beg Stock B" & b
         hdrCol = hdrCol + 1
     Next b
     
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "IB B" & b
+        wsDebug.Cells(1, hdrCol).value = "IB B" & b
         hdrCol = hdrCol + 1
     Next b
     
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "AvailStock B" & b
+        wsDebug.Cells(1, hdrCol).value = "AvailStock B" & b
         hdrCol = hdrCol + 1
     Next b
 
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Backlog B" & b
+        wsDebug.Cells(1, hdrCol).value = "Backlog B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '=== Allocation Round 1 columns (Backlog first) ===
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "BacklogShipped B" & b
+        wsDebug.Cells(1, hdrCol).value = "BacklogShipped B" & b
         hdrCol = hdrCol + 1
     Next b
     
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "AvailStock_PostBacklog B" & b
+        wsDebug.Cells(1, hdrCol).value = "AvailStock_PostBacklog B" & b
         hdrCol = hdrCol + 1
     Next b
     
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Backlog_P1 B" & b
+        wsDebug.Cells(1, hdrCol).value = "Backlog_P1 B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '=== Allocation Round 2 columns (Sales after backlog) ===
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "SalesShipped B" & b
+        wsDebug.Cells(1, hdrCol).value = "SalesShipped B" & b
         hdrCol = hdrCol + 1
     Next b
     
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "AvailStock_PostSales B" & b
+        wsDebug.Cells(1, hdrCol).value = "AvailStock_PostSales B" & b
         hdrCol = hdrCol + 1
     Next b
     
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Sales_P1 B" & b
+        wsDebug.Cells(1, hdrCol).value = "Sales_P1 B" & b
         hdrCol = hdrCol + 1
     Next b
     
     '=== Totals (across all boxes) ===
-    wsDebug.Cells(1, hdrCol).Value = "TotalLocalBacklogShipped"
+    wsDebug.Cells(1, hdrCol).value = "TotalLocalBacklogShipped"
     hdrCol = hdrCol + 1
     
-    wsDebug.Cells(1, hdrCol).Value = "TotalLocalSalesShipped"
+    wsDebug.Cells(1, hdrCol).value = "TotalLocalSalesShipped"
     hdrCol = hdrCol + 1
     
-    wsDebug.Cells(1, hdrCol).Value = "TotalShipped_FromLocal"
+    wsDebug.Cells(1, hdrCol).value = "TotalShipped_FromLocal"
     hdrCol = hdrCol + 1
 
     '=== FINAL column count (A..last header) ===
@@ -157,7 +155,7 @@ Sub Boxes_Shipped_Forecast()
     '=== Copy headers into outArr row 1 ===
     Dim h As Long
     For h = 1 To totalCols
-        outArr(1, h) = wsDebug.Cells(1, h).Value
+        outArr(1, h) = wsDebug.Cells(1, h).value
     Next h
     
     'We will NOT write row-by-row to the sheet anymore.
@@ -169,7 +167,7 @@ Sub Boxes_Shipped_Forecast()
     Dim c As Range
     For Each c In lo.ListColumns("Worksheet").DataBodyRange.Cells
         Dim Worksheet As String
-        Worksheet = Trim(CStr(c.Value))
+        Worksheet = Trim(CStr(c.value))
         If Len(Worksheet) = 0 Then GoTo NextOne
         
         Dim wsT As Worksheet
@@ -180,7 +178,7 @@ Sub Boxes_Shipped_Forecast()
         If wsT Is Nothing Then
             Debug.Print "Missing sheet:", Worksheet
         Else
-            Debug.Print "Reading:", wsT.Name, "A1=", wsT.Range("A1").Value
+            Debug.Print "Reading:", wsT.Name, "A1=", wsT.Range("A1").value
 
             Dim demandCity As String
             demandCity = DemandCityFromSheetName(wsT.Name)
@@ -203,15 +201,15 @@ Sub Boxes_Shipped_Forecast()
             Dim salesIdx As Variant, begIdx As Variant, endIdx As Variant, poIdx As Variant
             
             salesIdx = BuildSectionIndex_FromRange(salesTbl)
-            begIdx   = BuildSectionIndex_FromRange(begTbl)
-            endIdx   = BuildSectionIndex_FromRange(endTbl)
-            poIdx    = BuildSectionIndex_FromRange(poTbl)
+            begIdx = BuildSectionIndex_FromRange(begTbl)
+            endIdx = BuildSectionIndex_FromRange(endTbl)
+            poIdx = BuildSectionIndex_FromRange(poTbl)
 
             '=== FAST MAPS (Color|Box -> Row) to avoid scanning arrays repeatedly ===
             Dim salesMap As Object, begMap As Object, poMap As Object
             Set salesMap = BuildRowMap(salesIdx)
-            Set begMap   = BuildRowMap(begIdx)
-            Set poMap    = BuildRowMap(poIdx)
+            Set begMap = BuildRowMap(begIdx)
+            Set poMap = BuildRowMap(poIdx)
             
             '=== Find the forecast start column on row 2 (match forecastStart) ===
             Dim startCol As Long, lastCol As Long, col As Long
@@ -220,8 +218,8 @@ Sub Boxes_Shipped_Forecast()
             lastCol = wsT.Cells(2, wsT.Columns.Count).End(xlToLeft).Column
             
             For col = 1 To lastCol
-                If IsDate(wsT.Cells(2, col).Value) Then
-                    If DateValue(wsT.Cells(2, col).Value) = DateValue(forecastStart) Then
+                If IsDate(wsT.Cells(2, col).value) Then
+                    If DateValue(wsT.Cells(2, col).value) = DateValue(forecastStart) Then
                         startCol = col
                         Exit For
                     End If
@@ -233,7 +231,7 @@ Sub Boxes_Shipped_Forecast()
             Else
                 '=== Loop week columns from forecastStart onward ===
                 For col = startCol To lastCol
-                    If Not IsDate(wsT.Cells(2, col).Value) Then Exit For
+                    If Not IsDate(wsT.Cells(2, col).value) Then Exit For
                     
                     Dim colLetter As String
                     colLetter = Split(wsT.Cells(1, col).Address(False, False), "1")(0)
@@ -254,26 +252,14 @@ Sub Boxes_Shipped_Forecast()
                         'Write columns A:E into the array
                         outArr(outUsed, 1) = demandCity
                         outArr(outUsed, 2) = colors(i)
-                        outArr(outUsed, 3) = wsT.Cells(2, col).Value
-                        outArr(outUsed, 4) = wsT.Cells(4, col).Value
+                        outArr(outUsed, 3) = wsT.Cells(2, col).value
+                        outArr(outUsed, 4) = wsT.Cells(4, col).value
                         outArr(outUsed, 5) = colLetter
 
-                        Dim partners As Variant
-                        partners = PartnersFor(Worksheet)
-                        
-                        'Default blanks
-                        outArr(outUsed, 6) = ""
-                        outArr(outUsed, 7) = ""
-                        
-                        'Fill P1 / P2 if they exist
-                        If IsArray(partners) Then
-                            If UBound(partners) >= 0 Then outArr(outUsed, 6) = DemandCityFromSheetName(CStr(partners(0)))
-                            If UBound(partners) >= 1 Then outArr(outUsed, 7) = DemandCityFromSheetName(CStr(partners(1)))
-                        End If
                         
                         '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
                         Dim writeCol As Long
-                        writeCol = COL_SALES
+                        writeCol = 6
                         
                         Dim rr As Long, v As Variant
                         
@@ -284,7 +270,7 @@ Sub Boxes_Shipped_Forecast()
                         
                             rr = MapGetLong(salesMap, key, 0)
                             If rr > 0 Then
-                                outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).Value)
+                                outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
@@ -298,7 +284,7 @@ Sub Boxes_Shipped_Forecast()
                         
                             rr = MapGetLong(begMap, key, 0)
                             If rr > 0 Then
-                                outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).Value)
+                                outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
@@ -312,7 +298,7 @@ Sub Boxes_Shipped_Forecast()
                         
                             rr = MapGetLong(poMap, key, 0)
                             If rr > 0 Then
-                                outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).Value)
+                                outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
@@ -326,7 +312,7 @@ Sub Boxes_Shipped_Forecast()
                         
                         For b = 1 To MAX_BOX
                             begCol = COL_BEG + (b - 1)         'Beg Stock block starts after Sales
-                            ibCol  = COL_IB + (b - 1)   'IB block starts after Sales+Beg
+                            ibCol = COL_IB + (b - 1)    'IB block starts after Sales+Beg
                         
                             sumAvail = CLng(outArr(outUsed, begCol)) + CLng(outArr(outUsed, ibCol))
 
@@ -513,11 +499,11 @@ NextOne:
     Next c
     '=== Dump output array to sheet in one shot ===
     wsDebug.Cells.Clear
-    wsDebug.Range("A1").Resize(outUsed, totalCols).Value = outArr
+    wsDebug.Range("A1").Resize(outUsed, totalCols).value = outArr
     
     '=== Format only the used rows (fast) ===
     If outUsed >= 2 Then
-        wsDebug.Range(wsDebug.Cells(2, COL_SALES), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
+        wsDebug.Range(wsDebug.Cells(2, 6), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
         wsDebug.Range(wsDebug.Cells(2, 3), wsDebug.Cells(outUsed, 4)).NumberFormat = "yyyy-mm-dd"
     End If
 
@@ -566,7 +552,7 @@ Private Function BuildSectionTable_Block(ByVal ws As Worksheet, ByVal sectionHea
     endRow = lastRowC
     
     For r = startRow + 1 To lastRowC
-        If IsSectionHeader(ws.Cells(r, "C").Value) Then
+        If IsSectionHeader(ws.Cells(r, "C").value) Then
             endRow = r - 1
             Exit For
         End If
@@ -591,7 +577,7 @@ Private Function FindInColumnExact(ByVal ws As Worksheet, ByVal colLetter As Str
     
     Dim r As Long
     For r = 1 To lastRow
-        If UCase$(Trim$(CStr(ws.Cells(r, colLetter).Value))) = UCase$(Trim$(textToFind)) Then
+        If UCase$(Trim$(CStr(ws.Cells(r, colLetter).value))) = UCase$(Trim$(textToFind)) Then
             Set FindInColumnExact = ws.Cells(r, colLetter)
             Exit Function
         End If
@@ -621,7 +607,7 @@ Private Function FindLastDateColumnInRow(ByVal ws As Worksheet, ByVal rowNum As 
     
     Dim c As Long
     For c = lastCol To 1 Step -1
-        If IsDate(ws.Cells(rowNum, c).Value) Then
+        If IsDate(ws.Cells(rowNum, c).value) Then
             FindLastDateColumnInRow = c
             Exit Function
         End If
@@ -639,7 +625,7 @@ Private Sub AddColorsFromSection(ByRef colors As Collection, ByVal sectionRng As
     Dim r As Long
     For r = 1 To sectionRng.Rows.Count
         Dim raw As String
-        raw = Trim$(CStr(sectionRng.Cells(r, 3).Value)) 'Column E relative to sectionRng (C=1, D=2, E=3)
+        raw = Trim$(CStr(sectionRng.Cells(r, 3).value)) 'Column E relative to sectionRng (C=1, D=2, E=3)
         
         If Len(raw) > 0 Then
             lastSeen = NormalizeColor(raw)
@@ -716,11 +702,11 @@ Private Function GetActiveColorsFromTable(ByVal tableName As String, _
     Dim i As Long
     For i = 1 To lo.DataBodyRange.Rows.Count
         Dim statusVal As String
-        statusVal = Trim$(CStr(colStatus.DataBodyRange.Cells(i, 1).Value))
+        statusVal = Trim$(CStr(colStatus.DataBodyRange.Cells(i, 1).value))
         
         If UCase$(statusVal) = "ACTIVE" Then
             Dim clr As String
-            clr = NormalizeColor(CStr(colColor.DataBodyRange.Cells(i, 1).Value))
+            clr = NormalizeColor(CStr(colColor.DataBodyRange.Cells(i, 1).value))
             If Len(clr) > 0 Then
                 AddUniqueKeyed result, clr
             End If
@@ -751,7 +737,7 @@ Private Function BuildSectionIndex_FromRange(ByVal sectionRng As Range) As Varia
 
         'In your sectionRng: C=1, D=2, E=3
         Dim desc As String
-        desc = CStr(sectionRng.Cells(r, 2).Value)   'Column D on sheet
+        desc = CStr(sectionRng.Cells(r, 2).value)   'Column D on sheet
         Dim bx As Long
         bx = ParseBoxNum(desc)
         If bx = 8 Then
@@ -764,7 +750,7 @@ Private Function BuildSectionIndex_FromRange(ByVal sectionRng As Range) As Varia
 
         'Read color from Column E with fill-down
         Dim colorRaw As String, colorKey As String
-        colorRaw = CStr(sectionRng.Cells(r, 3).Value) 'Column E on sheet
+        colorRaw = CStr(sectionRng.Cells(r, 3).value) 'Column E on sheet
         colorKey = ""
 
         If IsLikelyColor(colorRaw) Then colorKey = NormalizeColor(colorRaw)
@@ -962,14 +948,4 @@ Private Function ToWhole(ByVal v As Variant) As Long
     End If
 End Function
 
-' ---------- Partner rules (priority order) ----------
-Private Function PartnersFor(ByVal sheetName As String) As Variant
-    Select Case sheetName
-        Case "Neptune-Montreal":  PartnersFor = VBA.Array("Neptune-Toronto", "Neptune-Vancouver")
-        Case "Neptune-Toronto":   PartnersFor = VBA.Array("Neptune-Montreal", "Neptune-Vancouver")
-        Case "Neptune-Vancouver": PartnersFor = VBA.Array("Neptune-Toronto", "Neptune-Montreal")  ' <-- order swapped
-        Case "Neptune-Dayton":  PartnersFor = VBA.Array("Neptune-Moreno")
-        Case "Neptune-Moreno":    PartnersFor = VBA.Array("Neptune-Dayton")
-        Case Else:                PartnersFor = VBA.Array()
-    End Select
-End Function
+
