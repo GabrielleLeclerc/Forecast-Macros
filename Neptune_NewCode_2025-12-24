@@ -453,7 +453,8 @@ Sub Boxes_Shipped_Forecast()
                         
                             rr = MapGetLong(salesMap, key, 0)
                             If rr > 0 Then
-                                outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
+                                'outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
+                                outArr(outUsed, writeCol) = wsT.Cells(rr, col).Value
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
@@ -467,7 +468,8 @@ Sub Boxes_Shipped_Forecast()
                         
                             rr = MapGetLong(begMap, key, 0)
                             If rr > 0 Then
-                                outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
+                                'outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
+                                outArr(outUsed, writeCol) = wsT.Cells(rr, col).Value
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
@@ -481,7 +483,8 @@ Sub Boxes_Shipped_Forecast()
                         
                             rr = MapGetLong(poMap, key, 0)
                             If rr > 0 Then
-                                outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
+                                'outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
+                                outArr(outUsed, writeCol) = wsT.Cells(rr, col).Value
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
@@ -687,7 +690,8 @@ NextOne:
     
     '=== Format only the used rows (fast) ===
     If outUsed >= 2 Then
-        wsDebug.Range(wsDebug.Cells(2, 7), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
+        'wsDebug.Range(wsDebug.Cells(2, 7), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
+        wsDebug.Range(wsDebug.Cells(2, 7), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0.00"
         wsDebug.Range(wsDebug.Cells(2, 4), wsDebug.Cells(outUsed, 5)).NumberFormat = "yyyy-mm-dd"
     End If
 
