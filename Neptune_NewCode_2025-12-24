@@ -98,6 +98,22 @@ Sub Boxes_Shipped_Forecast()
         hdrCol = hdrCol + 1
     Next b
 
+    '=== Allocation Round 2 columns (Sales after backlog) ===
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "SalesShipped B" & b
+        hdrCol = hdrCol + 1
+    Next b
+    
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "AvailStock_PostSales B" & b
+        hdrCol = hdrCol + 1
+    Next b
+    
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "Sales_P1 B" & b
+        hdrCol = hdrCol + 1
+    Next b
+
     'Force integer display for all box metric columns (Sales..Backlog)
     wsDebug.Range(wsDebug.Cells(2, 6), wsDebug.Cells(wsDebug.Rows.Count, hdrCol - 1)).NumberFormat = "0"
     
@@ -332,7 +348,69 @@ Sub Boxes_Shipped_Forecast()
                             wsDebug.Cells(outRow, writeCol).Value = backlogP1
                             writeCol = writeCol + 1
                         Next b
-                                                                        
+
+                        '=== Allocation Round 2 (Sales using AvailStock_PostBacklog) ===
+                        'Uses already-written Sales and AvailStock_PostBacklog from this same row.
+                        
+                        Dim salesCol As Long, availPostBacklogCol As Long
+                        Dim salesVal As Long, availPostBacklogVal As Long
+                        Dim shippedSales As Long, availPostSales As Long, salesP1 As Long
+                        
+                        'Column block start positions (based on your layout + Round 1 blocks):
+                        'Sales:                  6 + 0*MAX_BOX
+                        'Beg Stock:              6 + 1*MAX_BOX
+                        'IB:                     6 + 2*MAX_BOX
+                        'AvailStock:             6 + 3*MAX_BOX
+                        'Backlog:                6 + 4*MAX_BOX
+                        'BacklogShipped:         6 + 5*MAX_BOX
+                        'AvailStock_PostBacklog: 6 + 6*MAX_BOX
+                        'Backlog_P1:             6 + 7*MAX_BOX
+                        
+                        '--- SalesShipped B1..Bn = MIN(AvailStock_PostBacklog, Sales) ---
+                        For b = 1 To MAX_BOX
+                            salesCol = 6 + (0 * MAX_BOX) + (b - 1)
+                            availPostBacklogCol = 6 + (6 * MAX_BOX) + (b - 1)
+                        
+                            salesVal = CLng(wsDebug.Cells(outRow, salesCol).Value)
+                            availPostBacklogVal = CLng(wsDebug.Cells(outRow, availPostBacklogCol).Value)
+                        
+                            shippedSales = availPostBacklogVal
+                            If salesVal < shippedSales Then shippedSales = salesVal
+                        
+                            wsDebug.Cells(outRow, writeCol).Value = shippedSales
+                            writeCol = writeCol + 1
+                        Next b
+                        
+                        '--- AvailStock_PostSales B1..Bn = MAX(AvailStock_PostBacklog - Sales, 0) ---
+                        For b = 1 To MAX_BOX
+                            salesCol = 6 + (0 * MAX_BOX) + (b - 1)
+                            availPostBacklogCol = 6 + (6 * MAX_BOX) + (b - 1)
+                        
+                            salesVal = CLng(wsDebug.Cells(outRow, salesCol).Value)
+                            availPostBacklogVal = CLng(wsDebug.Cells(outRow, availPostBacklogCol).Value)
+                        
+                            availPostSales = availPostBacklogVal - salesVal
+                            If availPostSales < 0 Then availPostSales = 0
+                        
+                            wsDebug.Cells(outRow, writeCol).Value = availPostSales
+                            writeCol = writeCol + 1
+                        Next b
+                        
+                        '--- Sales_P1 B1..Bn = MAX(Sales - AvailStock_PostBacklog, 0) ---
+                        For b = 1 To MAX_BOX
+                            salesCol = 6 + (0 * MAX_BOX) + (b - 1)
+                            availPostBacklogCol = 6 + (6 * MAX_BOX) + (b - 1)
+                        
+                            salesVal = CLng(wsDebug.Cells(outRow, salesCol).Value)
+                            availPostBacklogVal = CLng(wsDebug.Cells(outRow, availPostBacklogCol).Value)
+                        
+                            salesP1 = salesVal - availPostBacklogVal
+                            If salesP1 < 0 Then salesP1 = 0
+                        
+                            wsDebug.Cells(outRow, writeCol).Value = salesP1
+                            writeCol = writeCol + 1
+                        Next b
+                                                                     
                         outRow = outRow + 1
                     Next i
                 Next col
