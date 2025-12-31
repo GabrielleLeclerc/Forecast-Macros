@@ -932,11 +932,18 @@ Private Function MapGetLong(ByVal m As Object, ByVal key As String, Optional ByV
 End Function
 
 Private Function ToWhole(ByVal v As Variant) As Long
-    'Round to nearest whole number; handles blanks/errors safely
+    'Fast round to whole; handles blanks/errors safely
     If IsError(v) Or Len(Trim$(CStr(v))) = 0 Then
         ToWhole = 0
     Else
-        ToWhole = CLng(Application.WorksheetFunction.Round(CDbl(v), 0))
+        Dim d As Double
+        d = CDbl(v)
+
+        'Excel-like rounding to nearest integer
+        If d >= 0 Then
+            ToWhole = CLng(d + 0.5)
+        Else
+            ToWhole = -CLng(Abs(d) + 0.5)
+        End If
     End If
 End Function
-
