@@ -210,6 +210,10 @@ Sub Boxes_Shipped_Forecast()
         Exit Sub
     End If
 
+    Dim isOptional() As Boolean
+    isOptional = GetIsOptionalByBox_Configured(MAX_BOX)
+
+
     '=== Pre-calc column starts (only once) ===
     Dim COL_SALES As Long, COL_BEG As Long, COL_IB As Long, COL_AVAIL As Long, COL_BACKLOG As Long
     Dim COL_NEED As Long
@@ -217,6 +221,7 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_BL_SHIP As Long, COL_AVAIL_POSTBL As Long, COL_BL_P1 As Long
     Dim COL_ORD_SALES_AVAIL As Long, COL_ORD_SALES_DEMAND As Long, COL_ORD_SALES_SHIP As Long
     Dim COL_SALES_SHIP As Long, COL_AVAIL_POSTSALES As Long, COL_SALES_P1 As Long
+    Dim COL_TOT_BL_SHIP As Long, COL_TOT_SALES_SHIP As Long, COL_TOT_SHIP As Long
 
     '==================== Working variables (declared once) ====================
     
@@ -257,7 +262,9 @@ Sub Boxes_Shipped_Forecast()
     COL_SALES_SHIP = COL_ORD_SALES_SHIP + 1
     COL_AVAIL_POSTSALES = COL_SALES_SHIP + MAX_BOX
     COL_SALES_P1 = COL_AVAIL_POSTSALES + MAX_BOX
-
+    COL_TOT_BL_SHIP = COL_SALES_P1 + MAX_BOX
+    COL_TOT_SALES_SHIP = COL_TOT_BL_SHIP + 1
+    COL_TOT_SHIP = COL_TOT_SALES_SHIP + 1
             
     '=== Set up / create the Debug sheet and the output row counter ===
     Dim wsDebug As Worksheet
@@ -607,141 +614,154 @@ Sub Boxes_Shipped_Forecast()
                         outArr(outUsed, writeCol) = ""  'OrdersShipped_Backlog (filled later)
                         writeCol = writeCol + 1
 
-
                         '=== Allocation Round 1 (Backlog-first) using WHOLE ORDERS ===
                         'We compute ONE shared ordersShipped_Backlog for this (week,color),
                         'limited by the first box type to run out (min across boxes).
                         
-                        Dim ordersFromAvail As Long
-                        Dim ordersFromBacklog As Long
-                        Dim ordersShipped_Backlog As Long
+                        Dim ordersFromAvail As Double
+                        Dim ordersFromBacklog As Double
+                        Dim ordersShipped_Backlog As Double
                         
-                        ordersFromAvail = 999999999
-                        ordersFromBacklog = 999999999
+                        ordersFromAvail = 1E+30
+                        ordersFromBacklog = 1E+30
                         
                         'Figure out max whole orders supported by availability and backlog (across all boxes)
                         For b = 1 To MAX_BOX
-                            availCol = COL_AVAIL + (b - 1)
-                            backlogCol = COL_BACKLOG + (b - 1)
-                            
-                            availVal = CDbl(outArr(outUsed, availCol))
-                            backlogVal = CDbl(outArr(outUsed, backlogCol))
-                            
-                            ordersFromAvail = Application.Min(ordersFromAvail, FloorWholeOrders(availVal, need(b)))
-                            ordersFromBacklog = Application.Min(ordersFromBacklog, FloorWholeOrders(backlogVal, need(b)))
+                            'ONLY required boxes constrain how many full orders we can ship
+                            If Not isOptional(b) Then
+                                availCol = COL_AVAIL + (b - 1)
+                                backlogCol = COL_BACKLOG + (b - 1)
+                        
+                                availVal = CDbl(outArr(outUsed, availCol))
+                                backlogVal = CDbl(outArr(outUsed, backlogCol))
+                        
+                                ordersFromAvail = Application.Min(ordersFromAvail, OrdersFromQty(availVal, need(b)))
+                                ordersFromBacklog = Application.Min(ordersFromBacklog, OrdersFromQty(backlogVal, need(b)))
+
+                            End If
                         Next b
+
                         
                         ordersShipped_Backlog = Application.Min(ordersFromAvail, ordersFromBacklog)
-
+                                              
                         '=== Write backlog order-debug values into the fixed columns ===
-                        outArr(outUsed, COL_ORD_BL_AVAIL) = ordersFromAvail
-                        outArr(outUsed, COL_ORD_BL_BACKLOG) = ordersFromBacklog
-                        outArr(outUsed, COL_ORD_BL_SHIP) = ordersShipped_Backlog
+                        outArr(outUsed, COL_ORD_BL_AVAIL) = WorksheetFunction.Round(ordersFromAvail, 2)
+                        outArr(outUsed, COL_ORD_BL_BACKLOG) = WorksheetFunction.Round(ordersFromBacklog, 2)
+                        outArr(outUsed, COL_ORD_BL_SHIP) = WorksheetFunction.Round(ordersShipped_Backlog, 2)
 
-                        
                         '--- BacklogShipped B1..Bn = ordersShipped_Backlog * need(b) ---
                         For b = 1 To MAX_BOX
-                            shippedBacklog = ordersShipped_Backlog * need(b)
-                            outArr(outUsed, writeCol) = shippedBacklog
-                            writeCol = writeCol + 1
-                        Next b
+                            Dim desiredBL As Double, shippedBL As Double
+                            desiredBL = ordersShipped_Backlog * need(b)
                         
+                            If isOptional(b) Then
+                                'Optional box: ship up to what we have available
+                                availVal = CDbl(outArr(outUsed, COL_AVAIL + (b - 1)))
+                                shippedBL = Application.Min(availVal, desiredBL)
+                            Else
+                                'Required box: if we ship the order, it consumes this box qty
+                                shippedBL = desiredBL
+                            End If
+                        
+                            outArr(outUsed, COL_BL_SHIP + (b - 1)) = shippedBL
+                        Next b                        
+                                            
                         '--- AvailStock_PostBacklog B1..Bn = AvailStock - BacklogShipped ---
                         For b = 1 To MAX_BOX
                             availCol = COL_AVAIL + (b - 1)
                             backlogShippedCol = COL_BL_SHIP + (b - 1)
-                            
-                            availVal = CDbl(outArr(outUsed, availCol))
-                            shippedBacklog = CDbl(outArr(outUsed, backlogShippedCol))
-                            
-                            availPost = availVal - shippedBacklog
+                        
+                            availPost = CDbl(outArr(outUsed, availCol)) - CDbl(outArr(outUsed, backlogShippedCol))
                             If availPost < 0 Then availPost = 0
-                            
-                            outArr(outUsed, writeCol) = availPost
-                            writeCol = writeCol + 1
+                        
+                            outArr(outUsed, COL_AVAIL_POSTBL + (b - 1)) = availPost
                         Next b
                         
                         '--- Backlog_P1 B1..Bn = Backlog - BacklogShipped ---
                         For b = 1 To MAX_BOX
                             backlogCol = COL_BACKLOG + (b - 1)
                             backlogShippedCol = COL_BL_SHIP + (b - 1)
-                            
-                            backlogVal = CDbl(outArr(outUsed, backlogCol))
-                            shippedBacklog = CDbl(outArr(outUsed, backlogShippedCol))
-                            
-                            backlogP1 = backlogVal - shippedBacklog
+                        
+                            backlogP1 = CDbl(outArr(outUsed, backlogCol)) - CDbl(outArr(outUsed, backlogShippedCol))
                             If backlogP1 < 0 Then backlogP1 = 0
-                            
-                            outArr(outUsed, writeCol) = backlogP1
-                            writeCol = writeCol + 1
+                        
+                            outArr(outUsed, COL_BL_P1 + (b - 1)) = backlogP1
                         Next b
-
+                        
+                        
                         '=== Allocation Round 2 (Sales after backlog) using WHOLE ORDERS ===
                         'We compute ONE shared ordersShipped_Sales for this (week,color),
                         'limited by remaining availability and sales demand (converted to orders).
                         
-                        Dim ordersFromAvail2 As Long
-                        Dim ordersFromSales As Long
-                        Dim ordersShipped_Sales As Long
+                        Dim ordersFromAvail2 As Double
+                        Dim ordersFromSales As Double
+                        Dim ordersShipped_Sales As Double
                         
-                        ordersFromAvail2 = 999999999
-                        ordersFromSales = 999999999
+                        ordersFromAvail2 = 1E+30
+                        ordersFromSales = 1E+30
+
                         
                         For b = 1 To MAX_BOX
-                            salesCol = COL_SALES + (b - 1)
-                            availPostBacklogCol = COL_AVAIL_POSTBL + (b - 1)
-                            
-                            salesVal = CDbl(outArr(outUsed, salesCol))
-                            availPostBacklogVal = CDbl(outArr(outUsed, availPostBacklogCol))
-                            
-                            ordersFromAvail2 = Application.Min(ordersFromAvail2, FloorWholeOrders(availPostBacklogVal, need(b)))
-                            ordersFromSales = Application.Min(ordersFromSales, FloorWholeOrders(salesVal, need(b)))
+                            'ONLY required boxes constrain order count
+                            If Not isOptional(b) Then
+                                salesCol = COL_SALES + (b - 1)
+                                availPostBacklogCol = COL_AVAIL_POSTBL + (b - 1)
+                        
+                                salesVal = CDbl(outArr(outUsed, salesCol))
+                                availPostBacklogVal = CDbl(outArr(outUsed, availPostBacklogCol))
+                        
+                                ordersFromAvail2 = Application.Min(ordersFromAvail2, OrdersFromQty(availPostBacklogVal, need(b)))
+                                ordersFromSales = Application.Min(ordersFromSales, OrdersFromQty(salesVal, need(b)))
+
+                            End If
                         Next b
+
                         
                         ordersShipped_Sales = Application.Min(ordersFromAvail2, ordersFromSales)
-
+                        
                         '=== Write sales order-debug values into the fixed columns ===
-                        outArr(outUsed, COL_ORD_SALES_AVAIL) = ordersFromAvail2
-                        outArr(outUsed, COL_ORD_SALES_DEMAND) = ordersFromSales
-                        outArr(outUsed, COL_ORD_SALES_SHIP) = ordersShipped_Sales
-
+                        outArr(outUsed, COL_ORD_SALES_AVAIL) = WorksheetFunction.Round(ordersFromAvail2, 2)
+                        outArr(outUsed, COL_ORD_SALES_DEMAND) = WorksheetFunction.Round(ordersFromSales, 2)
+                        outArr(outUsed, COL_ORD_SALES_SHIP) = WorksheetFunction.Round(ordersShipped_Sales, 2)
+                        
                         '--- SalesShipped B1..Bn = ordersShipped_Sales * need(b) ---
                         For b = 1 To MAX_BOX
-                            shippedSales = ordersShipped_Sales * need(b)
-                            outArr(outUsed, writeCol) = shippedSales
-                            writeCol = writeCol + 1
+                            Dim desiredS As Double, shippedS As Double
+                            desiredS = ordersShipped_Sales * need(b)
+                        
+                            If isOptional(b) Then
+                                'Optional box: ship up to remaining availability after backlog
+                                availPostBacklogVal = CDbl(outArr(outUsed, COL_AVAIL_POSTBL + (b - 1)))
+                                shippedS = Application.Min(availPostBacklogVal, desiredS)
+                            Else
+                                shippedS = desiredS
+                            End If
+                        
+                            outArr(outUsed, COL_SALES_SHIP + (b - 1)) = shippedS
                         Next b
                         
                         '--- AvailStock_PostSales B1..Bn = AvailStock_PostBacklog - SalesShipped ---
                         For b = 1 To MAX_BOX
                             availPostBacklogCol = COL_AVAIL_POSTBL + (b - 1)
                             salesShippedCol = COL_SALES_SHIP + (b - 1)
-                            
-                            availPostBacklogVal = CDbl(outArr(outUsed, availPostBacklogCol))
-                            shippedSales = CDbl(outArr(outUsed, salesShippedCol))
-                            
-                            availPostSales = availPostBacklogVal - shippedSales
+                        
+                            availPostSales = CDbl(outArr(outUsed, availPostBacklogCol)) - CDbl(outArr(outUsed, salesShippedCol))
                             If availPostSales < 0 Then availPostSales = 0
-                            
-                            outArr(outUsed, writeCol) = availPostSales
-                            writeCol = writeCol + 1
+                        
+                            outArr(outUsed, COL_AVAIL_POSTSALES + (b - 1)) = availPostSales
                         Next b
                         
                         '--- Sales_P1 B1..Bn = Sales - SalesShipped ---
                         For b = 1 To MAX_BOX
                             salesCol = COL_SALES + (b - 1)
                             salesShippedCol = COL_SALES_SHIP + (b - 1)
-                            
-                            salesVal = CDbl(outArr(outUsed, salesCol))
-                            shippedSales = CDbl(outArr(outUsed, salesShippedCol))
-                            
-                            salesP1 = salesVal - shippedSales
+                        
+                            salesP1 = CDbl(outArr(outUsed, salesCol)) - CDbl(outArr(outUsed, salesShippedCol))
                             If salesP1 < 0 Then salesP1 = 0
-                            
-                            outArr(outUsed, writeCol) = salesP1
-                            writeCol = writeCol + 1
+                        
+                            outArr(outUsed, COL_SALES_P1 + (b - 1)) = salesP1
                         Next b
-
+                                               
                         '=== Totals across boxes ===
                         Dim totalBacklogShipped As Double, totalSalesShipped As Double
                                             
@@ -758,16 +778,9 @@ Sub Boxes_Shipped_Forecast()
                             totalSalesShipped = totalSalesShipped + CDbl(outArr(outUsed, salesShippedCol))
                         Next b
                         
-                        'Write totals into the next 2 columns at the end of the row
-                        outArr(outUsed, writeCol) = totalBacklogShipped
-                        writeCol = writeCol + 1
-                        
-                        outArr(outUsed, writeCol) = totalSalesShipped
-                        writeCol = writeCol + 1
-
-                        'TotalShipped_FromLocal = TotalLocalBacklogShipped + TotalLocalSalesShipped
-                        outArr(outUsed, writeCol) = totalBacklogShipped + totalSalesShipped
-                        writeCol = writeCol + 1
+                        outArr(outUsed, COL_TOT_BL_SHIP) = totalBacklogShipped
+                        outArr(outUsed, COL_TOT_SALES_SHIP) = totalSalesShipped
+                        outArr(outUsed, COL_TOT_SHIP) = totalBacklogShipped + totalSalesShipped
                                      
                     Next i
                 Next col
@@ -786,9 +799,9 @@ NextOne:
     If outUsed >= 2 Then
         'wsDebug.Range(wsDebug.Cells(2, 7), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
         wsDebug.Range(wsDebug.Cells(2, 7), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0.00"
-        'Make the order-debug columns show as whole numbers
-        wsDebug.Range(wsDebug.Cells(2, COL_ORD_BL_AVAIL), wsDebug.Cells(outUsed, COL_ORD_BL_SHIP)).NumberFormat = "0"
-        wsDebug.Range(wsDebug.Cells(2, COL_ORD_SALES_AVAIL), wsDebug.Cells(outUsed, COL_ORD_SALES_SHIP)).NumberFormat = "0"
+        'Show fractional orders (2 decimals) in the order-debug columns
+        wsDebug.Range(wsDebug.Cells(2, COL_ORD_BL_AVAIL), wsDebug.Cells(outUsed, COL_ORD_BL_SHIP)).NumberFormat = "0.00"
+        wsDebug.Range(wsDebug.Cells(2, COL_ORD_SALES_AVAIL), wsDebug.Cells(outUsed, COL_ORD_SALES_SHIP)).NumberFormat = "0.00"
         wsDebug.Range(wsDebug.Cells(2, 4), wsDebug.Cells(outUsed, 5)).NumberFormat = "yyyy-mm-dd"
     End If
 
@@ -1351,6 +1364,17 @@ Private Function GetNeedFromColorsTable(ByVal colorKey As String, ByVal boxNum A
     GetNeedFromColorsTable = 0
 End Function
 
+'=== Fractional orders from qty and need ===
+Private Function OrdersFromQty(ByVal qty As Double, ByVal need As Double) As Double
+    If need <= 0 Then
+        OrdersFromQty = 0
+    ElseIf qty <= 0 Then
+        OrdersFromQty = 0
+    Else
+        OrdersFromQty = qty / need
+    End If
+End Function
+
 '=== Safe floor for "whole orders" ===
 Private Function FloorWholeOrders(ByVal qty As Double, ByVal need As Double) As Long
     'Returns how many whole orders can be made from qty given need per order.
@@ -1381,5 +1405,50 @@ Private Function ToWhole(ByVal v As Variant) As Long
         End If
     End If
 End Function
+
+'=== Read isOptional from the "Boxes" table into an array indexed by box number ===
+Private Function GetIsOptionalByBox_Configured(ByVal maxBox As Long) As Boolean()
+    Dim isOpt() As Boolean
+    ReDim isOpt(1 To maxBox)
+
+    Dim ws As Worksheet, lo As ListObject
+    Dim idxBox As Long, idxIsOpt As Long
+
+    'Find the table named "Boxes" anywhere in the workbook
+    For Each ws In ThisWorkbook.Worksheets
+        On Error Resume Next
+        Set lo = ws.ListObjects(CFG_TABLE_BOXES_PREFERRED)   ' "Boxes"
+        On Error GoTo 0
+        If Not lo Is Nothing Then Exit For
+    Next ws
+
+    If lo Is Nothing Or lo.DataBodyRange Is Nothing Then
+        GetIsOptionalByBox_Configured = isOpt
+        Exit Function
+    End If
+
+    'We expect headers: "Boxes" and "isOptional"
+    idxBox = GetListColumnIndexByAliases(lo, Array("Boxes", "Box"))
+    idxIsOpt = GetListColumnIndexByAliases(lo, Array("isOptional", "Optional", "IsOptional"))
+
+    If idxBox = 0 Or idxIsOpt = 0 Then
+        GetIsOptionalByBox_Configured = isOpt
+        Exit Function
+    End If
+
+    Dim r As Long, bx As Long, boxText As String, v As Variant
+    For r = 1 To lo.DataBodyRange.Rows.Count
+        boxText = CStr(lo.DataBodyRange.Cells(r, idxBox).Value)   'ex: "Box 6"
+        bx = ParseBoxNum(boxText)                                 'your ParseBoxNum reads "Box 6" -> 6
+
+        If bx >= 1 And bx <= maxBox Then
+            v = lo.DataBodyRange.Cells(r, idxIsOpt).Value
+            isOpt(bx) = (UCase$(Trim$(CStr(v))) = "TRUE" Or CStr(v) = "1")
+        End If
+    Next r
+
+    GetIsOptionalByBox_Configured = isOpt
+End Function
+
 
 
