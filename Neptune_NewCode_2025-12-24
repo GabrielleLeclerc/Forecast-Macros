@@ -189,6 +189,42 @@ Sub Boxes_Shipped_Forecast()
         Exit Sub
     End If
 
+    '=== Build Partner City 1 lookup map from WorksheetNames ===
+    Dim idxPartner1 As Long
+    idxPartner1 = GetListColumnIndexByAliases(lo, Array("Partner City 1", "PartnerCity1", "P1", "P1 City"))
+    
+    If idxPartner1 = 0 Then
+        MsgBox "WorksheetNames table found, but could not find column 'Partner City 1'.", vbExclamation
+        Exit Sub
+    End If
+    
+    Dim p1Map As Object
+    On Error Resume Next
+    Set p1Map = CreateObject("Scripting.Dictionary")
+    On Error GoTo 0
+    
+    If p1Map Is Nothing Then
+        MsgBox "Scripting.Dictionary not available on this computer, cannot build P1 City map.", vbExclamation
+        Exit Sub
+    End If
+    
+    p1Map.CompareMode = 1 'vbTextCompare
+    
+    Dim mapKey As String
+    Dim wsName As String, p1WsName As String
+    Dim rP As Long
+    
+    For rP = 1 To lo.DataBodyRange.Rows.Count
+        wsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxWs).Value))
+        p1WsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxPartner1).Value))
+    
+        If Len(wsName) > 0 And Len(p1WsName) > 0 Then
+            mapKey = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxCountry).Value)) & "|" & wsName
+            If Not p1Map.Exists(mapKey) Then
+                p1Map.Add mapKey, p1WsName
+            End If
+        End If
+    Next rP
 
     '=== Forecast start date from assumptions ===
     Dim forecastStart As Date
@@ -222,6 +258,7 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_ORD_SALES_AVAIL As Long, COL_ORD_SALES_DEMAND As Long, COL_ORD_SALES_SHIP As Long
     Dim COL_SALES_SHIP As Long, COL_AVAIL_POSTSALES As Long, COL_SALES_P1 As Long
     Dim COL_TOT_BL_SHIP As Long, COL_TOT_SALES_SHIP As Long, COL_TOT_SHIP As Long
+    Dim COL_P1_CITY As Long
 
     '==================== Working variables (declared once) ====================
     
@@ -380,6 +417,10 @@ Sub Boxes_Shipped_Forecast()
     wsDebug.Cells(1, hdrCol).value = "TotalShipped_FromLocal"
     hdrCol = hdrCol + 1
 
+    wsDebug.Cells(1, hdrCol).Value = "P1 City"
+    COL_P1_CITY = hdrCol
+    hdrCol = hdrCol + 1
+
     '=== FINAL column count (A..last header) ===
     Dim totalCols As Long
     totalCols = hdrCol - 1   'hdrCol is the NEXT empty column
@@ -510,6 +551,7 @@ Sub Boxes_Shipped_Forecast()
                         outArr(outUsed, 4) = wsT.Cells(2, col).value
                         outArr(outUsed, 5) = wsT.Cells(4, col).value
                         outArr(outUsed, 6) = colLetter
+                        outArr(outUsed, COL_P1_CITY) = GetP1City(p1Map, country, demandCity)
                         
                         '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
                         Dim writeCol As Long
@@ -1449,6 +1491,34 @@ Private Function GetIsOptionalByBox_Configured(ByVal maxBox As Long) As Boolean(
 
     GetIsOptionalByBox_Configured = isOpt
 End Function
+
+Private Function StripNeptunePrefix(ByVal wsName As String) As String
+    'Turns "Neptune-Toronto" into "Toronto"
+    wsName = Trim$(wsName)
+    If Len(wsName) = 0 Then
+        StripNeptunePrefix = ""
+    ElseIf UCase$(Left$(wsName, 8)) = "NEPTUNE-" Then
+        StripNeptunePrefix = Mid$(wsName, 9)
+    Else
+        StripNeptunePrefix = wsName
+    End If
+End Function
+
+Private Function GetP1City(ByVal p1Map As Object, ByVal country As String, ByVal demandCity As String) As String
+    Dim key As String
+    Dim wsName As String, p1Ws As String
+
+    wsName = "Neptune-" & demandCity
+    key = country & "|" & wsName
+
+    If p1Map.Exists(key) Then
+        p1Ws = CStr(p1Map(key))
+        GetP1City = StripNeptunePrefix(p1Ws)
+    Else
+        GetP1City = ""
+    End If
+End Function
+
 
 
 
