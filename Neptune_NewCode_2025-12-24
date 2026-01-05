@@ -265,6 +265,11 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_P1_CITY As Long
     Dim COL_P1_AVAIL_POSTLOCAL As Long 
 
+    Dim COL_ORD_P1_AVAIL As Long
+    Dim COL_ORD_P1_BACKLOG As Long
+    Dim COL_ORD_P1_SHIP As Long
+
+
     '==================== Working variables (declared once) ====================
     
     'Column index helpers used in Round 1/2 calculations
@@ -433,6 +438,20 @@ Sub Boxes_Shipped_Forecast()
         hdrCol = hdrCol + 1
     Next b
 
+    '=== BacklogP1 orders (debug) ===
+    wsDebug.Cells(1, hdrCol).Value = "Orders_BacklogP1_LimitByAvail"
+    COL_ORD_P1_AVAIL = hdrCol
+    hdrCol = hdrCol + 1
+    
+    wsDebug.Cells(1, hdrCol).Value = "Orders_BacklogP1_LimitByBacklogP1"
+    COL_ORD_P1_BACKLOG = hdrCol
+    hdrCol = hdrCol + 1
+    
+    wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_BacklogP1"
+    COL_ORD_P1_SHIP = hdrCol
+    hdrCol = hdrCol + 1
+
+
     '=== FINAL column count (A..last header) ===
     Dim totalCols As Long
     totalCols = hdrCol - 1   'hdrCol is the NEXT empty column
@@ -572,6 +591,11 @@ Sub Boxes_Shipped_Forecast()
                         For b = 1 To MAX_BOX
                             outArr(outUsed, COL_P1_AVAIL_POSTLOCAL + (b - 1)) = 0
                         Next b
+
+                        'Initialize BacklogP1 order debug cols (filled after P1AvailStock_PostLocal post-pass)
+                        outArr(outUsed, COL_ORD_P1_AVAIL) = 0
+                        outArr(outUsed, COL_ORD_P1_BACKLOG) = 0
+                        outArr(outUsed, COL_ORD_P1_SHIP) = 0
                         
                         '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
                         Dim writeCol As Long
@@ -898,6 +922,48 @@ NextFill:
 Next rrLocal
 '==================== END POST-PASS =====================
 
+'==================== POST-PASS 2: Compute BacklogP1 Orders =====================
+Dim ordersFromAvailP1 As Double
+Dim ordersFromBacklogP1 As Double
+Dim ordersShipped_BacklogP1 As Double
+
+Dim p1AvailVal As Double, blP1Val As Double
+
+For rrLocal = 2 To outUsed
+
+    ordersFromAvailP1 = 1E+30
+    ordersFromBacklogP1 = 1E+30
+
+    'Compute min orders across REQUIRED boxes
+    For b = 1 To MAX_BOX
+        If Not isOptional(b) Then
+
+            p1AvailVal = CDbl(outArr(rrLocal, COL_P1_AVAIL_POSTLOCAL + (b - 1)))
+            blP1Val = CDbl(outArr(rrLocal, COL_BL_P1 + (b - 1)))
+
+            'Need is stored in the Need block (same need(b) you wrote earlier)
+            Dim needVal As Double
+            needVal = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
+            If needVal <= 0 Then needVal = 1 'safety
+
+            ordersFromAvailP1 = Application.Min(ordersFromAvailP1, OrdersFromQty(p1AvailVal, needVal))
+            ordersFromBacklogP1 = Application.Min(ordersFromBacklogP1, OrdersFromQty(blP1Val, needVal))
+
+        End If
+    Next b
+
+    'If somehow there were no required boxes, prevent 1E+30 from leaking
+    If ordersFromAvailP1 = 1E+30 Then ordersFromAvailP1 = 0
+    If ordersFromBacklogP1 = 1E+30 Then ordersFromBacklogP1 = 0
+
+    ordersShipped_BacklogP1 = Application.Min(ordersFromAvailP1, ordersFromBacklogP1)
+
+    outArr(rrLocal, COL_ORD_P1_AVAIL) = WorksheetFunction.Round(ordersFromAvailP1, 2)
+    outArr(rrLocal, COL_ORD_P1_BACKLOG) = WorksheetFunction.Round(ordersFromBacklogP1, 2)
+    outArr(rrLocal, COL_ORD_P1_SHIP) = WorksheetFunction.Round(ordersShipped_BacklogP1, 2)
+
+Next rrLocal
+'==================== END POST-PASS 2 =====================
 
     '=== Dump output array to sheet in one shot ===
     wsDebug.Cells.Clear
@@ -910,6 +976,7 @@ Next rrLocal
         'Show fractional orders (2 decimals) in the order-debug columns
         wsDebug.Range(wsDebug.Cells(2, COL_ORD_BL_AVAIL), wsDebug.Cells(outUsed, COL_ORD_BL_SHIP)).NumberFormat = "0.00"
         wsDebug.Range(wsDebug.Cells(2, COL_ORD_SALES_AVAIL), wsDebug.Cells(outUsed, COL_ORD_SALES_SHIP)).NumberFormat = "0.00"
+        wsDebug.Range(wsDebug.Cells(2, COL_ORD_P1_AVAIL), wsDebug.Cells(outUsed, COL_ORD_P1_SHIP)).NumberFormat = "0.00"
         wsDebug.Range(wsDebug.Cells(2, 4), wsDebug.Cells(outUsed, 5)).NumberFormat = "yyyy-mm-dd"
     End If
 
