@@ -212,18 +212,49 @@ Sub Boxes_Shipped_Forecast()
 
     '=== Pre-calc column starts (only once) ===
     Dim COL_SALES As Long, COL_BEG As Long, COL_IB As Long, COL_AVAIL As Long, COL_BACKLOG As Long
+    Dim COL_NEED As Long
+    Dim COL_ORD_BL_AVAIL As Long, COL_ORD_BL_BACKLOG As Long, COL_ORD_BL_SHIP As Long
     Dim COL_BL_SHIP As Long, COL_AVAIL_POSTBL As Long, COL_BL_P1 As Long
+    Dim COL_ORD_SALES_AVAIL As Long, COL_ORD_SALES_DEMAND As Long, COL_ORD_SALES_SHIP As Long
     Dim COL_SALES_SHIP As Long, COL_AVAIL_POSTSALES As Long, COL_SALES_P1 As Long
+
+    '==================== Working variables (declared once) ====================
     
+    'Column index helpers used in Round 1/2 calculations
+    Dim availCol As Long, backlogCol As Long, backlogShippedCol As Long
+    Dim salesCol As Long, availPostBacklogCol As Long, salesShippedCol As Long
+    
+    'Numeric values used in Round 1/2 calculations
+    Dim availVal As Double, backlogVal As Double
+    Dim shippedBacklog As Double, availPost As Double, backlogP1 As Double
+    
+    Dim salesVal As Double, availPostBacklogVal As Double
+    Dim shippedSales As Double, availPostSales As Double, salesP1 As Double
+            
     COL_SALES = 7
     COL_BEG = COL_SALES + MAX_BOX
     COL_IB = COL_BEG + MAX_BOX
     COL_AVAIL = COL_IB + MAX_BOX
     COL_BACKLOG = COL_AVAIL + MAX_BOX
-    COL_BL_SHIP = COL_BACKLOG + MAX_BOX
+    
+    'NEW blocks:
+    COL_NEED = COL_BACKLOG + MAX_BOX
+    COL_ORD_BL_AVAIL = COL_NEED + MAX_BOX
+    COL_ORD_BL_BACKLOG = COL_ORD_BL_AVAIL + 1
+    COL_ORD_BL_SHIP = COL_ORD_BL_BACKLOG + 1
+    
+    'Round 1 blocks:
+    COL_BL_SHIP = COL_ORD_BL_SHIP + 1
     COL_AVAIL_POSTBL = COL_BL_SHIP + MAX_BOX
     COL_BL_P1 = COL_AVAIL_POSTBL + MAX_BOX
-    COL_SALES_SHIP = COL_BL_P1 + MAX_BOX
+    
+    'NEW sales-order debug:
+    COL_ORD_SALES_AVAIL = COL_BL_P1 + MAX_BOX
+    COL_ORD_SALES_DEMAND = COL_ORD_SALES_AVAIL + 1
+    COL_ORD_SALES_SHIP = COL_ORD_SALES_DEMAND + 1
+    
+    'Round 2 blocks:
+    COL_SALES_SHIP = COL_ORD_SALES_SHIP + 1
     COL_AVAIL_POSTSALES = COL_SALES_SHIP + MAX_BOX
     COL_SALES_P1 = COL_AVAIL_POSTSALES + MAX_BOX
 
@@ -277,6 +308,21 @@ Sub Boxes_Shipped_Forecast()
         hdrCol = hdrCol + 1
     Next b
 
+    '=== Need per order (from Colors table) ===
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "Need B" & b
+        hdrCol = hdrCol + 1
+    Next b
+    
+    '=== NEW: Backlog orders (debug) ===
+    wsDebug.Cells(1, hdrCol).Value = "Orders_Backlog_LimitByAvail"
+    hdrCol = hdrCol + 1
+    wsDebug.Cells(1, hdrCol).Value = "Orders_Backlog_LimitByBacklog"
+    hdrCol = hdrCol + 1
+    wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_Backlog"
+    hdrCol = hdrCol + 1
+
+
     '=== Allocation Round 1 columns (Backlog first) ===
     For b = 1 To MAX_BOX
         wsDebug.Cells(1, hdrCol).value = "BacklogShipped B" & b
@@ -292,6 +338,14 @@ Sub Boxes_Shipped_Forecast()
         wsDebug.Cells(1, hdrCol).value = "Backlog_P1 B" & b
         hdrCol = hdrCol + 1
     Next b
+
+    '=== Sales orders (debug) ===
+    wsDebug.Cells(1, hdrCol).Value = "Orders_Sales_LimitByAvail"
+    hdrCol = hdrCol + 1
+    wsDebug.Cells(1, hdrCol).Value = "Orders_Sales_LimitBySales"
+    hdrCol = hdrCol + 1
+    wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_Sales"
+    hdrCol = hdrCol + 1
 
     '=== Allocation Round 2 columns (Sales after backlog) ===
     For b = 1 To MAX_BOX
@@ -424,7 +478,17 @@ Sub Boxes_Shipped_Forecast()
                         
                         Dim colorKey As String
                         colorKey = NormalizeColor(colors(i))  ' make sure it matches index normalization
+
+                        '=== Load "need per order" for this color (Box 1..MAX_BOX) from Colors table ===
+                        Dim need() As Double
+                        ReDim need(1 To MAX_BOX)
                         
+                        For b = 1 To MAX_BOX
+                            need(b) = GetNeedFromColorsTable(colorKey, b)
+                            'Safety: if missing/0, set to 1 to avoid divide-by-zero and make issues obvious
+                            If need(b) <= 0 Then need(b) = 1
+                        Next b
+                       
                         'Advance output row (into the array)
                         outUsed = outUsed + 1
                         If outUsed > outCapacity Then
@@ -500,13 +564,14 @@ Sub Boxes_Shipped_Forecast()
                             begCol = COL_BEG + (b - 1)         'Beg Stock block starts after Sales
                             ibCol = COL_IB + (b - 1)    'IB block starts after Sales+Beg
                         
-                            sumAvail = CLng(outArr(outUsed, begCol)) + CLng(outArr(outUsed, ibCol))
+                            sumAvail = CDbl(outArr(outUsed, begCol)) + CDbl(outArr(outUsed, ibCol))
 
                             If sumAvail < 0 Then
                                 outArr(outUsed, writeCol) = 0
                             Else
-                                outArr(outUsed, writeCol) = CLng(sumAvail)
+                                outArr(outUsed, writeCol) = sumAvail
                             End If
+
                         
                             writeCol = writeCol + 1
                         Next b
@@ -515,142 +580,171 @@ Sub Boxes_Shipped_Forecast()
                         Dim begVal As Double
                         For b = 1 To MAX_BOX
                             begCol = COL_BEG + (b - 1) 'same begCol logic as above
-                            begVal = CLng(outArr(outUsed, begCol))
 
+                            begVal = CDbl(outArr(outUsed, begCol))
                             If begVal < 0 Then
-                                outArr(outUsed, writeCol) = CLng(Abs(begVal))
+                                outArr(outUsed, writeCol) = Abs(begVal)
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
-                      
+
                             writeCol = writeCol + 1
                         Next b
 
-                        '=== Allocation Round 1 (Backlog-first) ===
-                        'Uses the already-written AvailStock and Backlog values from this same row.
+                        '=== Write Need B1..Bn into the output row ===
+                        For b = 1 To MAX_BOX
+                            outArr(outUsed, writeCol) = need(b)
+                            writeCol = writeCol + 1
+                        Next b
                         
-                        Dim availCol As Long, backlogCol As Long
-                        Dim availVal As Long, backlogVal As Long
-                        Dim shippedBacklog As Long, availPost As Long, backlogP1 As Long
+                        'We will write the backlog orders debug numbers later,
+                        'after we compute ordersShipped_Backlog (but we reserve the columns now).
+                        'These are 3 single columns:
+                        outArr(outUsed, writeCol) = ""  'Orders_Backlog_LimitByAvail (filled later)
+                        writeCol = writeCol + 1
+                        outArr(outUsed, writeCol) = ""  'Orders_Backlog_LimitByBacklog (filled later)
+                        writeCol = writeCol + 1
+                        outArr(outUsed, writeCol) = ""  'OrdersShipped_Backlog (filled later)
+                        writeCol = writeCol + 1
+
+
+                        '=== Allocation Round 1 (Backlog-first) using WHOLE ORDERS ===
+                        'We compute ONE shared ordersShipped_Backlog for this (week,color),
+                        'limited by the first box type to run out (min across boxes).
                         
-                        'Column block start positions (based on your layout):
-                        'Sales:      6
-                        'Beg Stock:  6 + 1*MAX_BOX
-                        'IB:         6 + 2*MAX_BOX
-                        'AvailStock: 6 + 3*MAX_BOX
-                        'Backlog:    6 + 4*MAX_BOX
+                        Dim ordersFromAvail As Long
+                        Dim ordersFromBacklog As Long
+                        Dim ordersShipped_Backlog As Long
                         
-                        '--- BacklogShipped B1..Bn = MIN(AvailStock, Backlog) ---
+                        ordersFromAvail = 999999999
+                        ordersFromBacklog = 999999999
+                        
+                        'Figure out max whole orders supported by availability and backlog (across all boxes)
                         For b = 1 To MAX_BOX
                             availCol = COL_AVAIL + (b - 1)
                             backlogCol = COL_BACKLOG + (b - 1)
+                            
+                            availVal = CDbl(outArr(outUsed, availCol))
+                            backlogVal = CDbl(outArr(outUsed, backlogCol))
+                            
+                            ordersFromAvail = Application.Min(ordersFromAvail, FloorWholeOrders(availVal, need(b)))
+                            ordersFromBacklog = Application.Min(ordersFromBacklog, FloorWholeOrders(backlogVal, need(b)))
+                        Next b
                         
-                            availVal = CLng(outArr(outUsed, availCol))
-                            backlogVal = CLng(outArr(outUsed, backlogCol))
+                        ordersShipped_Backlog = Application.Min(ordersFromAvail, ordersFromBacklog)
+
+                        '=== Write backlog order-debug values into the fixed columns ===
+                        outArr(outUsed, COL_ORD_BL_AVAIL) = ordersFromAvail
+                        outArr(outUsed, COL_ORD_BL_BACKLOG) = ordersFromBacklog
+                        outArr(outUsed, COL_ORD_BL_SHIP) = ordersShipped_Backlog
+
                         
-                            shippedBacklog = availVal
-                            If backlogVal < shippedBacklog Then shippedBacklog = backlogVal
-                        
+                        '--- BacklogShipped B1..Bn = ordersShipped_Backlog * need(b) ---
+                        For b = 1 To MAX_BOX
+                            shippedBacklog = ordersShipped_Backlog * need(b)
                             outArr(outUsed, writeCol) = shippedBacklog
                             writeCol = writeCol + 1
                         Next b
                         
-                        '--- AvailStock_PostBacklog B1..Bn = MAX(AvailStock - Backlog, 0) ---
+                        '--- AvailStock_PostBacklog B1..Bn = AvailStock - BacklogShipped ---
                         For b = 1 To MAX_BOX
                             availCol = COL_AVAIL + (b - 1)
-                            backlogCol = COL_BACKLOG + (b - 1)
-                        
-                            availVal = CLng(outArr(outUsed, availCol))
-                            backlogVal = CLng(outArr(outUsed, backlogCol))
-                        
-                            availPost = availVal - backlogVal
+                            backlogShippedCol = COL_BL_SHIP + (b - 1)
+                            
+                            availVal = CDbl(outArr(outUsed, availCol))
+                            shippedBacklog = CDbl(outArr(outUsed, backlogShippedCol))
+                            
+                            availPost = availVal - shippedBacklog
                             If availPost < 0 Then availPost = 0
-                        
+                            
                             outArr(outUsed, writeCol) = availPost
                             writeCol = writeCol + 1
                         Next b
                         
-                        '--- Backlog_P1 B1..Bn = MAX(Backlog - AvailStock, 0) ---
+                        '--- Backlog_P1 B1..Bn = Backlog - BacklogShipped ---
                         For b = 1 To MAX_BOX
-                            availCol = COL_AVAIL + (b - 1)
                             backlogCol = COL_BACKLOG + (b - 1)
-                        
-                            availVal = CLng(outArr(outUsed, availCol))
-                            backlogVal = CLng(outArr(outUsed, backlogCol))
-                        
-                            backlogP1 = backlogVal - availVal
+                            backlogShippedCol = COL_BL_SHIP + (b - 1)
+                            
+                            backlogVal = CDbl(outArr(outUsed, backlogCol))
+                            shippedBacklog = CDbl(outArr(outUsed, backlogShippedCol))
+                            
+                            backlogP1 = backlogVal - shippedBacklog
                             If backlogP1 < 0 Then backlogP1 = 0
-                        
+                            
                             outArr(outUsed, writeCol) = backlogP1
                             writeCol = writeCol + 1
                         Next b
 
-                        '=== Allocation Round 2 (Sales using AvailStock_PostBacklog) ===
-                        'Uses already-written Sales and AvailStock_PostBacklog from this same row.
+                        '=== Allocation Round 2 (Sales after backlog) using WHOLE ORDERS ===
+                        'We compute ONE shared ordersShipped_Sales for this (week,color),
+                        'limited by remaining availability and sales demand (converted to orders).
                         
-                        Dim salesCol As Long, availPostBacklogCol As Long
-                        Dim salesVal As Long, availPostBacklogVal As Long
-                        Dim shippedSales As Long, availPostSales As Long, salesP1 As Long
+                        Dim ordersFromAvail2 As Long
+                        Dim ordersFromSales As Long
+                        Dim ordersShipped_Sales As Long
                         
-                        'Column block start positions (based on your layout + Round 1 blocks):
-                        'Sales:                  6 + 0*MAX_BOX
-                        'Beg Stock:              6 + 1*MAX_BOX
-                        'IB:                     6 + 2*MAX_BOX
-                        'AvailStock:             6 + 3*MAX_BOX
-                        'Backlog:                6 + 4*MAX_BOX
-                        'BacklogShipped:         6 + 5*MAX_BOX
-                        'AvailStock_PostBacklog: 6 + 6*MAX_BOX
-                        'Backlog_P1:             6 + 7*MAX_BOX
+                        ordersFromAvail2 = 999999999
+                        ordersFromSales = 999999999
                         
-                        '--- SalesShipped B1..Bn = MIN(AvailStock_PostBacklog, Sales) ---
                         For b = 1 To MAX_BOX
                             salesCol = COL_SALES + (b - 1)
                             availPostBacklogCol = COL_AVAIL_POSTBL + (b - 1)
+                            
+                            salesVal = CDbl(outArr(outUsed, salesCol))
+                            availPostBacklogVal = CDbl(outArr(outUsed, availPostBacklogCol))
+                            
+                            ordersFromAvail2 = Application.Min(ordersFromAvail2, FloorWholeOrders(availPostBacklogVal, need(b)))
+                            ordersFromSales = Application.Min(ordersFromSales, FloorWholeOrders(salesVal, need(b)))
+                        Next b
                         
-                            salesVal = CLng(outArr(outUsed, salesCol))
-                            availPostBacklogVal = CLng(outArr(outUsed, availPostBacklogCol))
-                        
-                            shippedSales = availPostBacklogVal
-                            If salesVal < shippedSales Then shippedSales = salesVal
-                        
+                        ordersShipped_Sales = Application.Min(ordersFromAvail2, ordersFromSales)
+
+                        '=== Write sales order-debug values into the fixed columns ===
+                        outArr(outUsed, COL_ORD_SALES_AVAIL) = ordersFromAvail2
+                        outArr(outUsed, COL_ORD_SALES_DEMAND) = ordersFromSales
+                        outArr(outUsed, COL_ORD_SALES_SHIP) = ordersShipped_Sales
+
+                        '--- SalesShipped B1..Bn = ordersShipped_Sales * need(b) ---
+                        For b = 1 To MAX_BOX
+                            shippedSales = ordersShipped_Sales * need(b)
                             outArr(outUsed, writeCol) = shippedSales
                             writeCol = writeCol + 1
                         Next b
                         
-                        '--- AvailStock_PostSales B1..Bn = MAX(AvailStock_PostBacklog - Sales, 0) ---
+                        '--- AvailStock_PostSales B1..Bn = AvailStock_PostBacklog - SalesShipped ---
                         For b = 1 To MAX_BOX
-                            salesCol = COL_SALES + (b - 1)
                             availPostBacklogCol = COL_AVAIL_POSTBL + (b - 1)
-                        
-                            salesVal = CLng(outArr(outUsed, salesCol))
-                            availPostBacklogVal = CLng(outArr(outUsed, availPostBacklogCol))
-                        
-                            availPostSales = availPostBacklogVal - salesVal
+                            salesShippedCol = COL_SALES_SHIP + (b - 1)
+                            
+                            availPostBacklogVal = CDbl(outArr(outUsed, availPostBacklogCol))
+                            shippedSales = CDbl(outArr(outUsed, salesShippedCol))
+                            
+                            availPostSales = availPostBacklogVal - shippedSales
                             If availPostSales < 0 Then availPostSales = 0
-                        
+                            
                             outArr(outUsed, writeCol) = availPostSales
                             writeCol = writeCol + 1
                         Next b
                         
-                        '--- Sales_P1 B1..Bn = MAX(Sales - AvailStock_PostBacklog, 0) ---
+                        '--- Sales_P1 B1..Bn = Sales - SalesShipped ---
                         For b = 1 To MAX_BOX
                             salesCol = COL_SALES + (b - 1)
-                            availPostBacklogCol = COL_AVAIL_POSTBL + (b - 1)
-                        
-                            salesVal = CLng(outArr(outUsed, salesCol))
-                            availPostBacklogVal = CLng(outArr(outUsed, availPostBacklogCol))
-                        
-                            salesP1 = salesVal - availPostBacklogVal
+                            salesShippedCol = COL_SALES_SHIP + (b - 1)
+                            
+                            salesVal = CDbl(outArr(outUsed, salesCol))
+                            shippedSales = CDbl(outArr(outUsed, salesShippedCol))
+                            
+                            salesP1 = salesVal - shippedSales
                             If salesP1 < 0 Then salesP1 = 0
-                        
+                            
                             outArr(outUsed, writeCol) = salesP1
                             writeCol = writeCol + 1
                         Next b
 
                         '=== Totals across boxes ===
-                        Dim totalBacklogShipped As Long, totalSalesShipped As Long
-                        Dim backlogShippedCol As Long, salesShippedCol As Long
-                        
+                        Dim totalBacklogShipped As Double, totalSalesShipped As Double
+                                            
                         totalBacklogShipped = 0
                         totalSalesShipped = 0
                         
@@ -660,8 +754,8 @@ Sub Boxes_Shipped_Forecast()
                             backlogShippedCol = COL_BL_SHIP + (b - 1)
                             salesShippedCol = COL_SALES_SHIP + (b - 1)
                         
-                            totalBacklogShipped = totalBacklogShipped + CLng(outArr(outUsed, backlogShippedCol))
-                            totalSalesShipped = totalSalesShipped + CLng(outArr(outUsed, salesShippedCol))
+                            totalBacklogShipped = totalBacklogShipped + CDbl(outArr(outUsed, backlogShippedCol))
+                            totalSalesShipped = totalSalesShipped + CDbl(outArr(outUsed, salesShippedCol))
                         Next b
                         
                         'Write totals into the next 2 columns at the end of the row
@@ -692,6 +786,9 @@ NextOne:
     If outUsed >= 2 Then
         'wsDebug.Range(wsDebug.Cells(2, 7), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
         wsDebug.Range(wsDebug.Cells(2, 7), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0.00"
+        'Make the order-debug columns show as whole numbers
+        wsDebug.Range(wsDebug.Cells(2, COL_ORD_BL_AVAIL), wsDebug.Cells(outUsed, COL_ORD_BL_SHIP)).NumberFormat = "0"
+        wsDebug.Range(wsDebug.Cells(2, COL_ORD_SALES_AVAIL), wsDebug.Cells(outUsed, COL_ORD_SALES_SHIP)).NumberFormat = "0"
         wsDebug.Range(wsDebug.Cells(2, 4), wsDebug.Cells(outUsed, 5)).NumberFormat = "yyyy-mm-dd"
     End If
 
@@ -1208,6 +1305,65 @@ Private Function MapGetLong(ByVal m As Object, ByVal key As String, Optional ByV
         MapGetLong = defaultValue
     End If
 End Function
+
+'=== Get the "boxes per average order" (need) for a given Color + Box # from the Colors table ===
+Private Function GetNeedFromColorsTable(ByVal colorKey As String, ByVal boxNum As Long) As Double
+    'Looks in table CFG_TABLE_COLORS_PREFERRED ("Colors") for row where [Color] matches,
+    'and returns value from column "Box n" (ex: "Box 1", "Box 2", etc.)
+    
+    Dim lo As ListObject
+    Set lo = FindTableByHeaders(Array("Color", "Status"), CFG_TABLE_COLORS_PREFERRED)
+    If lo Is Nothing Then
+        GetNeedFromColorsTable = 0
+        Exit Function
+    End If
+    
+    Dim idxColor As Long
+    idxColor = GetListColumnIndexByAliases(lo, CFG_COLOR_HEADERS) 'Color column
+    
+    Dim idxNeed As Long
+    idxNeed = GetListColumnIndexByAliases(lo, Array("Box " & boxNum)) 'Box n column
+    If idxColor = 0 Or idxNeed = 0 Then
+        GetNeedFromColorsTable = 0
+        Exit Function
+    End If
+    
+    If lo.DataBodyRange Is Nothing Then
+        GetNeedFromColorsTable = 0
+        Exit Function
+    End If
+    
+    Dim r As Long
+    For r = 1 To lo.DataBodyRange.Rows.Count
+        Dim tableColor As String
+        tableColor = NormalizeColor(CStr(lo.DataBodyRange.Cells(r, idxColor).Value))
+        
+        If tableColor = colorKey Then
+            If IsNumeric(lo.DataBodyRange.Cells(r, idxNeed).Value) Then
+                GetNeedFromColorsTable = CDbl(lo.DataBodyRange.Cells(r, idxNeed).Value)
+            Else
+                GetNeedFromColorsTable = 0
+            End If
+            Exit Function
+        End If
+    Next r
+    
+    GetNeedFromColorsTable = 0
+End Function
+
+'=== Safe floor for "whole orders" ===
+Private Function FloorWholeOrders(ByVal qty As Double, ByVal need As Double) As Long
+    'Returns how many whole orders can be made from qty given need per order.
+    'If need <= 0, returns 0 (prevents division errors).
+    If need <= 0 Then
+        FloorWholeOrders = 0
+    ElseIf qty <= 0 Then
+        FloorWholeOrders = 0
+    Else
+        FloorWholeOrders = CLng(Fix(qty / need)) 'Fix for positive values = floor
+    End If
+End Function
+
 
 Private Function ToWhole(ByVal v As Variant) As Long
     'Fast round to whole; handles blanks/errors safely
