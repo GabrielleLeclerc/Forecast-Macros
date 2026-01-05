@@ -232,8 +232,7 @@ Sub Boxes_Shipped_Forecast()
 
     '=== Only run 1 year forward ===
     Dim forecastCutoff As Date
-    forecastCutoff = DateAdd("yyyy", 1, forecastStart)   'example: 2025-12-08 -> 2026-12-08
-
+    forecastCutoff = DateAdd("yyyy", 1, forecastStart)   'example: 2025-12-08 -> 2026-12-08, if we want 6 months instead of 1 year of forecast, change this line to: forecastCutoff = DateAdd("m", 6, forecastStart)
 
     '=== Active colors list from table "Colors" (Status = Active) ===
     Dim colors As Collection
