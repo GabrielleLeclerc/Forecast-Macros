@@ -346,6 +346,8 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_SALES_SHIP_P2 As Long            'SalesShipped_P2 Bn
     Dim COL_P2_AVAIL_POSTSALES As Long       'P2AvailStock_PostSales Bn
     Dim COL_SALES_UNFULFILLED As Long        'Sales_Unfulfilled Bn
+
+    Dim COL_UNFULFILLED As Long              'Unfulfilled Bn
     
 
     '==================== Working variables (declared once) ====================
@@ -700,6 +702,13 @@ Sub Boxes_Shipped_Forecast()
         hdrCol = hdrCol + 1
     Next b
 
+    '--- Unfulfilled B1..Bn = Backlog_Unfulfilled + Sales_Unfulfilled ---
+    COL_UNFULFILLED = hdrCol
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "Unfulfilled B" & b
+        hdrCol = hdrCol + 1
+    Next b
+
     '=== FINAL column count (A..last header) ===
     Dim totalCols As Long
     totalCols = hdrCol - 1   'hdrCol is the NEXT empty column
@@ -878,6 +887,7 @@ Sub Boxes_Shipped_Forecast()
                             outArr(outUsed, COL_SALES_SHIP_P2 + (b - 1)) = 0
                             outArr(outUsed, COL_P2_AVAIL_POSTSALES + (b - 1)) = 0
                             outArr(outUsed, COL_SALES_UNFULFILLED + (b - 1)) = 0
+                            outArr(outUsed, COL_UNFULFILLED + (b - 1)) = 0
                         Next b
                         
                         outArr(outUsed, COL_ORD_P2_AVAIL) = 0
@@ -1908,6 +1918,19 @@ Next rrLocal
 
 '==================== END POST-PASS 14 =====================
 
+'==================== POST-PASS 15: Compute Unfulfilled = Backlog_Unfulfilled + Sales_Unfulfilled =====================
+
+Dim unf As Double
+
+For rrLocal = 2 To outUsed
+    For b = 1 To MAX_BOX
+        unf = CDbl(outArr(rrLocal, COL_BL_UNFULFILLED + (b - 1))) + _
+              CDbl(outArr(rrLocal, COL_SALES_UNFULFILLED + (b - 1)))
+        outArr(rrLocal, COL_UNFULFILLED + (b - 1)) = unf
+    Next b
+Next rrLocal
+
+'==================== END POST-PASS 15 =====================
 
     '=== Dump output array to sheet in one shot ===
     wsDebug.Cells.Clear
