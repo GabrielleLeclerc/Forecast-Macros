@@ -267,6 +267,8 @@ Sub Boxes_Shipped_Forecast()
 
     Dim COL_ORD_P1_AVAIL As Long
     Dim COL_ORD_P1_BACKLOG As Long
+    Dim COL_TOT_ORD_P1_BACKLOG As Long
+    Dim COL_P1_SHORTFALL As Long 
     Dim COL_ORD_P1_SHIP As Long
 
 
@@ -447,6 +449,14 @@ Sub Boxes_Shipped_Forecast()
     COL_ORD_P1_BACKLOG = hdrCol
     hdrCol = hdrCol + 1
     
+    wsDebug.Cells(1, hdrCol).Value = "TotalOrders_BacklogP1_LimitByBacklogP1"
+    COL_TOT_ORD_P1_BACKLOG = hdrCol
+    hdrCol = hdrCol + 1
+
+    wsDebug.Cells(1, hdrCol).Value = "P1Shortfall_BacklogOrders"
+    COL_P1_SHORTFALL = hdrCol
+    hdrCol = hdrCol + 1
+    
     wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_BacklogP1"
     COL_ORD_P1_SHIP = hdrCol
     hdrCol = hdrCol + 1
@@ -595,6 +605,8 @@ Sub Boxes_Shipped_Forecast()
                         'Initialize BacklogP1 order debug cols (filled after P1AvailStock_PostLocal post-pass)
                         outArr(outUsed, COL_ORD_P1_AVAIL) = 0
                         outArr(outUsed, COL_ORD_P1_BACKLOG) = 0
+                        outArr(outUsed, COL_TOT_ORD_P1_BACKLOG) = 0
+                        outArr(outUsed, COL_P1_SHORTFALL) = 0
                         outArr(outUsed, COL_ORD_P1_SHIP) = 0
                         
                         '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
@@ -964,6 +976,73 @@ For rrLocal = 2 To outUsed
 
 Next rrLocal
 '==================== END POST-PASS 2 =====================
+
+'==================== POST-PASS 3: Total backlog-limited P1 orders across sibling cities =====================
+Dim p1BacklogTotals As Object
+Set p1BacklogTotals = CreateObject("Scripting.Dictionary")
+p1BacklogTotals.CompareMode = 1 'vbTextCompare
+
+Dim kTot As String
+Dim wk As String
+Dim totVal As Double
+
+'1) Build totals: key = P1City|Country|Color|WeekStart  -> sum(Orders_BacklogP1_LimitByBacklogP1)
+For rrLocal = 2 To outUsed
+
+    p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
+    If Len(p1City) = 0 Then GoTo NextTotBuild
+
+    wk = Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd") 'Week Start is column 4
+
+    ' kTot = P1City | Country | Color | WeekStart
+    kTot = p1City & "|" & _
+           CStr(outArr(rrLocal, 2)) & "|" & _
+           NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
+           Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+
+
+    totVal = CDbl(outArr(rrLocal, COL_ORD_P1_BACKLOG)) 'backlog-limited orders for THIS city
+
+    If p1BacklogTotals.Exists(kTot) Then
+        p1BacklogTotals(kTot) = CDbl(p1BacklogTotals(kTot)) + totVal
+    Else
+        p1BacklogTotals.Add kTot, totVal
+    End If
+
+NextTotBuild:
+Next rrLocal
+
+
+'2) Write totals back to each row in the new column
+For rrLocal = 2 To outUsed
+
+    p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
+    If Len(p1City) = 0 Then GoTo NextTotWrite
+
+    wk = Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+
+    kTot = p1City & "|" & _
+           CStr(outArr(rrLocal, 2)) & "|" & _
+           NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
+           wk
+
+    If p1BacklogTotals.Exists(kTot) Then
+        outArr(rrLocal, COL_TOT_ORD_P1_BACKLOG) = WorksheetFunction.Round(CDbl(p1BacklogTotals(kTot)), 2)
+    
+        Dim shortfall As Double
+        shortfall = CDbl(outArr(rrLocal, COL_TOT_ORD_P1_BACKLOG)) - CDbl(outArr(rrLocal, COL_ORD_P1_AVAIL))
+        If shortfall < 0 Then shortfall = 0
+    
+        outArr(rrLocal, COL_P1_SHORTFALL) = WorksheetFunction.Round(shortfall, 2)
+    Else
+        outArr(rrLocal, COL_TOT_ORD_P1_BACKLOG) = 0
+        outArr(rrLocal, COL_P1_SHORTFALL) = 0
+    End If
+
+
+NextTotWrite:
+Next rrLocal
+'==================== END POST-PASS 3 =====================
 
     '=== Dump output array to sheet in one shot ===
     wsDebug.Cells.Clear
