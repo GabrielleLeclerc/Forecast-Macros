@@ -271,6 +271,10 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_P1_SHORTFALL As Long 
     Dim COL_ORD_P1_SHIP As Long
 
+    Dim COL_BL_SHIP_P1 As Long              'BacklogShipped_P1 Bn
+    Dim COL_P1_AVAIL_POSTBL As Long         'P1AvailStock_PostBacklog Bn  (renamed)
+    Dim COL_BL_P2 As Long                   'Backlog_P2 Bn
+
 
     '==================== Working variables (declared once) ====================
     
@@ -461,6 +465,29 @@ Sub Boxes_Shipped_Forecast()
     COL_ORD_P1_SHIP = hdrCol
     hdrCol = hdrCol + 1
 
+'=== Allocation Round P1 (Backlog from P1) columns ===
+
+    'BacklogShipped_P1 B1..Bn
+    COL_BL_SHIP_P1 = hdrCol
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "BacklogShipped_P1 B" & b
+        hdrCol = hdrCol + 1
+    Next b
+    
+    'P1AvailStock_PostBacklog B1..Bn (this is your renamed block)
+    COL_P1_AVAIL_POSTBL = hdrCol
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "P1AvailStock_PostBacklog B" & b
+        hdrCol = hdrCol + 1
+    Next b
+    
+    'Backlog_P2 B1..Bn
+    COL_BL_P2 = hdrCol
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "Backlog_P2 B" & b
+        hdrCol = hdrCol + 1
+    Next b
+
 
     '=== FINAL column count (A..last header) ===
     Dim totalCols As Long
@@ -608,6 +635,13 @@ Sub Boxes_Shipped_Forecast()
                         outArr(outUsed, COL_TOT_ORD_P1_BACKLOG) = 0
                         outArr(outUsed, COL_P1_SHORTFALL) = 0
                         outArr(outUsed, COL_ORD_P1_SHIP) = 0
+
+                        'Initialize P1 allocation blocks (filled in post-pass 4)
+                        For b = 1 To MAX_BOX
+                            outArr(outUsed, COL_BL_SHIP_P1 + (b - 1)) = 0
+                            outArr(outUsed, COL_P1_AVAIL_POSTBL + (b - 1)) = 0
+                            outArr(outUsed, COL_BL_P2 + (b - 1)) = 0
+                        Next b
                         
                         '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
                         Dim writeCol As Long
@@ -1043,6 +1077,50 @@ For rrLocal = 2 To outUsed
 NextTotWrite:
 Next rrLocal
 '==================== END POST-PASS 3 =====================
+
+'==================== POST-PASS 4: Compute P1 BacklogShipped_P1, P1AvailStock_PostBacklog, Backlog_P2 =====================
+
+Dim ordersShippedP1 As Double
+Dim needValP1 As Double
+Dim shippedP1 As Double
+Dim p1AvailPostLocalVal As Double
+Dim blP1BoxVal As Double
+Dim p1AvailPostBacklogVal As Double
+Dim blP2Val As Double
+
+For rrLocal = 2 To outUsed
+
+    'OrdersShipped_BacklogP1 is stored in the single debug column COL_ORD_P1_SHIP
+    ordersShippedP1 = CDbl(outArr(rrLocal, COL_ORD_P1_SHIP))
+
+    For b = 1 To MAX_BOX
+
+        'need(b) is stored in the Need block starting at COL_NEED
+        needValP1 = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
+        If needValP1 <= 0 Then needValP1 = 1 'safety
+
+        '1) BacklogShipped_P1 Bn = OrdersShipped_BacklogP1 * need(b)
+        shippedP1 = ordersShippedP1 * needValP1
+        outArr(rrLocal, COL_BL_SHIP_P1 + (b - 1)) = shippedP1
+
+        '2) P1AvailStock_PostBacklog Bn = P1AvailStock_PostLocal Bn - BacklogShipped_P1 Bn (floored at 0)
+        p1AvailPostLocalVal = CDbl(outArr(rrLocal, COL_P1_AVAIL_POSTLOCAL + (b - 1)))
+        p1AvailPostBacklogVal = p1AvailPostLocalVal - shippedP1
+        If p1AvailPostBacklogVal < 0 Then p1AvailPostBacklogVal = 0
+        outArr(rrLocal, COL_P1_AVAIL_POSTBL + (b - 1)) = p1AvailPostBacklogVal
+
+        '3) Backlog_P2 Bn = Backlog_P1 Bn - BacklogShipped_P1 Bn (floored at 0)
+        blP1BoxVal = CDbl(outArr(rrLocal, COL_BL_P1 + (b - 1)))
+        blP2Val = blP1BoxVal - shippedP1
+        If blP2Val < 0 Then blP2Val = 0
+        outArr(rrLocal, COL_BL_P2 + (b - 1)) = blP2Val
+
+    Next b
+
+Next rrLocal
+
+'==================== END POST-PASS 4 =====================
+
 
     '=== Dump output array to sheet in one shot ===
     wsDebug.Cells.Clear
