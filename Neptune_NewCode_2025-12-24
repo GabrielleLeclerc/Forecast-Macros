@@ -281,6 +281,10 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_P1_SHORTFALL_SALES As Long
     Dim COL_ORD_SALESP1_SHIP As Long
 
+    Dim COL_SALES_SHIP_P1 As Long          'SalesShipped_P1 Bn
+    Dim COL_P1_AVAIL_POSTSALES As Long     'P1AvailStock_PostSales Bn
+    Dim COL_SALES_P2 As Long               'Sales_P2 Bn
+    
 
     '==================== Working variables (declared once) ====================
     
@@ -517,6 +521,27 @@ Sub Boxes_Shipped_Forecast()
     wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_SalesP1"
     hdrCol = hdrCol + 1
 
+    '--- SalesShipped_P1 B1..Bn ---
+    COL_SALES_SHIP_P1 = hdrCol
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "SalesShipped_P1 B" & b
+        hdrCol = hdrCol + 1
+    Next b
+    
+    '--- P1AvailStock_PostSales B1..Bn ---
+    COL_P1_AVAIL_POSTSALES = hdrCol
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "P1AvailStock_PostSales B" & b
+        hdrCol = hdrCol + 1
+    Next b
+    
+    '--- Sales_P2 B1..Bn ---
+    COL_SALES_P2 = hdrCol
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "Sales_P2 B" & b
+        hdrCol = hdrCol + 1
+    Next b
+
     '=== FINAL column count (A..last header) ===
     Dim totalCols As Long
     totalCols = hdrCol - 1   'hdrCol is the NEXT empty column
@@ -676,6 +701,13 @@ Sub Boxes_Shipped_Forecast()
                             outArr(outUsed, COL_BL_SHIP_P1 + (b - 1)) = 0
                             outArr(outUsed, COL_P1_AVAIL_POSTBL + (b - 1)) = 0
                             outArr(outUsed, COL_BL_P2 + (b - 1)) = 0
+                        Next b
+
+                        'Initialize P1 sales allocation blocks (filled in post-pass 7)
+                        For b = 1 To MAX_BOX
+                            outArr(outUsed, COL_SALES_SHIP_P1 + (b - 1)) = 0
+                            outArr(outUsed, COL_P1_AVAIL_POSTSALES + (b - 1)) = 0
+                            outArr(outUsed, COL_SALES_P2 + (b - 1)) = 0
                         Next b
                         
                         '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
@@ -1124,13 +1156,29 @@ For rrLocal = 2 To outUsed
         needValP1 = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
         If needValP1 <= 0 Then needValP1 = 1 'safety
 
-        '1) BacklogShipped_P1 Bn = OrdersShipped_BacklogP1 * need(b)
-        shippedP1 = ordersShippedP1 * needValP1
-        outArr(rrLocal, COL_BL_SHIP_P1 + (b - 1)) = shippedP1
+        Dim desiredP1 As Double
 
-        '2) P1AvailStock_PostBacklog Bn = P1AvailStock_PostLocal Bn - BacklogShipped_P1 Bn (floored at 0)
+        'Desired shipped units for this box if we ship those orders
+        desiredP1 = ordersShippedP1 * needValP1
+        
+        'Available at P1 before backlog shipping (this is what backlog can draw from)
         p1AvailPostLocalVal = CDbl(outArr(rrLocal, COL_P1_AVAIL_POSTLOCAL + (b - 1)))
+        
+        'OPTIONAL BOX RULE:
+        If isOptional(b) Then
+            shippedP1 = Application.Min(p1AvailPostLocalVal, desiredP1)
+        Else
+            shippedP1 = desiredP1
+        End If
+        
+        '1) BacklogShipped_P1 Bn
+        outArr(rrLocal, COL_BL_SHIP_P1 + (b - 1)) = shippedP1
+        
+        '2) P1AvailStock_PostBacklog Bn
         p1AvailPostBacklogVal = p1AvailPostLocalVal - shippedP1
+        If p1AvailPostBacklogVal < 0 Then p1AvailPostBacklogVal = 0
+        outArr(rrLocal, COL_P1_AVAIL_POSTBL + (b - 1)) = p1AvailPostBacklogVal
+
         If p1AvailPostBacklogVal < 0 Then p1AvailPostBacklogVal = 0
         outArr(rrLocal, COL_P1_AVAIL_POSTBL + (b - 1)) = p1AvailPostBacklogVal
 
@@ -1259,6 +1307,61 @@ NextSalesTotWrite:
 Next rrLocal
 
 '==================== END POST-PASS 6 =====================
+
+'==================== POST-PASS 7: Compute SalesShipped_P1, P1AvailStock_PostSales, Sales_P2 =====================
+
+Dim ordersShippedSalesP1 As Double
+Dim desiredSalesShipP1 As Double
+Dim shippedSalesP1 As Double
+Dim p1AvailPostBL_Box As Double
+Dim p1AvailPostSales_Box As Double
+Dim salesP1_Box As Double
+Dim salesP2_Box As Double
+Dim needValShip As Double
+
+For rrLocal = 2 To outUsed
+
+    'Shared order count from POST-PASS 5 (OrdersShipped_SalesP1)
+    ordersShippedSalesP1 = CDbl(outArr(rrLocal, COL_ORD_SALESP1_SHIP))
+
+    For b = 1 To MAX_BOX
+
+        needValShip = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
+        If needValShip <= 0 Then needValShip = 1
+
+        'Desired shipped units for this box if we ship those orders
+        desiredSalesShipP1 = ordersShippedSalesP1 * needValShip
+
+        'Available at P1 after backlog (this is the stock SalesP1 is allowed to draw from)
+        p1AvailPostBL_Box = CDbl(outArr(rrLocal, COL_P1_AVAIL_POSTBL + (b - 1)))
+
+        'OPTIONAL BOX RULE (same as your earlier rounds):
+        'Optional ships MIN(available, desired). Required ships desired.
+        If isOptional(b) Then
+            shippedSalesP1 = Application.Min(p1AvailPostBL_Box, desiredSalesShipP1)
+        Else
+            shippedSalesP1 = desiredSalesShipP1
+        End If
+
+        '1) SalesShipped_P1 Bn
+        outArr(rrLocal, COL_SALES_SHIP_P1 + (b - 1)) = shippedSalesP1
+
+        '2) P1AvailStock_PostSales Bn = PostBacklog - SalesShipped_P1 (floored at 0)
+        p1AvailPostSales_Box = p1AvailPostBL_Box - shippedSalesP1
+        If p1AvailPostSales_Box < 0 Then p1AvailPostSales_Box = 0
+        outArr(rrLocal, COL_P1_AVAIL_POSTSALES + (b - 1)) = p1AvailPostSales_Box
+
+        '3) Sales_P2 Bn = Sales_P1 - SalesShipped_P1 (floored at 0)
+        salesP1_Box = CDbl(outArr(rrLocal, COL_SALES_P1 + (b - 1)))
+        salesP2_Box = salesP1_Box - shippedSalesP1
+        If salesP2_Box < 0 Then salesP2_Box = 0
+        outArr(rrLocal, COL_SALES_P2 + (b - 1)) = salesP2_Box
+
+    Next b
+
+Next rrLocal
+
+'==================== END POST-PASS 7 =====================
 
     '=== Dump output array to sheet in one shot ===
     wsDebug.Cells.Clear
