@@ -275,6 +275,12 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_P1_AVAIL_POSTBL As Long         'P1AvailStock_PostBacklog Bn  (renamed)
     Dim COL_BL_P2 As Long                   'Backlog_P2 Bn
 
+    Dim COL_ORD_SALESP1_AVAIL As Long
+    Dim COL_ORD_SALESP1_SALES As Long
+    Dim COL_TOT_ORD_SALESP1_SALES As Long
+    Dim COL_P1_SHORTFALL_SALES As Long
+    Dim COL_ORD_SALESP1_SHIP As Long
+
 
     '==================== Working variables (declared once) ====================
     
@@ -490,6 +496,27 @@ Sub Boxes_Shipped_Forecast()
         hdrCol = hdrCol + 1
     Next b
 
+    '--- SalesP1 orders debug (5 columns) ---
+    COL_ORD_SALESP1_AVAIL = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "Orders_SalesP1_LimitByAvail"
+    hdrCol = hdrCol + 1
+    
+    COL_ORD_SALESP1_SALES = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "Orders_SalesP1_LimitBySalesP1"
+    hdrCol = hdrCol + 1
+    
+    COL_TOT_ORD_SALESP1_SALES = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "TotalOrders_SalesP1_LimitBySalesP1"
+    hdrCol = hdrCol + 1
+    
+    COL_P1_SHORTFALL_SALES = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "P1Shortfall_SalesOrders"
+    hdrCol = hdrCol + 1
+    
+    COL_ORD_SALESP1_SHIP = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_SalesP1"
+    hdrCol = hdrCol + 1
+
     '=== FINAL column count (A..last header) ===
     Dim totalCols As Long
     totalCols = hdrCol - 1   'hdrCol is the NEXT empty column
@@ -636,6 +663,13 @@ Sub Boxes_Shipped_Forecast()
                         outArr(outUsed, COL_TOT_ORD_P1_BACKLOG) = 0
                         outArr(outUsed, COL_P1_SHORTFALL) = 0
                         outArr(outUsed, COL_ORD_P1_SHIP) = 0
+
+                        'Initialize SalesP1 order debug cols (filled in post-pass 5/6)
+                        outArr(outUsed, COL_ORD_SALESP1_AVAIL) = 0
+                        outArr(outUsed, COL_ORD_SALESP1_SALES) = 0
+                        outArr(outUsed, COL_TOT_ORD_SALESP1_SALES) = 0
+                        outArr(outUsed, COL_P1_SHORTFALL_SALES) = 0
+                        outArr(outUsed, COL_ORD_SALESP1_SHIP) = 0
 
                         'Initialize P1 allocation blocks (filled in post-pass 4)
                         For b = 1 To MAX_BOX
@@ -1112,6 +1146,119 @@ Next rrLocal
 
 '==================== END POST-PASS 4 =====================
 
+'==================== POST-PASS 5: Compute SalesP1 Orders =====================
+
+Dim ordersFromAvailSalesP1 As Double
+Dim ordersFromSalesP1 As Double
+Dim ordersShipped_SalesP1 As Double
+
+Dim p1AvailPostBL_Val As Double, salesP1Val_Box As Double
+Dim needValSalesP1 As Double
+
+For rrLocal = 2 To outUsed
+
+    ordersFromAvailSalesP1 = 1E+30
+    ordersFromSalesP1 = 1E+30
+
+    'Min across REQUIRED boxes (whole-order logic like the other rounds)
+    For b = 1 To MAX_BOX
+        If Not isOptional(b) Then
+
+            'Avail = P1AvailStock_PostBacklog Bn
+            p1AvailPostBL_Val = CDbl(outArr(rrLocal, COL_P1_AVAIL_POSTBL + (b - 1)))
+
+            'Demand = Sales_P1 Bn
+            salesP1Val_Box = CDbl(outArr(rrLocal, COL_SALES_P1 + (b - 1)))
+
+            'Need = Need Bn
+            needValSalesP1 = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
+            If needValSalesP1 <= 0 Then needValSalesP1 = 1
+
+            ordersFromAvailSalesP1 = Application.Min(ordersFromAvailSalesP1, OrdersFromQty(p1AvailPostBL_Val, needValSalesP1))
+            ordersFromSalesP1 = Application.Min(ordersFromSalesP1, OrdersFromQty(salesP1Val_Box, needValSalesP1))
+
+        End If
+    Next b
+
+    If ordersFromAvailSalesP1 = 1E+30 Then ordersFromAvailSalesP1 = 0
+    If ordersFromSalesP1 = 1E+30 Then ordersFromSalesP1 = 0
+
+    ordersShipped_SalesP1 = Application.Min(ordersFromAvailSalesP1, ordersFromSalesP1)
+
+    outArr(rrLocal, COL_ORD_SALESP1_AVAIL) = WorksheetFunction.Round(ordersFromAvailSalesP1, 2)
+    outArr(rrLocal, COL_ORD_SALESP1_SALES) = WorksheetFunction.Round(ordersFromSalesP1, 2)
+    outArr(rrLocal, COL_ORD_SALESP1_SHIP) = WorksheetFunction.Round(ordersShipped_SalesP1, 2)
+
+Next rrLocal
+
+'==================== END POST-PASS 5 =====================
+
+'==================== POST-PASS 6: Total SalesP1 demand across sibling cities + shortfall =====================
+
+Dim p1SalesTotals As Object
+Set p1SalesTotals = CreateObject("Scripting.Dictionary")
+p1SalesTotals.CompareMode = 1 'vbTextCompare
+
+Dim kSalesTot As String
+Dim wkSales As String
+Dim totSalesVal As Double
+
+'1) Build totals: key = P1City|Country|Color|WeekStart -> sum(Orders_SalesP1_LimitBySalesP1)
+For rrLocal = 2 To outUsed
+
+    p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
+    If Len(p1City) = 0 Then GoTo NextSalesTotBuild
+
+    wkSales = Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+
+    kSalesTot = p1City & "|" & _
+                CStr(outArr(rrLocal, 2)) & "|" & _
+                NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
+                wkSales
+
+    totSalesVal = CDbl(outArr(rrLocal, COL_ORD_SALESP1_SALES))
+
+    If p1SalesTotals.Exists(kSalesTot) Then
+        p1SalesTotals(kSalesTot) = CDbl(p1SalesTotals(kSalesTot)) + totSalesVal
+    Else
+        p1SalesTotals.Add kSalesTot, totSalesVal
+    End If
+
+NextSalesTotBuild:
+Next rrLocal
+
+'2) Write totals + shortfall = MAX(0, TotalDemand - AvailLimit)
+For rrLocal = 2 To outUsed
+
+    p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
+    If Len(p1City) = 0 Then GoTo NextSalesTotWrite
+
+    wkSales = Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+
+    kSalesTot = p1City & "|" & _
+                CStr(outArr(rrLocal, 2)) & "|" & _
+                NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
+                wkSales
+
+    If p1SalesTotals.Exists(kSalesTot) Then
+
+        outArr(rrLocal, COL_TOT_ORD_SALESP1_SALES) = WorksheetFunction.Round(CDbl(p1SalesTotals(kSalesTot)), 2)
+
+        Dim shortfallSales As Double
+        shortfallSales = CDbl(outArr(rrLocal, COL_TOT_ORD_SALESP1_SALES)) - CDbl(outArr(rrLocal, COL_ORD_SALESP1_AVAIL))
+        If shortfallSales < 0 Then shortfallSales = 0
+
+        outArr(rrLocal, COL_P1_SHORTFALL_SALES) = WorksheetFunction.Round(shortfallSales, 2)
+
+    Else
+        outArr(rrLocal, COL_TOT_ORD_SALESP1_SALES) = 0
+        outArr(rrLocal, COL_P1_SHORTFALL_SALES) = 0
+    End If
+
+NextSalesTotWrite:
+Next rrLocal
+
+'==================== END POST-PASS 6 =====================
 
     '=== Dump output array to sheet in one shot ===
     wsDebug.Cells.Clear
@@ -1125,6 +1272,7 @@ Next rrLocal
         wsDebug.Range(wsDebug.Cells(2, COL_ORD_BL_AVAIL), wsDebug.Cells(outUsed, COL_ORD_BL_SHIP)).NumberFormat = "0.00"
         wsDebug.Range(wsDebug.Cells(2, COL_ORD_SALES_AVAIL), wsDebug.Cells(outUsed, COL_ORD_SALES_SHIP)).NumberFormat = "0.00"
         wsDebug.Range(wsDebug.Cells(2, COL_ORD_P1_AVAIL), wsDebug.Cells(outUsed, COL_ORD_P1_SHIP)).NumberFormat = "0.00"
+        wsDebug.Range(wsDebug.Cells(2, COL_ORD_SALESP1_AVAIL), wsDebug.Cells(outUsed, COL_ORD_SALESP1_SHIP)).NumberFormat = "0.00"
         wsDebug.Range(wsDebug.Cells(2, 4), wsDebug.Cells(outUsed, 5)).NumberFormat = "yyyy-mm-dd"
     End If
 
