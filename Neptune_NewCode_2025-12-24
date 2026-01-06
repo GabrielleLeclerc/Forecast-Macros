@@ -288,37 +288,7 @@ Sub Boxes_Shipped_Forecast()
     
     Dim salesVal As Double, availPostBacklogVal As Double
     Dim shippedSales As Double, availPostSales As Double, salesP1 As Double
-            
-    COL_SALES = 7
-    COL_BEG = COL_SALES + MAX_BOX
-    COL_IB = COL_BEG + MAX_BOX
-    COL_AVAIL = COL_IB + MAX_BOX
-    COL_BACKLOG = COL_AVAIL + MAX_BOX
-    
-    'NEW blocks:
-    COL_NEED = COL_BACKLOG + MAX_BOX
-    COL_ORD_BL_AVAIL = COL_NEED + MAX_BOX
-    COL_ORD_BL_BACKLOG = COL_ORD_BL_AVAIL + 1
-    COL_ORD_BL_SHIP = COL_ORD_BL_BACKLOG + 1
-    
-    'Round 1 blocks:
-    COL_BL_SHIP = COL_ORD_BL_SHIP + 1
-    COL_AVAIL_POSTBL = COL_BL_SHIP + MAX_BOX
-    COL_BL_P1 = COL_AVAIL_POSTBL + MAX_BOX
-    
-    'NEW sales-order debug:
-    COL_ORD_SALES_AVAIL = COL_BL_P1 + MAX_BOX
-    COL_ORD_SALES_DEMAND = COL_ORD_SALES_AVAIL + 1
-    COL_ORD_SALES_SHIP = COL_ORD_SALES_DEMAND + 1
-    
-    'Round 2 blocks:
-    COL_SALES_SHIP = COL_ORD_SALES_SHIP + 1
-    COL_AVAIL_POSTSALES = COL_SALES_SHIP + MAX_BOX
-    COL_SALES_P1 = COL_AVAIL_POSTSALES + MAX_BOX
-    COL_TOT_BL_SHIP = COL_SALES_P1 + MAX_BOX
-    COL_TOT_SALES_SHIP = COL_TOT_BL_SHIP + 1
-    COL_TOT_SHIP = COL_TOT_SALES_SHIP + 1
-            
+                       
     '=== Set up / create the Debug sheet and the output row counter ===
     Dim wsDebug As Worksheet
     On Error Resume Next
@@ -340,154 +310,185 @@ Sub Boxes_Shipped_Forecast()
 
     '=== NEW: Add box columns ===
     Dim b As Long, hdrCol As Long
-    
+
     hdrCol = 7 ' Column G = first new header
-    
+
+    '--- Sales B1..Bn ---
+    COL_SALES = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).value = "Sales B" & b
-        hdrCol = hdrCol + 1
-    Next b
-    
-    For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).value = "Beg Stock B" & b
-        hdrCol = hdrCol + 1
-    Next b
-    
-    For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).value = "IB B" & b
-        hdrCol = hdrCol + 1
-    Next b
-    
-    For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).value = "AvailStock B" & b
+        wsDebug.Cells(1, hdrCol).Value = "Sales B" & b
         hdrCol = hdrCol + 1
     Next b
 
+    '--- Beg Stock B1..Bn ---
+    COL_BEG = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).value = "Backlog B" & b
+        wsDebug.Cells(1, hdrCol).Value = "Beg Stock B" & b
         hdrCol = hdrCol + 1
     Next b
 
-    '=== Need per order (from Colors table) ===
+    '--- IB B1..Bn ---
+    COL_IB = hdrCol
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "IB B" & b
+        hdrCol = hdrCol + 1
+    Next b
+
+    '--- AvailStock B1..Bn ---
+    COL_AVAIL = hdrCol
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "AvailStock B" & b
+        hdrCol = hdrCol + 1
+    Next b
+
+    '--- Backlog B1..Bn ---
+    COL_BACKLOG = hdrCol
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "Backlog B" & b
+        hdrCol = hdrCol + 1
+    Next b
+
+    '--- Need B1..Bn ---
+    COL_NEED = hdrCol
     For b = 1 To MAX_BOX
         wsDebug.Cells(1, hdrCol).Value = "Need B" & b
         hdrCol = hdrCol + 1
     Next b
-    
-    '=== NEW: Backlog orders (debug) ===
+
+    '--- Backlog orders debug (3 columns) ---
+    COL_ORD_BL_AVAIL = hdrCol
     wsDebug.Cells(1, hdrCol).Value = "Orders_Backlog_LimitByAvail"
     hdrCol = hdrCol + 1
+
+    COL_ORD_BL_BACKLOG = hdrCol
     wsDebug.Cells(1, hdrCol).Value = "Orders_Backlog_LimitByBacklog"
     hdrCol = hdrCol + 1
+
+    COL_ORD_BL_SHIP = hdrCol
     wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_Backlog"
     hdrCol = hdrCol + 1
 
-
-    '=== Allocation Round 1 columns (Backlog first) ===
+    '--- BacklogShipped B1..Bn ---
+    COL_BL_SHIP = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).value = "BacklogShipped B" & b
-        hdrCol = hdrCol + 1
-    Next b
-    
-    For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).value = "AvailStock_PostBacklog B" & b
-        hdrCol = hdrCol + 1
-    Next b
-    
-    For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).value = "Backlog_P1 B" & b
+        wsDebug.Cells(1, hdrCol).Value = "BacklogShipped B" & b
         hdrCol = hdrCol + 1
     Next b
 
-    '=== Sales orders (debug) ===
+    '--- AvailStock_PostBacklog B1..Bn ---
+    COL_AVAIL_POSTBL = hdrCol
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "AvailStock_PostBacklog B" & b
+        hdrCol = hdrCol + 1
+    Next b
+
+    '--- Backlog_P1 B1..Bn ---
+    COL_BL_P1 = hdrCol
+    For b = 1 To MAX_BOX
+        wsDebug.Cells(1, hdrCol).Value = "Backlog_P1 B" & b
+        hdrCol = hdrCol + 1
+    Next b
+
+    '--- Sales orders debug (3 columns) ---
+    COL_ORD_SALES_AVAIL = hdrCol
     wsDebug.Cells(1, hdrCol).Value = "Orders_Sales_LimitByAvail"
     hdrCol = hdrCol + 1
+
+    COL_ORD_SALES_DEMAND = hdrCol
     wsDebug.Cells(1, hdrCol).Value = "Orders_Sales_LimitBySales"
     hdrCol = hdrCol + 1
+
+    COL_ORD_SALES_SHIP = hdrCol
     wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_Sales"
     hdrCol = hdrCol + 1
 
-    '=== Allocation Round 2 columns (Sales after backlog) ===
+    '--- SalesShipped B1..Bn ---
+    COL_SALES_SHIP = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).value = "SalesShipped B" & b
+        wsDebug.Cells(1, hdrCol).Value = "SalesShipped B" & b
         hdrCol = hdrCol + 1
     Next b
-    
+
+    '--- AvailStock_PostSales B1..Bn ---
+    COL_AVAIL_POSTSALES = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).value = "AvailStock_PostSales B" & b
+        wsDebug.Cells(1, hdrCol).Value = "AvailStock_PostSales B" & b
         hdrCol = hdrCol + 1
     Next b
-    
+
+    '--- Sales_P1 B1..Bn ---
+    COL_SALES_P1 = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).value = "Sales_P1 B" & b
+        wsDebug.Cells(1, hdrCol).Value = "Sales_P1 B" & b
         hdrCol = hdrCol + 1
     Next b
-    
-    '=== Totals (across all boxes) ===
-    wsDebug.Cells(1, hdrCol).value = "TotalLocalBacklogShipped"
-    hdrCol = hdrCol + 1
-    
-    wsDebug.Cells(1, hdrCol).value = "TotalLocalSalesShipped"
-    hdrCol = hdrCol + 1
-    
-    wsDebug.Cells(1, hdrCol).value = "TotalShipped_FromLocal"
+
+    '--- Totals (3 columns) ---
+    COL_TOT_BL_SHIP = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "TotalLocalBacklogShipped"
     hdrCol = hdrCol + 1
 
-    wsDebug.Cells(1, hdrCol).Value = "P1 City"
-    COL_P1_CITY = hdrCol
+    COL_TOT_SALES_SHIP = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "TotalLocalSalesShipped"
     hdrCol = hdrCol + 1
-    
-    '=== P1AvailStock_PostLocal B1..Bn (must be right after P1 City) ===
+
+    COL_TOT_SHIP = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "TotalShipped_FromLocal"
+    hdrCol = hdrCol + 1
+
+    '--- P1 City ---
+    COL_P1_CITY = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "P1 City"
+    hdrCol = hdrCol + 1
+
+    '--- P1AvailStock_PostLocal B1..Bn ---
     COL_P1_AVAIL_POSTLOCAL = hdrCol
     For b = 1 To MAX_BOX
         wsDebug.Cells(1, hdrCol).Value = "P1AvailStock_PostLocal B" & b
         hdrCol = hdrCol + 1
     Next b
 
-    '=== BacklogP1 orders (debug) ===
-    wsDebug.Cells(1, hdrCol).Value = "Orders_BacklogP1_LimitByAvail"
+    '--- BacklogP1 orders debug ---
     COL_ORD_P1_AVAIL = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "Orders_BacklogP1_LimitByAvail"
     hdrCol = hdrCol + 1
-    
-    wsDebug.Cells(1, hdrCol).Value = "Orders_BacklogP1_LimitByBacklogP1"
+
     COL_ORD_P1_BACKLOG = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "Orders_BacklogP1_LimitByBacklogP1"
     hdrCol = hdrCol + 1
-    
-    wsDebug.Cells(1, hdrCol).Value = "TotalOrders_BacklogP1_LimitByBacklogP1"
+
     COL_TOT_ORD_P1_BACKLOG = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "TotalOrders_BacklogP1_LimitByBacklogP1"
     hdrCol = hdrCol + 1
 
-    wsDebug.Cells(1, hdrCol).Value = "P1Shortfall_BacklogOrders"
     COL_P1_SHORTFALL = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "P1Shortfall_BacklogOrders"
     hdrCol = hdrCol + 1
-    
-    wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_BacklogP1"
+
     COL_ORD_P1_SHIP = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_BacklogP1"
     hdrCol = hdrCol + 1
 
-'=== Allocation Round P1 (Backlog from P1) columns ===
-
-    'BacklogShipped_P1 B1..Bn
+    '--- BacklogShipped_P1 B1..Bn ---
     COL_BL_SHIP_P1 = hdrCol
     For b = 1 To MAX_BOX
         wsDebug.Cells(1, hdrCol).Value = "BacklogShipped_P1 B" & b
         hdrCol = hdrCol + 1
     Next b
-    
-    'P1AvailStock_PostBacklog B1..Bn (this is your renamed block)
+
+    '--- P1AvailStock_PostBacklog B1..Bn ---
     COL_P1_AVAIL_POSTBL = hdrCol
     For b = 1 To MAX_BOX
         wsDebug.Cells(1, hdrCol).Value = "P1AvailStock_PostBacklog B" & b
         hdrCol = hdrCol + 1
     Next b
-    
-    'Backlog_P2 B1..Bn
+
+    '--- Backlog_P2 B1..Bn ---
     COL_BL_P2 = hdrCol
     For b = 1 To MAX_BOX
         wsDebug.Cells(1, hdrCol).Value = "Backlog_P2 B" & b
         hdrCol = hdrCol + 1
     Next b
-
 
     '=== FINAL column count (A..last header) ===
     Dim totalCols As Long
@@ -645,7 +646,7 @@ Sub Boxes_Shipped_Forecast()
                         
                         '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
                         Dim writeCol As Long
-                        writeCol = 7
+                        writeCol = COL_SALES
                         
                         Dim rr As Long, v As Variant
                         
@@ -736,16 +737,6 @@ Sub Boxes_Shipped_Forecast()
                             writeCol = writeCol + 1
                         Next b
                         
-                        'We will write the backlog orders debug numbers later,
-                        'after we compute ordersShipped_Backlog (but we reserve the columns now).
-                        'These are 3 single columns:
-                        outArr(outUsed, writeCol) = ""  'Orders_Backlog_LimitByAvail (filled later)
-                        writeCol = writeCol + 1
-                        outArr(outUsed, writeCol) = ""  'Orders_Backlog_LimitByBacklog (filled later)
-                        writeCol = writeCol + 1
-                        outArr(outUsed, writeCol) = ""  'OrdersShipped_Backlog (filled later)
-                        writeCol = writeCol + 1
-
                         '=== Allocation Round 1 (Backlog-first) using WHOLE ORDERS ===
                         'We compute ONE shared ordersShipped_Backlog for this (week,color),
                         'limited by the first box type to run out (min across boxes).
