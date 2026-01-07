@@ -445,16 +445,7 @@ Sub Boxes_Shipped_Forecast()
         Exit Sub
     End If
     
-    On Error Resume Next
-    Set p1Map = CreateObject("Scripting.Dictionary")
-    On Error GoTo 0
-    
-    If p1Map Is Nothing Then
-        MsgBox "Scripting.Dictionary not available on this computer, cannot build P1 City map.", vbExclamation
-        Exit Sub
-    End If
-    
-    p1Map.CompareMode = 1 'vbTextCompare
+    Set p1Map = MapCreate()
     
     For rP = 1 To lo.DataBodyRange.Rows.Count
         wsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxWs).Value))
@@ -462,9 +453,7 @@ Sub Boxes_Shipped_Forecast()
     
         If Len(wsName) > 0 And Len(p1WsName) > 0 Then
             mapKey = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxCountry).Value)) & "|" & wsName
-            If Not p1Map.Exists(mapKey) Then
-                p1Map.Add mapKey, p1WsName
-            End If
+            MapAddFirst p1Map, mapKey, p1WsName
         End If
     Next rP
     
@@ -476,16 +465,7 @@ Sub Boxes_Shipped_Forecast()
         Exit Sub
     End If
     
-    On Error Resume Next
-    Set p2Map = CreateObject("Scripting.Dictionary")
-    On Error GoTo 0
-    
-    If p2Map Is Nothing Then
-        MsgBox "Scripting.Dictionary not available on this computer, cannot build P2 City map.", vbExclamation
-        Exit Sub
-    End If
-    
-    p2Map.CompareMode = 1 'vbTextCompare
+    Set p2Map = MapCreate()
     
     For rP = 1 To lo.DataBodyRange.Rows.Count
         wsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxWs).Value))
@@ -493,9 +473,7 @@ Sub Boxes_Shipped_Forecast()
     
         If Len(wsName) > 0 And Len(p2WsName) > 0 Then
             mapKey = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxCountry).Value)) & "|" & wsName
-            If Not p2Map.Exists(mapKey) Then
-                p2Map.Add mapKey, p2WsName
-            End If
+            MapAddFirst p2Map, mapKey, p2WsName
         End If
     Next rP
 
@@ -1196,8 +1174,7 @@ NextOne:
 
 '==================== WEEK-BY-WEEK ENGINE (replaces POST-PASS 1..15) =====================
 
-Set rowLookup = CreateObject("Scripting.Dictionary")
-rowLookup.CompareMode = 1 'vbTextCompare
+Set rowLookup = MapCreate()
 
 'Index every row by DemandCity|Country|Color|WeekStart
 For rrLocal = 2 To outUsed
@@ -1206,29 +1183,31 @@ For rrLocal = 2 To outUsed
                NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
                Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
 
-    If Not rowLookup.Exists(keyLocal) Then
-        rowLookup.Add keyLocal, rrLocal
-    End If
+    MapAddFirst rowLookup, keyLocal, rrLocal
+
 Next rrLocal
 
 '--- Build sorted unique list of WeekStart dates present in outArr ---
-Set weekDict = CreateObject("Scripting.Dictionary")
-weekDict.CompareMode = 1
+Set weekDict = MapCreate()
 
 For rrLocal = 2 To outUsed
     wkDate = CDate(outArr(rrLocal, 4))
     wkKey = Format$(wkDate, "yyyy-mm-dd")
-    If Not weekDict.Exists(wkKey) Then weekDict.Add wkKey, wkDate
+    MapAddFirst weekDict, wkKey, wkDate
 Next rrLocal
 
-wkCount = weekDict.Count
+wkCount = MapCount(weekDict)
 ReDim weeks(1 To wkCount)
 
 idx = 0
-For Each tmpK In weekDict.Keys
+Dim wkKeys As Variant
+wkKeys = MapKeys(weekDict)
+
+For Each tmpK In wkKeys
     idx = idx + 1
-    weeks(idx) = weekDict(tmpK)
+    weeks(idx) = CDate(MapGetVariant(weekDict, CStr(tmpK), 0))
 Next tmpK
+
 
 'Sort weeks ascending (simple bubble; wkCount is small ~52)
 For a = 1 To wkCount - 1
@@ -1269,10 +1248,11 @@ For iWk = 1 To wkCount
                 outArr(rrLocal, COL_BACKLOG + (b - 1)) = baselineBL
             Else
                 prevUnf = 0
-                If rowLookup.Exists(keyPrev) Then
-                    rrPrev = CLng(rowLookup(keyPrev))
+                rrPrev = MapGetLong(rowLookup, keyPrev, 0)
+                If rrPrev > 0 Then
                     prevUnf = CDbl(outArr(rrPrev, COL_UNFULFILLED + (b - 1)))
                 End If
+
                 outArr(rrLocal, COL_BACKLOG + (b - 1)) = baselineBL + prevUnf
             End If
 
@@ -1414,8 +1394,9 @@ NextRow_LocalSales:
                 NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
                 Format$(wkStart, "yyyy-mm-dd")
 
-        If rowLookup.Exists(keyP1) Then
-            rrP1 = CLng(rowLookup(keyP1))
+        rrP1 = MapGetLong(rowLookup, keyP1, 0)
+        If rrP1 > 0 Then
+
             For b = 1 To MAX_BOX
                 outArr(rrLocal, COL_P1_AVAIL_POSTLOCAL + (b - 1)) = CDbl(outArr(rrP1, COL_AVAIL_POSTSALES + (b - 1)))
             Next b
@@ -1469,8 +1450,7 @@ Next rrLocal
 
 
 '==================== (Old POST-PASS 3) Total backlog-limited P1 orders across sibling cities =====================
-Set p1BacklogTotals = CreateObject("Scripting.Dictionary")
-p1BacklogTotals.CompareMode = 1 'vbTextCompare
+Set p1BacklogTotals = MapCreate()
 
 '1) Build totals: key = P1City|Country|Color|WeekStart -> sum(Orders_BacklogP1_LimitByBacklogP1)
 For rrLocal = 2 To outUsed
@@ -1487,11 +1467,7 @@ For rrLocal = 2 To outUsed
 
     totVal = CDbl(outArr(rrLocal, COL_ORD_P1_BACKLOG))
 
-    If p1BacklogTotals.Exists(kTot) Then
-        p1BacklogTotals(kTot) = CDbl(p1BacklogTotals(kTot)) + totVal
-    Else
-        p1BacklogTotals.Add kTot, totVal
-    End If
+    MapAddSumDouble p1BacklogTotals, kTot, totVal
 
 NextRow_P1TotBuild:
 Next rrLocal
@@ -1509,8 +1485,8 @@ For rrLocal = 2 To outUsed
            NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
            Format$(wkStart, "yyyy-mm-dd")
 
-    If p1BacklogTotals.Exists(kTot) Then
-        outArr(rrLocal, COL_TOT_ORD_P1_BACKLOG) = WorksheetFunction.Round(CDbl(p1BacklogTotals(kTot)), 2)
+    If MapExists(p1BacklogTotals, kTot) Then
+    outArr(rrLocal, COL_TOT_ORD_P1_BACKLOG) = WorksheetFunction.Round(MapGetDouble(p1BacklogTotals, kTot, 0#), 2)
 
         shortfallP1 = CDbl(outArr(rrLocal, COL_TOT_ORD_P1_BACKLOG)) - CDbl(outArr(rrLocal, COL_ORD_P1_AVAIL))
         If shortfallP1 < 0 Then shortfallP1 = 0
@@ -1608,8 +1584,7 @@ Next rrLocal
 
 
 '==================== (Old POST-PASS 6) Total SalesP1 demand across sibling cities + shortfall =====================
-Set p1SalesTotals = CreateObject("Scripting.Dictionary")
-p1SalesTotals.CompareMode = 1 'vbTextCompare
+Set p1SalesTotals = MapCreate()
 
 '1) Build totals
 For rrLocal = 2 To outUsed
@@ -1626,12 +1601,9 @@ For rrLocal = 2 To outUsed
 
     totSalesVal = CDbl(outArr(rrLocal, COL_ORD_SALESP1_SALES))
 
-    If p1SalesTotals.Exists(kSalesTot) Then
-        p1SalesTotals(kSalesTot) = CDbl(p1SalesTotals(kSalesTot)) + totSalesVal
-    Else
-        p1SalesTotals.Add kSalesTot, totSalesVal
-    End If
+    MapAddSumDouble p1SalesTotals, kSalesTot, totSalesVal
 
+   
 NextRow_P1SalesTotBuild:
 Next rrLocal
 
@@ -1648,8 +1620,8 @@ For rrLocal = 2 To outUsed
                 NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
                 Format$(wkStart, "yyyy-mm-dd")
 
-    If p1SalesTotals.Exists(kSalesTot) Then
-        outArr(rrLocal, COL_TOT_ORD_SALESP1_SALES) = WorksheetFunction.Round(CDbl(p1SalesTotals(kSalesTot)), 2)
+    If MapExists(p1SalesTotals, kSalesTot) Then
+        outArr(rrLocal, COL_TOT_ORD_SALESP1_SALES) = WorksheetFunction.Round(MapGetDouble(p1SalesTotals, kSalesTot, 0#), 2)
 
         shortfallSales = CDbl(outArr(rrLocal, COL_TOT_ORD_SALESP1_SALES)) - CDbl(outArr(rrLocal, COL_ORD_SALESP1_AVAIL))
         If shortfallSales < 0 Then shortfallSales = 0
@@ -1708,8 +1680,7 @@ Next rrLocal
 
 
 '==================== (Old POST-PASS 8) Fill P2AvailStock_PostP1Sales (special rule) =====================
-Set p1CityRow = CreateObject("Scripting.Dictionary")
-p1CityRow.CompareMode = 1 'vbTextCompare
+Set p1CityRow = MapCreate()
 
 '1) Build lookup of P1City|Country|Color|WeekStart -> representative row (this week only)
 For rrLocal = 2 To outUsed
@@ -1724,9 +1695,8 @@ For rrLocal = 2 To outUsed
                   NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
                   Format$(wkStart, "yyyy-mm-dd")
 
-        If Not p1CityRow.Exists(kP1City) Then
-            p1CityRow.Add kP1City, rrLocal
-        End If
+        MapAddFirst p1CityRow, kP1City, rrLocal
+
     End If
 
 NextRow_P1CityRow:
@@ -1746,14 +1716,15 @@ For rrLocal = 2 To outUsed
               NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
               Format$(wkStart, "yyyy-mm-dd")
 
-    If p1CityRow.Exists(kP2City) Then
-        rrRep = CLng(p1CityRow(kP2City))
+    rrRep = MapGetLong(p1CityRow, kP2City, 0)
+    If rrRep > 0 Then
         For b = 1 To MAX_BOX
             outArr(rrLocal, COL_P2_AVAIL_POSTP1SALES + (b - 1)) = CDbl(outArr(rrRep, COL_P1_AVAIL_POSTSALES + (b - 1)))
         Next b
 
-    ElseIf rowLookup.Exists(kP2City) Then
-        rrP2Local = CLng(rowLookup(kP2City))
+    Else
+    rrP2Local = MapGetLong(rowLookup, kP2City, 0)
+    If rrP2Local > 0 Then
         For b = 1 To MAX_BOX
             outArr(rrLocal, COL_P2_AVAIL_POSTP1SALES + (b - 1)) = CDbl(outArr(rrP2Local, COL_AVAIL_POSTSALES + (b - 1)))
         Next b
@@ -1762,6 +1733,8 @@ For rrLocal = 2 To outUsed
             outArr(rrLocal, COL_P2_AVAIL_POSTP1SALES + (b - 1)) = 0
         Next b
     End If
+End If
+
 
 NextRow_P2Fill:
 Next rrLocal
@@ -1806,8 +1779,7 @@ Next rrLocal
 
 
 '==================== (Old POST-PASS 10) Total backlog-limited P2 orders across sibling cities + shortfall =====================
-Set p2BacklogTotals = CreateObject("Scripting.Dictionary")
-p2BacklogTotals.CompareMode = 1 'vbTextCompare
+Set p2BacklogTotals = MapCreate()
 
 '1) Build totals
 For rrLocal = 2 To outUsed
@@ -1824,11 +1796,7 @@ For rrLocal = 2 To outUsed
 
     totP2BL = CDbl(outArr(rrLocal, COL_ORD_P2_BACKLOG))
 
-    If p2BacklogTotals.Exists(p2TotKey) Then
-        p2BacklogTotals(p2TotKey) = CDbl(p2BacklogTotals(p2TotKey)) + totP2BL
-    Else
-        p2BacklogTotals.Add p2TotKey, totP2BL
-    End If
+    MapAddSumDouble p2BacklogTotals, p2TotKey, totP2BL
 
 NextRow_P2BLTotBuild:
 Next rrLocal
@@ -1847,8 +1815,8 @@ For rrLocal = 2 To outUsed
                NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
                Format$(wkStart, "yyyy-mm-dd")
 
-    If p2BacklogTotals.Exists(p2TotKey) Then
-        outArr(rrLocal, COL_TOT_ORD_P2_BACKLOG) = WorksheetFunction.Round(CDbl(p2BacklogTotals(p2TotKey)), 2)
+      If MapExists(p2BacklogTotals, p2TotKey) Then
+        outArr(rrLocal, COL_TOT_ORD_P2_BACKLOG) = WorksheetFunction.Round(MapGetDouble(p2BacklogTotals, p2TotKey, 0#), 2)
 
         shortfallP2BL = CDbl(outArr(rrLocal, COL_TOT_ORD_P2_BACKLOG)) - CDbl(outArr(rrLocal, COL_ORD_P2_AVAIL))
         If shortfallP2BL < 0 Then shortfallP2BL = 0
@@ -1944,8 +1912,7 @@ Next rrLocal
 
 
 '==================== (Old POST-PASS 13) Total SalesP2 demand across sibling cities + shortfall =====================
-Set p2SalesTotals = CreateObject("Scripting.Dictionary")
-p2SalesTotals.CompareMode = 1 'vbTextCompare
+Set p2SalesTotals = MapCreate()
 
 '1) Build totals
 For rrLocal = 2 To outUsed
@@ -1962,11 +1929,7 @@ For rrLocal = 2 To outUsed
 
     totP2Sales = CDbl(outArr(rrLocal, COL_ORD_SALESP2_SALES))
 
-    If p2SalesTotals.Exists(p2SalesKey) Then
-        p2SalesTotals(p2SalesKey) = CDbl(p2SalesTotals(p2SalesKey)) + totP2Sales
-    Else
-        p2SalesTotals.Add p2SalesKey, totP2Sales
-    End If
+    MapAddSumDouble p2SalesTotals, p2SalesKey, totP2Sales
 
 NextRow_P2SalesTotBuild:
 Next rrLocal
@@ -1984,8 +1947,8 @@ For rrLocal = 2 To outUsed
                  NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
                  Format$(wkStart, "yyyy-mm-dd")
 
-    If p2SalesTotals.Exists(p2SalesKey) Then
-        outArr(rrLocal, COL_TOT_ORD_SALESP2_SALES) = WorksheetFunction.Round(CDbl(p2SalesTotals(p2SalesKey)), 2)
+    If MapExists(p2SalesTotals, p2SalesKey) Then
+        outArr(rrLocal, COL_TOT_ORD_SALESP2_SALES) = WorksheetFunction.Round(MapGetDouble(p2SalesTotals,p2SalesKey, 0#), 2)
 
         shortfallP2Sales = CDbl(outArr(rrLocal, COL_TOT_ORD_SALESP2_SALES)) - CDbl(outArr(rrLocal, COL_ORD_SALESP2_AVAIL))
         If shortfallP2Sales < 0 Then shortfallP2Sales = 0
@@ -2114,8 +2077,7 @@ Next rrLocal
 'We compute this efficiently by accumulating contributions into a dictionary keyed by:
 '   City|Country|Color|WeekStart
 
-Set outboundTotals = CreateObject("Scripting.Dictionary")
-outboundTotals.CompareMode = 1 'vbTextCompare
+Set outboundTotals = MapCreate()
 
 '1) Build totals for each city (as demand, as P1, as P2)
 For rrLocal = 2 To outUsed
@@ -2136,31 +2098,25 @@ For rrLocal = 2 To outUsed
     'A) Demand city contributes its own local shipped
     If Len(demandC) > 0 Then
         kOut = demandC & "|" & countryC & "|" & colorC & "|" & wkC
-        If outboundTotals.Exists(kOut) Then
-            outboundTotals(kOut) = CDbl(outboundTotals(kOut)) + shippedLocal
-        Else
-            outboundTotals.Add kOut, shippedLocal
-        End If
-    End If
+
+        MapAddSumDouble outboundTotals, kOut, shippedLocal
+
+    End If  
 
     'B) P1 city contributes shippedFromP1
     If Len(p1C) > 0 Then
         kOut = p1C & "|" & countryC & "|" & colorC & "|" & wkC
-        If outboundTotals.Exists(kOut) Then
-            outboundTotals(kOut) = CDbl(outboundTotals(kOut)) + shippedFromP1
-        Else
-            outboundTotals.Add kOut, shippedFromP1
-        End If
+        
+        MapAddSumDouble outboundTotals, kOut, shippedFromP1
+
     End If
 
     'C) P2 city contributes shippedFromP2
     If Len(p2C) > 0 Then
         kOut = p2C & "|" & countryC & "|" & colorC & "|" & wkC
-        If outboundTotals.Exists(kOut) Then
-            outboundTotals(kOut) = CDbl(outboundTotals(kOut)) + shippedFromP2
-        Else
-            outboundTotals.Add kOut, shippedFromP2
-        End If
+        
+        MapAddSumDouble outboundTotals, kOut, shippedFromP2
+
     End If
 
 Next rrLocal
@@ -2175,8 +2131,8 @@ For rrLocal = 2 To outUsed
 
     kOut = demandC & "|" & countryC & "|" & colorC & "|" & wkC
 
-    If outboundTotals.Exists(kOut) Then
-        outArr(rrLocal, COL_OUTBOUND) = CDbl(outboundTotals(kOut))
+    If MapExists(outboundTotals, kOut) Then
+        outArr(rrLocal, COL_OUTBOUND) = MapGetDouble(outboundTotals,kOut,0#)
     Else
         outArr(rrLocal, COL_OUTBOUND) = 0
     End If
@@ -2646,6 +2602,7 @@ End Function
 
 '==================== CROSS-PLATFORM MAP ====================
 ' Uses Scripting.Dictionary if available; otherwise falls back to Collection of [key,value] pairs.
+' Values are stored as Variant so you can store Long, Double, String, Date, etc.
 
 Private Function MapCreate() As Object
     'Try Dictionary first (Windows)
@@ -2665,7 +2622,13 @@ Private Function MapCreate() As Object
 End Function
 
 Private Function MapIsDictionary(ByVal m As Object) As Boolean
-    MapIsDictionary = (TypeName(m) = "Dictionary")
+    Dim t As String
+    t = TypeName(m)
+    MapIsDictionary = (t = "Dictionary" Or t = "Scripting.Dictionary")
+End Function
+
+Private Function MapCount(ByVal m As Object) As Long
+    MapCount = m.Count
 End Function
 
 Private Function MapExists(ByVal m As Object, ByVal key As String) As Boolean
@@ -2684,7 +2647,7 @@ Private Function MapExists(ByVal m As Object, ByVal key As String) As Boolean
     End If
 End Function
 
-Private Sub MapAddFirst(ByVal m As Object, ByVal key As String, ByVal value As Long)
+Private Sub MapAddFirst(ByVal m As Object, ByVal key As String, ByVal value As Variant)
     'Add only if missing (first match wins)
     If MapExists(m, key) Then Exit Sub
 
@@ -2697,25 +2660,109 @@ Private Sub MapAddFirst(ByVal m As Object, ByVal key As String, ByVal value As L
     End If
 End Sub
 
-Private Function MapGetLong(ByVal m As Object, ByVal key As String, Optional ByVal defaultValue As Long = 0) As Long
+Private Sub MapSet(ByVal m As Object, ByVal key As String, ByVal value As Variant)
+    'Upsert (set even if key already exists)
     If MapIsDictionary(m) Then
         If m.Exists(key) Then
-            MapGetLong = CLng(m(key))
+            m(key) = value
         Else
-            MapGetLong = defaultValue
+            m.Add key, value
         End If
     Else
         Dim i As Long, pair As Variant
         For i = 1 To m.Count
             pair = m(i)
             If StrComp(CStr(pair(0)), key, vbTextCompare) = 0 Then
-                MapGetLong = CLng(pair(1))
+                'Replace in-place by removing then inserting back at same position
+                m.Remove i
+                m.Add Array(key, value)
+                Exit Sub
+            End If
+        Next i
+        'Not found -> add new
+        m.Add Array(key, value)
+    End If
+End Sub
+
+Private Function MapGetVariant(ByVal m As Object, ByVal key As String, Optional ByVal defaultValue As Variant) As Variant
+    If MapIsDictionary(m) Then
+        If m.Exists(key) Then
+            MapGetVariant = m(key)
+        Else
+            MapGetVariant = defaultValue
+        End If
+    Else
+        Dim i As Long, pair As Variant
+        For i = 1 To m.Count
+            pair = m(i)
+            If StrComp(CStr(pair(0)), key, vbTextCompare) = 0 Then
+                MapGetVariant = pair(1)
                 Exit Function
             End If
         Next i
-        MapGetLong = defaultValue
+        MapGetVariant = defaultValue
     End If
 End Function
+
+Private Function MapGetLong(ByVal m As Object, ByVal key As String, Optional ByVal defaultValue As Long = 0) As Long
+    Dim v As Variant
+    v = MapGetVariant(m, key, defaultValue)
+    On Error Resume Next
+    MapGetLong = CLng(v)
+    If Err.Number <> 0 Then
+        Err.Clear
+        MapGetLong = defaultValue
+    End If
+    On Error GoTo 0
+End Function
+
+Private Function MapGetStr(ByVal m As Object, ByVal key As String, Optional ByVal defaultValue As String = vbNullString) As String
+    Dim v As Variant
+    v = MapGetVariant(m, key, defaultValue)
+    If IsError(v) Or IsNull(v) Then
+        MapGetStr = defaultValue
+    Else
+        MapGetStr = CStr(v)
+    End If
+End Function
+
+Private Function MapGetDouble(ByVal m As Object, ByVal key As String, Optional ByVal defaultValue As Double = 0#) As Double
+    Dim v As Variant
+    v = MapGetVariant(m, key, defaultValue)
+    On Error Resume Next
+    MapGetDouble = CDbl(v)
+    If Err.Number <> 0 Then
+        Err.Clear
+        MapGetDouble = defaultValue
+    End If
+    On Error GoTo 0
+End Function
+
+Private Function MapKeys(ByVal m As Object) As Variant
+    'Returns a Variant array of keys. Safe for both Dictionary and Collection fallback.
+    If MapIsDictionary(m) Then
+        MapKeys = m.Keys
+    Else
+        Dim keys() As Variant
+        Dim i As Long, pair As Variant
+        If m.Count = 0 Then
+            MapKeys = Array()
+            Exit Function
+        End If
+        ReDim keys(0 To m.Count - 1)
+        For i = 1 To m.Count
+            pair = m(i)
+            keys(i - 1) = CStr(pair(0))
+        Next i
+        MapKeys = keys
+    End If
+End Function
+
+Private Sub MapAddSumDouble(ByVal m As Object, ByVal key As String, ByVal addValue As Double)
+    Dim cur As Double
+    cur = MapGetDouble(m, key, 0#)
+    MapSet m, key, (cur + addValue)
+End Sub
 
 '=== Get the "boxes per average order" (need) for a given Color + Box # from the Colors table ===
 Private Function GetNeedFromColorsTable(ByVal colorKey As String, ByVal boxNum As Long) As Double
@@ -2867,12 +2914,13 @@ Private Function GetP1City(ByVal p1Map As Object, ByVal country As String, ByVal
     wsName = "Neptune-" & demandCity
     key = country & "|" & wsName
 
-    If p1Map.Exists(key) Then
-        p1Ws = CStr(p1Map(key))
+    If MapExists(p1Map, key) Then
+        p1Ws = MapGetStr(p1Map, key, vbNullString)
         GetP1City = StripNeptunePrefix(p1Ws)
     Else
         GetP1City = ""
     End If
+
 End Function
 
 Private Function GetP2City(ByVal p2Map As Object, ByVal country As String, ByVal demandCity As String) As String
@@ -2882,12 +2930,13 @@ Private Function GetP2City(ByVal p2Map As Object, ByVal country As String, ByVal
     wsName = "Neptune-" & demandCity
     key = country & "|" & wsName
 
-    If p2Map.Exists(key) Then
-        p2Ws = CStr(p2Map(key))
+    If MapExists(p2Map, key) Then
+        p2Ws = MapGetStr(p2Map, key, vbNullString)
         GetP2City = StripNeptunePrefix(p2Ws)
     Else
         GetP2City = ""
     End If
+
 End Function
 
 
