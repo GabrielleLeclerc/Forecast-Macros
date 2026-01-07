@@ -296,8 +296,7 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_BL_SHIP As Long, COL_AVAIL_POSTBL As Long, COL_BL_P1 As Long
     Dim COL_ORD_SALES_AVAIL As Long, COL_ORD_SALES_DEMAND As Long, COL_ORD_SALES_SHIP As Long
     Dim COL_SALES_SHIP As Long, COL_AVAIL_POSTSALES As Long, COL_SALES_P1 As Long
-    Dim COL_TOT_BL_SHIP As Long, COL_TOT_SALES_SHIP As Long, COL_TOT_SHIP As Long
-
+   
     '--- P1 round columns --- 
     Dim COL_P1_CITY As Long
     Dim COL_P1_AVAIL_POSTLOCAL As Long 
@@ -348,7 +347,16 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_SALES_UNFULFILLED As Long        'Sales_Unfulfilled Bn
 
     Dim COL_UNFULFILLED As Long              'Unfulfilled Bn
-    
+
+    '--- Local shipped rollups (8 columns) ---
+    Dim COL_LBL_FROMLOCAL As Long            'LocalBacklogShipped_FromLocal
+    Dim COL_LS_FROMLOCAL As Long             'LocalSalesShipped_FromLocal
+    Dim COL_LBL_FROMP1 As Long               'LocalBacklogShipped_FromP1
+    Dim COL_LS_FROMP1 As Long                'LocalSalesShipped_FromP1
+    Dim COL_LBL_FROMP2 As Long               'LocalBacklogShipped_FromP2
+    Dim COL_LS_FROMP2 As Long                'LocalSalesShipped_FromP2  
+    Dim COL_TOT_LBL As Long                  'Total_LocalBacklogShipped
+    Dim COL_TOT_LS As Long                   'Total_LocalSalesShipped
 
     '==================== Working variables (declared once) ====================
     
@@ -496,19 +504,6 @@ Sub Boxes_Shipped_Forecast()
         wsDebug.Cells(1, hdrCol).Value = "Sales_P1 B" & b
         hdrCol = hdrCol + 1
     Next b
-
-    '--- Totals (3 columns) ---
-    COL_TOT_BL_SHIP = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "TotalLocalBacklogShipped"
-    hdrCol = hdrCol + 1
-
-    COL_TOT_SALES_SHIP = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "TotalLocalSalesShipped"
-    hdrCol = hdrCol + 1
-
-    COL_TOT_SHIP = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "TotalShipped_FromLocal"
-    hdrCol = hdrCol + 1
 
     '--- P1 City ---
     COL_P1_CITY = hdrCol
@@ -709,6 +704,40 @@ Sub Boxes_Shipped_Forecast()
         hdrCol = hdrCol + 1
     Next b
 
+    '--- Rollup columns at the very end (8 columns) ---
+    
+    COL_LBL_FROMLOCAL = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "LocalBacklogShipped_FromLocal"
+    hdrCol = hdrCol + 1
+    
+    COL_LS_FROMLOCAL = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "LocalSalesShipped_FromLocal"
+    hdrCol = hdrCol + 1
+    
+    COL_LBL_FROMP1 = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "LocalBacklogShipped_FromP1"
+    hdrCol = hdrCol + 1
+    
+    COL_LS_FROMP1 = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "LocalSalesShipped_FromP1"
+    hdrCol = hdrCol + 1
+    
+    COL_LBL_FROMP2 = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "LocalBacklogShipped_FromP2"
+    hdrCol = hdrCol + 1
+    
+    COL_LS_FROMP2 = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "LocalSalesShipped_FromP2"
+    hdrCol = hdrCol + 1
+    
+    COL_TOT_LBL = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "Total_LocalBacklogShipped"
+    hdrCol = hdrCol + 1
+    
+    COL_TOT_LS = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "Total_LocalSalesShipped"
+    hdrCol = hdrCol + 1
+
     '=== FINAL column count (A..last header) ===
     Dim totalCols As Long
     totalCols = hdrCol - 1   'hdrCol is the NEXT empty column
@@ -901,6 +930,15 @@ Sub Boxes_Shipped_Forecast()
                         outArr(outUsed, COL_TOT_ORD_SALESP2_SALES) = 0
                         outArr(outUsed, COL_P2_SHORTFALL_SALES) = 0
                         outArr(outUsed, COL_ORD_SALESP2_SHIP) = 0
+
+                        outArr(outUsed, COL_LBL_FROMLOCAL) = 0
+                        outArr(outUsed, COL_LS_FROMLOCAL) = 0
+                        outArr(outUsed, COL_LBL_FROMP1) = 0
+                        outArr(outUsed, COL_LS_FROMP1) = 0
+                        outArr(outUsed, COL_LBL_FROMP2) = 0
+                        outArr(outUsed, COL_LS_FROMP2) = 0
+                        outArr(outUsed, COL_TOT_LBL) = 0
+                        outArr(outUsed, COL_TOT_LS) = 0
                         
                         '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
                         Dim writeCol As Long
@@ -1142,27 +1180,7 @@ Sub Boxes_Shipped_Forecast()
                         
                             outArr(outUsed, COL_SALES_P1 + (b - 1)) = salesP1
                         Next b
-                                               
-                        '=== Totals across boxes ===
-                        Dim totalBacklogShipped As Double, totalSalesShipped As Double
-                                            
-                        totalBacklogShipped = 0
-                        totalSalesShipped = 0
-                        
-                        'BacklogShipped block starts at: 6 + 5*MAX_BOX
-                        'SalesShipped block starts at:   6 + 8*MAX_BOX
-                        For b = 1 To MAX_BOX
-                            backlogShippedCol = COL_BL_SHIP + (b - 1)
-                            salesShippedCol = COL_SALES_SHIP + (b - 1)
-                        
-                            totalBacklogShipped = totalBacklogShipped + CDbl(outArr(outUsed, backlogShippedCol))
-                            totalSalesShipped = totalSalesShipped + CDbl(outArr(outUsed, salesShippedCol))
-                        Next b
-                        
-                        outArr(outUsed, COL_TOT_BL_SHIP) = totalBacklogShipped
-                        outArr(outUsed, COL_TOT_SALES_SHIP) = totalSalesShipped
-                        outArr(outUsed, COL_TOT_SHIP) = totalBacklogShipped + totalSalesShipped
-                                     
+                                                        
                     Next i
                 Next col
             End If
@@ -1931,6 +1949,52 @@ For rrLocal = 2 To outUsed
 Next rrLocal
 
 '==================== END POST-PASS 15 =====================
+
+'==================== POST-PASS 16: Compute NEW shipped rollups =====================
+
+Dim sumBL_Local As Double, sumSales_Local As Double
+Dim sumBL_P1 As Double, sumSales_P1 As Double
+Dim sumBL_P2 As Double, sumSales_P2 As Double
+
+For rrLocal = 2 To outUsed
+
+    sumBL_Local = 0
+    sumSales_Local = 0
+    sumBL_P1 = 0
+    sumSales_P1 = 0
+    sumBL_P2 = 0
+    sumSales_P2 = 0
+
+    For b = 1 To MAX_BOX
+        'From Local (existing local-round shipped blocks)
+        sumBL_Local = sumBL_Local + CDbl(outArr(rrLocal, COL_BL_SHIP + (b - 1)))
+        sumSales_Local = sumSales_Local + CDbl(outArr(rrLocal, COL_SALES_SHIP + (b - 1)))
+
+        'From P1
+        sumBL_P1 = sumBL_P1 + CDbl(outArr(rrLocal, COL_BL_SHIP_P1 + (b - 1)))
+        sumSales_P1 = sumSales_P1 + CDbl(outArr(rrLocal, COL_SALES_SHIP_P1 + (b - 1)))
+
+        'From P2
+        sumBL_P2 = sumBL_P2 + CDbl(outArr(rrLocal, COL_BL_SHIP_P2 + (b - 1)))
+        sumSales_P2 = sumSales_P2 + CDbl(outArr(rrLocal, COL_SALES_SHIP_P2 + (b - 1))) 
+    Next b
+
+    outArr(rrLocal, COL_LBL_FROMLOCAL) = sumBL_Local
+    outArr(rrLocal, COL_LS_FROMLOCAL) = sumSales_Local
+
+    outArr(rrLocal, COL_LBL_FROMP1) = sumBL_P1
+    outArr(rrLocal, COL_LS_FROMP1) = sumSales_P1
+
+    outArr(rrLocal, COL_LBL_FROMP2) = sumBL_P2
+    outArr(rrLocal, COL_LS_FROMP2) = sumSales_P2
+
+    outArr(rrLocal, COL_TOT_LBL) = sumBL_Local + sumBL_P1 + sumBL_P2
+    outArr(rrLocal, COL_TOT_LS) = sumSales_Local + sumSales_P1 + sumSales_P2
+
+Next rrLocal
+
+
+'==================== END POST-PASS 16 =====================
 
     '=== Dump output array to sheet in one shot ===
     wsDebug.Cells.Clear
