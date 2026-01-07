@@ -161,7 +161,257 @@ End Sub
 '===== Boxes_Shipped_Forecast SUB =====
 
 Sub Boxes_Shipped_Forecast()
+
+'==================== ALL DECLARATIONS ====================
+
     Dim oldCalc As XlCalculation
+
+    'Assumptions + mapping
+    Dim wsA As Worksheet
+    Dim lo As ListObject
+    Dim idxWs As Long, idxCountry As Long
+    Dim idxPartner1 As Long, idxPartner2 As Long
+
+    'Partner maps
+    Dim p1Map As Object, p2Map As Object
+    Dim mapKey As String
+    Dim wsName As String, p1WsName As String, p2WsName As String
+    Dim rP As Long
+
+    'Forecast window
+    Dim forecastStart As Date
+    Dim forecastCutoff As Date
+
+    'Config lists
+    Dim colors As Collection
+    Dim isOptional() As Boolean
+
+    'Debug sheet / headers
+    Dim wsDebug As Worksheet
+    Dim b As Long, hdrCol As Long
+    Dim totalCols As Long
+    Dim h As Long
+
+    'Output buffer
+    Dim outArr() As Variant
+    Dim outCapacity As Long, outUsed As Long
+
+    'Row loop
+    Dim rMap As Long
+    Dim c As Range ' (you currently declare this but never use it; keep or delete everywhere)
+    Dim wsT As Worksheet
+
+    'DO NOT use "Worksheet" as a variable name — rename it
+    Dim sheetName As String   ' <- replaces your Dim Worksheet As String
+
+    'Section tables + indexes
+    Dim salesTbl As Range, begTbl As Range, endTbl As Range, poTbl As Range
+    Dim salesIdx As Variant, begIdx As Variant, endIdx As Variant, poIdx As Variant
+    Dim salesMap As Object, begMap As Object, poMap As Object
+
+    'Forecast column scan
+    Dim startCol As Long, lastCol As Long, col As Long
+    Dim colLetter As String
+
+    'Color loop + need array
+    Dim i As Long
+    Dim need() As Double
+
+    'Row write helpers
+    Dim writeCol As Long
+    Dim rr As Long
+    Dim key As String
+    Dim begCol As Long, ibCol As Long
+    Dim sumAvail As Double
+    Dim begVal As Double
+
+    'Shared business keys used everywhere
+    Dim demandCity As String
+    Dim country As String
+    Dim colorKey As String
+
+    '==================== COLUMN STARTS ====================
+    Dim COL_SALES As Long, COL_BEG As Long, COL_IB As Long, COL_AVAIL As Long, COL_BACKLOG As Long
+    Dim COL_NEED As Long
+    Dim COL_ORD_BL_AVAIL As Long, COL_ORD_BL_BACKLOG As Long, COL_ORD_BL_SHIP As Long
+    Dim COL_BL_SHIP As Long, COL_AVAIL_POSTBL As Long, COL_BL_P1 As Long
+    Dim COL_ORD_SALES_AVAIL As Long, COL_ORD_SALES_DEMAND As Long, COL_ORD_SALES_SHIP As Long
+    Dim COL_SALES_SHIP As Long, COL_AVAIL_POSTSALES As Long, COL_SALES_P1 As Long
+
+    Dim COL_P1_CITY As Long
+    Dim COL_P1_AVAIL_POSTLOCAL As Long
+    Dim COL_ORD_P1_AVAIL As Long
+    Dim COL_ORD_P1_BACKLOG As Long
+    Dim COL_TOT_ORD_P1_BACKLOG As Long
+    Dim COL_P1_SHORTFALL As Long
+    Dim COL_ORD_P1_SHIP As Long
+    Dim COL_BL_SHIP_P1 As Long
+    Dim COL_P1_AVAIL_POSTBL As Long
+    Dim COL_BL_P2 As Long
+
+    Dim COL_ORD_SALESP1_AVAIL As Long
+    Dim COL_ORD_SALESP1_SALES As Long
+    Dim COL_TOT_ORD_SALESP1_SALES As Long
+    Dim COL_P1_SHORTFALL_SALES As Long
+    Dim COL_ORD_SALESP1_SHIP As Long
+    Dim COL_SALES_SHIP_P1 As Long
+    Dim COL_P1_AVAIL_POSTSALES As Long
+    Dim COL_SALES_P2 As Long
+
+    Dim COL_P2_CITY As Long
+    Dim COL_P2_AVAIL_POSTP1SALES As Long
+    Dim COL_ORD_P2_AVAIL As Long
+    Dim COL_ORD_P2_BACKLOG As Long
+    Dim COL_TOT_ORD_P2_BACKLOG As Long
+    Dim COL_P2_SHORTFALL_BL As Long
+    Dim COL_ORD_P2_SHIP_BL As Long
+    Dim COL_BL_SHIP_P2 As Long
+    Dim COL_P2_AVAIL_POSTBL As Long
+    Dim COL_BL_UNFULFILLED As Long
+    Dim COL_ORD_SALESP2_AVAIL As Long
+    Dim COL_ORD_SALESP2_SALES As Long
+    Dim COL_TOT_ORD_SALESP2_SALES As Long
+    Dim COL_P2_SHORTFALL_SALES As Long
+    Dim COL_ORD_SALESP2_SHIP As Long
+    Dim COL_SALES_SHIP_P2 As Long
+    Dim COL_P2_AVAIL_POSTSALES As Long
+    Dim COL_SALES_UNFULFILLED As Long
+    Dim COL_UNFULFILLED As Long
+
+    Dim COL_LBL_FROMLOCAL As Long
+    Dim COL_LS_FROMLOCAL As Long
+    Dim COL_LBL_FROMP1 As Long
+    Dim COL_LS_FROMP1 As Long
+    Dim COL_LBL_FROMP2 As Long
+    Dim COL_LS_FROMP2 As Long
+    Dim COL_TOT_LBL As Long
+    Dim COL_TOT_LS As Long
+    Dim COL_OUTBOUND As Long
+
+    '==================== WEEK ENGINE INDEXING ====================
+    Dim rowLookup As Object
+    Dim rrLocal As Long, rrPrev As Long
+    Dim keyLocal As String, keyPrev As String
+
+    Dim weekDict As Object
+    Dim wkDate As Date, wkKey As String
+    Dim weeks() As Date, wkCount As Long, iWk As Long
+    Dim tmpK As Variant, idx As Long
+    Dim a As Long, j As Long
+    Dim t As Date
+    Dim wkStart As Date
+    Dim needVal As Double
+
+    'Local round computations
+    Dim ordersFromAvail As Double, ordersFromBacklog As Double, ordersShipped_Backlog As Double
+    Dim ordersFromAvail2 As Double, ordersFromSales As Double, ordersShipped_Sales As Double
+    Dim availVal As Double, backlogVal As Double, salesVal As Double
+
+    Dim desiredBL As Double, shippedBL As Double, availPost As Double, blP1 As Double
+    Dim desiredS As Double, shippedS As Double, availPostSales As Double, sP1 As Double
+    Dim baselineBL As Double, prevUnf As Double
+
+    'P1 fill + passes
+    Dim rrP1 As Long
+    Dim p1City As String, keyP1 As String
+
+    Dim ordersFromAvailP1 As Double
+    Dim ordersFromBacklogP1 As Double
+    Dim ordersShipped_BacklogP1 As Double
+    Dim p1AvailVal As Double, blP1Val As Double
+    Dim needValP1Orders As Double
+
+    Dim p1BacklogTotals As Object
+    Dim kTot As String
+    Dim totVal As Double
+    Dim shortfallP1 As Double
+
+    Dim ordersShippedP1 As Double
+    Dim needValP1 As Double
+    Dim shippedP1 As Double
+    Dim p1AvailPostLocalVal As Double
+    Dim p1AvailPostBacklogVal As Double
+    Dim blP1BoxVal As Double
+    Dim blP2Val As Double
+    Dim desiredP1 As Double
+
+    Dim ordersFromAvailSalesP1 As Double
+    Dim ordersFromSalesP1 As Double
+    Dim ordersShipped_SalesP1 As Double
+    Dim p1AvailPostBL_Val As Double, salesP1Val_Box As Double
+    Dim needValSalesP1 As Double
+
+    Dim p1SalesTotals As Object
+    Dim kSalesTot As String
+    Dim totSalesVal As Double
+    Dim shortfallSales As Double
+
+    Dim ordersShippedSalesP1 As Double
+    Dim desiredSalesShipP1 As Double
+    Dim shippedSalesP1 As Double
+    Dim p1AvailPostBL_Box As Double
+    Dim p1AvailPostSales_Box As Double
+    Dim salesP2_Box As Double
+    Dim needValShip As Double
+
+    'P2 fill + passes
+    Dim p1CityRow As Object
+    Dim kP1City As String
+
+    Dim p2City As String
+    Dim kP2City As String
+    Dim rrRep As Long
+    Dim rrP2Local As Long
+
+    Dim ordersFromAvailP2 As Double
+    Dim ordersFromBacklogP2 As Double
+    Dim ordersShipped_BacklogP2 As Double
+    Dim p2AvailVal As Double, blP2BoxVal As Double, needValP2 As Double
+
+    Dim p2BacklogTotals As Object
+    Dim p2TotKey As String
+    Dim totP2BL As Double
+    Dim shortfallP2BL As Double
+
+    Dim ordersShippedP2BL As Double
+    Dim desiredP2BL As Double
+    Dim shippedP2BL As Double
+    Dim p2AvailStart As Double
+    Dim p2AvailAfterBL As Double
+    Dim blUnf As Double
+
+    Dim ordersFromAvailSalesP2 As Double
+    Dim ordersFromSalesP2 As Double
+    Dim ordersShipped_SalesP2 As Double
+    Dim p2AvailPostBL_Box As Double, salesP2Val_Box As Double, needValSalesP2 As Double
+
+    Dim p2SalesTotals As Object
+    Dim p2SalesKey As String
+    Dim totP2Sales As Double
+    Dim shortfallP2Sales As Double
+
+    Dim ordersShippedP2Sales As Double
+    Dim desiredP2Sales As Double
+    Dim shippedP2Sales As Double
+    Dim p2AvailPostSales_Box As Double
+    Dim salesUnf As Double
+
+    Dim unf As Double
+
+    'Post-pass 16 rollups
+    Dim sumBL_Local As Double, sumSales_Local As Double
+    Dim sumBL_P1 As Double, sumSales_P1 As Double
+    Dim sumBL_P2 As Double, sumSales_P2 As Double
+
+    'Post-pass 17 outbound totals
+    Dim outboundTotals As Object
+    Dim kOut As String
+    Dim demandC As String, countryC As String, colorC As String, wkC As String
+    Dim p1C As String, p2C As String
+    Dim shippedLocal As Double, shippedFromP1 As Double, shippedFromP2 As Double
+
+    '==================== END DECLARATIONS ====================
+
     oldCalc = Application.Calculation
     
     Application.ScreenUpdating = False
@@ -171,17 +421,15 @@ Sub Boxes_Shipped_Forecast()
 
     InitConfig
 
-    Dim wsA As Worksheet: Set wsA = ThisWorkbook.Worksheets(CFG_ASSUMPTIONS_SHEET)
+    Set wsA = ThisWorkbook.Worksheets(CFG_ASSUMPTIONS_SHEET)
 
     'Worksheet mapping table: find by headers (Worksheet + Country), name can vary
-    Dim lo As ListObject
     Set lo = FindTableByHeaders(Array("Worksheet", "Country"), CFG_TABLE_WORKSHEETS_PREFERRED)
     If lo Is Nothing Then
         MsgBox "Could not find worksheet mapping table (needs columns like Worksheet/Sheet and Country/Market).", vbExclamation
         Exit Sub
     End If
 
-    Dim idxWs As Long, idxCountry As Long
     idxWs = GetListColumnIndexByAliases(lo, CFG_WORKSHEET_HEADERS)
     idxCountry = GetListColumnIndexByAliases(lo, CFG_COUNTRY_HEADERS)
     If idxWs = 0 Or idxCountry = 0 Then
@@ -190,7 +438,6 @@ Sub Boxes_Shipped_Forecast()
     End If
 
     '=== Build Partner City 1 lookup map from WorksheetNames ===
-    Dim idxPartner1 As Long
     idxPartner1 = GetListColumnIndexByAliases(lo, Array("Partner City 1", "PartnerCity1", "P1", "P1 City"))
     
     If idxPartner1 = 0 Then
@@ -198,7 +445,6 @@ Sub Boxes_Shipped_Forecast()
         Exit Sub
     End If
     
-    Dim p1Map As Object
     On Error Resume Next
     Set p1Map = CreateObject("Scripting.Dictionary")
     On Error GoTo 0
@@ -209,10 +455,6 @@ Sub Boxes_Shipped_Forecast()
     End If
     
     p1Map.CompareMode = 1 'vbTextCompare
-    
-    Dim mapKey As String
-    Dim wsName As String, p1WsName As String
-    Dim rP As Long
     
     For rP = 1 To lo.DataBodyRange.Rows.Count
         wsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxWs).Value))
@@ -227,7 +469,6 @@ Sub Boxes_Shipped_Forecast()
     Next rP
     
     '=== Build Partner City 2 lookup map from WorksheetNames ===
-    Dim idxPartner2 As Long
     idxPartner2 = GetListColumnIndexByAliases(lo, Array("Partner City 2", "PartnerCity2", "P2", "P2 City"))
     
     If idxPartner2 = 0 Then
@@ -235,7 +476,6 @@ Sub Boxes_Shipped_Forecast()
         Exit Sub
     End If
     
-    Dim p2Map As Object
     On Error Resume Next
     Set p2Map = CreateObject("Scripting.Dictionary")
     On Error GoTo 0
@@ -246,8 +486,6 @@ Sub Boxes_Shipped_Forecast()
     End If
     
     p2Map.CompareMode = 1 'vbTextCompare
-    
-    Dim p2WsName As String
     
     For rP = 1 To lo.DataBodyRange.Rows.Count
         wsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxWs).Value))
@@ -262,15 +500,12 @@ Sub Boxes_Shipped_Forecast()
     Next rP
 
     '=== Forecast start date from assumptions ===
-    Dim forecastStart As Date
-    forecastStart = CDate(wsA.Range(CFG_FORECAST_START_CELL).Value)
+     forecastStart = CDate(wsA.Range(CFG_FORECAST_START_CELL).Value)
 
     '=== Only run 1 year forward ===
-    Dim forecastCutoff As Date
     forecastCutoff = DateAdd("yyyy", 1, forecastStart)   'example: 2025-12-08 -> 2026-12-08, if we want 6 months instead of 1 year of forecast, change this line to: forecastCutoff = DateAdd("m", 6, forecastStart)
 
     '=== Active colors list from table "Colors" (Status = Active) ===
-    Dim colors As Collection
     Set colors = GetActiveColors_Configured()
 
     If colors.Count = 0 Then
@@ -285,95 +520,15 @@ Sub Boxes_Shipped_Forecast()
         Exit Sub
     End If
 
-    Dim isOptional() As Boolean
     isOptional = GetIsOptionalByBox_Configured(MAX_BOX)
-
-
-    '=== Pre-calc column starts (only once) ===
-    Dim COL_SALES As Long, COL_BEG As Long, COL_IB As Long, COL_AVAIL As Long, COL_BACKLOG As Long
-    Dim COL_NEED As Long
-    Dim COL_ORD_BL_AVAIL As Long, COL_ORD_BL_BACKLOG As Long, COL_ORD_BL_SHIP As Long
-    Dim COL_BL_SHIP As Long, COL_AVAIL_POSTBL As Long, COL_BL_P1 As Long
-    Dim COL_ORD_SALES_AVAIL As Long, COL_ORD_SALES_DEMAND As Long, COL_ORD_SALES_SHIP As Long
-    Dim COL_SALES_SHIP As Long, COL_AVAIL_POSTSALES As Long, COL_SALES_P1 As Long
-   
-    '--- P1 round columns --- 
-    Dim COL_P1_CITY As Long
-    Dim COL_P1_AVAIL_POSTLOCAL As Long 
-
-    Dim COL_ORD_P1_AVAIL As Long
-    Dim COL_ORD_P1_BACKLOG As Long
-    Dim COL_TOT_ORD_P1_BACKLOG As Long
-    Dim COL_P1_SHORTFALL As Long 
-    Dim COL_ORD_P1_SHIP As Long
-
-    Dim COL_BL_SHIP_P1 As Long              'BacklogShipped_P1 Bn
-    Dim COL_P1_AVAIL_POSTBL As Long         'P1AvailStock_PostBacklog Bn  (renamed)
-    Dim COL_BL_P2 As Long                   'Backlog_P2 Bn
-
-    Dim COL_ORD_SALESP1_AVAIL As Long
-    Dim COL_ORD_SALESP1_SALES As Long
-    Dim COL_TOT_ORD_SALESP1_SALES As Long
-    Dim COL_P1_SHORTFALL_SALES As Long
-    Dim COL_ORD_SALESP1_SHIP As Long
-
-    Dim COL_SALES_SHIP_P1 As Long          'SalesShipped_P1 Bn
-    Dim COL_P1_AVAIL_POSTSALES As Long     'P1AvailStock_PostSales Bn
-    Dim COL_SALES_P2 As Long               'Sales_P2 Bn
-
-    '--- P2 round columns ---
-    Dim COL_P2_CITY As Long
-    
-    Dim COL_P2_AVAIL_POSTP1SALES As Long     'P2AvailStock_PostP1Sales Bn
-    
-    Dim COL_ORD_P2_AVAIL As Long             'Orders_BacklogP2_LimitByAvail
-    Dim COL_ORD_P2_BACKLOG As Long           'Orders_BacklogP2_LimitByBacklogP2
-    Dim COL_TOT_ORD_P2_BACKLOG As Long       'TotalOrders_BacklogP2_LimitByBacklogP2
-    Dim COL_P2_SHORTFALL_BL As Long          'P2Shortfall_BacklogOrders
-    Dim COL_ORD_P2_SHIP_BL As Long           'OrdersShipped_BacklogP2
-    
-    Dim COL_BL_SHIP_P2 As Long               'BacklogShipped_P2 Bn
-    Dim COL_P2_AVAIL_POSTBL As Long          'P2AvailStock_PostBacklog Bn
-    Dim COL_BL_UNFULFILLED As Long           'Backlog_Unfulfilled Bn
-    
-    Dim COL_ORD_SALESP2_AVAIL As Long        'Orders_SalesP2_LimitByAvail
-    Dim COL_ORD_SALESP2_SALES As Long        'Orders_SalesP2_LimitBySalesP2
-    Dim COL_TOT_ORD_SALESP2_SALES As Long    'TotalOrders_SalesP2_LimitBySalesP2
-    Dim COL_P2_SHORTFALL_SALES As Long       'P2Shortfall_SalesOrders
-    Dim COL_ORD_SALESP2_SHIP As Long         'OrdersShipped_SalesP2
-    
-    Dim COL_SALES_SHIP_P2 As Long            'SalesShipped_P2 Bn
-    Dim COL_P2_AVAIL_POSTSALES As Long       'P2AvailStock_PostSales Bn
-    Dim COL_SALES_UNFULFILLED As Long        'Sales_Unfulfilled Bn
-
-    Dim COL_UNFULFILLED As Long              'Unfulfilled Bn
-
-    '--- Local shipped rollups (8 columns) ---
-    Dim COL_LBL_FROMLOCAL As Long            'LocalBacklogShipped_FromLocal
-    Dim COL_LS_FROMLOCAL As Long             'LocalSalesShipped_FromLocal
-    Dim COL_LBL_FROMP1 As Long               'LocalBacklogShipped_FromP1
-    Dim COL_LS_FROMP1 As Long                'LocalSalesShipped_FromP1
-    Dim COL_LBL_FROMP2 As Long               'LocalBacklogShipped_FromP2
-    Dim COL_LS_FROMP2 As Long                'LocalSalesShipped_FromP2  
-    Dim COL_TOT_LBL As Long                  'Total_LocalBacklogShipped
-    Dim COL_TOT_LS As Long                   'Total_LocalSalesShipped
-    Dim COL_OUTBOUND As Long              'Total outbound boxes for Demand City (Local + as P1 + as P2)
 
     '==================== Working variables (declared once) ====================
     
     'Column index helpers used in Round 1/2 calculations
     Dim availCol As Long, backlogCol As Long, backlogShippedCol As Long
     Dim salesCol As Long, availPostBacklogCol As Long, salesShippedCol As Long
-    
-    'Numeric values used in Round 1/2 calculations
-    Dim availVal As Double, backlogVal As Double
-    Dim shippedBacklog As Double, availPost As Double, backlogP1 As Double
-    
-    Dim salesVal As Double, availPostBacklogVal As Double
-    Dim shippedSales As Double, availPostSales As Double, salesP1 As Double
-                       
+                          
     '=== Set up / create the Debug sheet and the output row counter ===
-    Dim wsDebug As Worksheet
     On Error Resume Next
     Set wsDebug = ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG")
     On Error GoTo 0
@@ -392,8 +547,6 @@ Sub Boxes_Shipped_Forecast()
     wsDebug.Range("F1").value = "Col"
 
     '=== NEW: Add box columns ===
-    Dim b As Long, hdrCol As Long
-
     hdrCol = 7 ' Column G = first new header
 
     '--- Sales B1..Bn ---
@@ -745,17 +898,13 @@ Sub Boxes_Shipped_Forecast()
     hdrCol = hdrCol + 1
 
     '=== FINAL column count (A..last header) ===
-    Dim totalCols As Long
     totalCols = hdrCol - 1   'hdrCol is the NEXT empty column
     
     '=== Output buffer (write once at the end) ===
-    Dim outArr() As Variant
-    Dim outCapacity As Long, outUsed As Long
     outCapacity = 5000
     ReDim outArr(1 To outCapacity, 1 To totalCols)
     
     '=== Copy headers into outArr row 1 ===
-    Dim h As Long
     For h = 1 To totalCols
         outArr(1, h) = wsDebug.Cells(1, h).value
     Next h
@@ -766,34 +915,26 @@ Sub Boxes_Shipped_Forecast()
     'Row 1 in outArr is headers. Data starts at row 2.
     outUsed = 1
     
-    Dim c As Range
-    Dim rMap As Long
     For rMap = 1 To lo.DataBodyRange.Rows.Count
 
-        Dim Worksheet As String
-        Worksheet = Trim$(CStr(lo.DataBodyRange.Cells(rMap, idxWs).Value))
-        If Len(Worksheet) = 0 Then GoTo NextOne
+        sheetName = Trim$(CStr(lo.DataBodyRange.Cells(rMap, idxWs).Value))
+        If Len(sheetName) = 0 Then GoTo NextOne
 
-        Dim country As String
         country = Trim$(CStr(lo.DataBodyRange.Cells(rMap, idxCountry).Value))
 
-
-        Dim wsT As Worksheet
         On Error Resume Next
-        Set wsT = ThisWorkbook.Worksheets(Worksheet)
+        Set wsT = ThisWorkbook.Worksheets(sheetName)
         On Error GoTo 0
         
         If wsT Is Nothing Then
-            Debug.Print "Missing sheet:", Worksheet
+            Debug.Print "Missing sheet:", sheetName
         Else
             Debug.Print "Reading:", wsT.Name, "A1=", wsT.Range("A1").value
 
-            Dim demandCity As String
             demandCity = DemandCityFromSheetName(wsT.Name)
 
             '=== NEW: Build section tables (ranges) from column C headers ===
-            Dim salesTbl As Range, begTbl As Range, endTbl As Range, poTbl As Range
-            
+               
             Set salesTbl = BuildSectionTable_Block(wsT, "Sales")
             Set begTbl = BuildSectionTable_Block(wsT, "Beginning Stock")
             Set endTbl = BuildSectionTable_Block(wsT, "Ending Stock")
@@ -806,21 +947,18 @@ Sub Boxes_Shipped_Forecast()
             If poTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'POs to be received'"
 
             '=== Build section INDEX tables (Color+Box -> Row) ===
-            Dim salesIdx As Variant, begIdx As Variant, endIdx As Variant, poIdx As Variant
-            
+               
             salesIdx = BuildSectionIndex_FromRange(salesTbl)
             begIdx = BuildSectionIndex_FromRange(begTbl)
             endIdx = BuildSectionIndex_FromRange(endTbl)
             poIdx = BuildSectionIndex_FromRange(poTbl)
 
             '=== FAST MAPS (Color|Box -> Row) to avoid scanning arrays repeatedly ===
-            Dim salesMap As Object, begMap As Object, poMap As Object
             Set salesMap = BuildRowMap(salesIdx)
             Set begMap = BuildRowMap(begIdx)
             Set poMap = BuildRowMap(poIdx)
             
             '=== Find the forecast start column on row 2 (match forecastStart) ===
-            Dim startCol As Long, lastCol As Long, col As Long
             startCol = 0
             
             lastCol = wsT.Cells(2, wsT.Columns.Count).End(xlToLeft).Column
@@ -844,17 +982,13 @@ Sub Boxes_Shipped_Forecast()
                     '=== Stop once Week Start is at/after the cutoff ===
                     If DateValue(wsT.Cells(2, col).Value) >= DateValue(forecastCutoff) Then Exit For
                     
-                    Dim colLetter As String
                     colLetter = Split(wsT.Cells(1, col).Address(False, False), "1")(0)
-                    
-                    Dim i As Long
+
                     For i = 1 To colors.Count
                         
-                        Dim colorKey As String
                         colorKey = NormalizeColor(colors(i))  ' make sure it matches index normalization
 
                         '=== Load "need per order" for this color (Box 1..MAX_BOX) from Colors table ===
-                        Dim need() As Double
                         ReDim need(1 To MAX_BOX)
                         
                         For b = 1 To MAX_BOX
@@ -948,13 +1082,9 @@ Sub Boxes_Shipped_Forecast()
                         outArr(outUsed, COL_OUTBOUND) = 0
                         
                         '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
-                        Dim writeCol As Long
-                        writeCol = COL_SALES
-                        
-                        Dim rr As Long, v As Variant
-                        
+                         writeCol = COL_SALES
+                                              
                         '--- Sales B1..Bn ---
-                        Dim key As String
                         For b = 1 To MAX_BOX
                             key = colorKey & "|" & CStr(b)
                         
@@ -999,10 +1129,7 @@ Sub Boxes_Shipped_Forecast()
                             writeCol = writeCol + 1
                         Next b
 
-                        '--- AvailStock B1..Bn = MAX(0, Beg Stock + IB) ---
-                        Dim begCol As Long, ibCol As Long
-                        Dim sumAvail As Double
-                        
+                        '--- AvailStock B1..Bn = MAX(0, Beg Stock + IB) ---                       
                         For b = 1 To MAX_BOX
                             begCol = COL_BEG + (b - 1)         'Beg Stock block starts after Sales
                             ibCol = COL_IB + (b - 1)    'IB block starts after Sales+Beg
@@ -1019,18 +1146,17 @@ Sub Boxes_Shipped_Forecast()
                             writeCol = writeCol + 1
                         Next b
 
-                        '--- Backlog B1..Bn = IF(Beg Stock < 0, ABS(Beg Stock), 0) ---
-                        Dim begVal As Double
+                       '--- Backlog B1..Bn (TEMP = baseline backlog from Beg Stock; rolling backlog applied later) ---
                         For b = 1 To MAX_BOX
-                            begCol = COL_BEG + (b - 1) 'same begCol logic as above
-
+                            begCol = COL_BEG + (b - 1)
+                        
                             begVal = CDbl(outArr(outUsed, begCol))
                             If begVal < 0 Then
-                                outArr(outUsed, writeCol) = Abs(begVal)
+                                outArr(outUsed, writeCol) = Abs(begVal)   'baseline backlog
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
-
+                        
                             writeCol = writeCol + 1
                         Next b
 
@@ -1038,156 +1164,27 @@ Sub Boxes_Shipped_Forecast()
                         For b = 1 To MAX_BOX
                             outArr(outUsed, writeCol) = need(b)
                             writeCol = writeCol + 1
-                        Next b
-                        
-                        '=== Allocation Round 1 (Backlog-first) using WHOLE ORDERS ===
-                        'We compute ONE shared ordersShipped_Backlog for this (week,color),
-                        'limited by the first box type to run out (min across boxes).
-                        
-                        Dim ordersFromAvail As Double
-                        Dim ordersFromBacklog As Double
-                        Dim ordersShipped_Backlog As Double
-                        
-                        ordersFromAvail = 1E+30
-                        ordersFromBacklog = 1E+30
-                        
-                        'Figure out max whole orders supported by availability and backlog (across all boxes)
-                        For b = 1 To MAX_BOX
-                            'ONLY required boxes constrain how many full orders we can ship
-                            If Not isOptional(b) Then
-                                availCol = COL_AVAIL + (b - 1)
-                                backlogCol = COL_BACKLOG + (b - 1)
-                        
-                                availVal = CDbl(outArr(outUsed, availCol))
-                                backlogVal = CDbl(outArr(outUsed, backlogCol))
-                        
-                                ordersFromAvail = Application.Min(ordersFromAvail, OrdersFromQty(availVal, need(b)))
-                                ordersFromBacklog = Application.Min(ordersFromBacklog, OrdersFromQty(backlogVal, need(b)))
+                        Next b  
 
-                            End If
+                        '=== INIT (Local rounds now computed later in week-by-week pass) ===
+                        outArr(outUsed, COL_ORD_BL_AVAIL) = 0
+                        outArr(outUsed, COL_ORD_BL_BACKLOG) = 0
+                        outArr(outUsed, COL_ORD_BL_SHIP) = 0
+                        
+                        outArr(outUsed, COL_ORD_SALES_AVAIL) = 0
+                        outArr(outUsed, COL_ORD_SALES_DEMAND) = 0
+                        outArr(outUsed, COL_ORD_SALES_SHIP) = 0
+                        
+                        For b = 1 To MAX_BOX
+                            outArr(outUsed, COL_BL_SHIP + (b - 1)) = 0
+                            outArr(outUsed, COL_AVAIL_POSTBL + (b - 1)) = 0
+                            outArr(outUsed, COL_BL_P1 + (b - 1)) = 0
+                        
+                            outArr(outUsed, COL_SALES_SHIP + (b - 1)) = 0
+                            outArr(outUsed, COL_AVAIL_POSTSALES + (b - 1)) = 0
+                            outArr(outUsed, COL_SALES_P1 + (b - 1)) = 0
                         Next b
 
-                        
-                        ordersShipped_Backlog = Application.Min(ordersFromAvail, ordersFromBacklog)
-                                              
-                        '=== Write backlog order-debug values into the fixed columns ===
-                        outArr(outUsed, COL_ORD_BL_AVAIL) = WorksheetFunction.Round(ordersFromAvail, 2)
-                        outArr(outUsed, COL_ORD_BL_BACKLOG) = WorksheetFunction.Round(ordersFromBacklog, 2)
-                        outArr(outUsed, COL_ORD_BL_SHIP) = WorksheetFunction.Round(ordersShipped_Backlog, 2)
-
-                        '--- BacklogShipped B1..Bn = ordersShipped_Backlog * need(b) ---
-                        For b = 1 To MAX_BOX
-                            Dim desiredBL As Double, shippedBL As Double
-                            desiredBL = ordersShipped_Backlog * need(b)
-                        
-                            If isOptional(b) Then
-                                'Optional box: ship up to what we have available
-                                availVal = CDbl(outArr(outUsed, COL_AVAIL + (b - 1)))
-                                shippedBL = Application.Min(availVal, desiredBL)
-                            Else
-                                'Required box: if we ship the order, it consumes this box qty
-                                shippedBL = desiredBL
-                            End If
-                        
-                            outArr(outUsed, COL_BL_SHIP + (b - 1)) = shippedBL
-                        Next b                        
-                                            
-                        '--- AvailStock_PostBacklog B1..Bn = AvailStock - BacklogShipped ---
-                        For b = 1 To MAX_BOX
-                            availCol = COL_AVAIL + (b - 1)
-                            backlogShippedCol = COL_BL_SHIP + (b - 1)
-                        
-                            availPost = CDbl(outArr(outUsed, availCol)) - CDbl(outArr(outUsed, backlogShippedCol))
-                            If availPost < 0 Then availPost = 0
-                        
-                            outArr(outUsed, COL_AVAIL_POSTBL + (b - 1)) = availPost
-                        Next b
-                        
-                        '--- Backlog_P1 B1..Bn = Backlog - BacklogShipped ---
-                        For b = 1 To MAX_BOX
-                            backlogCol = COL_BACKLOG + (b - 1)
-                            backlogShippedCol = COL_BL_SHIP + (b - 1)
-                        
-                            backlogP1 = CDbl(outArr(outUsed, backlogCol)) - CDbl(outArr(outUsed, backlogShippedCol))
-                            If backlogP1 < 0 Then backlogP1 = 0
-                        
-                            outArr(outUsed, COL_BL_P1 + (b - 1)) = backlogP1
-                        Next b
-                        
-                        
-                        '=== Allocation Round 2 (Sales after backlog) using WHOLE ORDERS ===
-                        'We compute ONE shared ordersShipped_Sales for this (week,color),
-                        'limited by remaining availability and sales demand (converted to orders).
-                        
-                        Dim ordersFromAvail2 As Double
-                        Dim ordersFromSales As Double
-                        Dim ordersShipped_Sales As Double
-                        
-                        ordersFromAvail2 = 1E+30
-                        ordersFromSales = 1E+30
-
-                        
-                        For b = 1 To MAX_BOX
-                            'ONLY required boxes constrain order count
-                            If Not isOptional(b) Then
-                                salesCol = COL_SALES + (b - 1)
-                                availPostBacklogCol = COL_AVAIL_POSTBL + (b - 1)
-                        
-                                salesVal = CDbl(outArr(outUsed, salesCol))
-                                availPostBacklogVal = CDbl(outArr(outUsed, availPostBacklogCol))
-                        
-                                ordersFromAvail2 = Application.Min(ordersFromAvail2, OrdersFromQty(availPostBacklogVal, need(b)))
-                                ordersFromSales = Application.Min(ordersFromSales, OrdersFromQty(salesVal, need(b)))
-
-                            End If
-                        Next b
-
-                        
-                        ordersShipped_Sales = Application.Min(ordersFromAvail2, ordersFromSales)
-                        
-                        '=== Write sales order-debug values into the fixed columns ===
-                        outArr(outUsed, COL_ORD_SALES_AVAIL) = WorksheetFunction.Round(ordersFromAvail2, 2)
-                        outArr(outUsed, COL_ORD_SALES_DEMAND) = WorksheetFunction.Round(ordersFromSales, 2)
-                        outArr(outUsed, COL_ORD_SALES_SHIP) = WorksheetFunction.Round(ordersShipped_Sales, 2)
-                        
-                        '--- SalesShipped B1..Bn = ordersShipped_Sales * need(b) ---
-                        For b = 1 To MAX_BOX
-                            Dim desiredS As Double, shippedS As Double
-                            desiredS = ordersShipped_Sales * need(b)
-                        
-                            If isOptional(b) Then
-                                'Optional box: ship up to remaining availability after backlog
-                                availPostBacklogVal = CDbl(outArr(outUsed, COL_AVAIL_POSTBL + (b - 1)))
-                                shippedS = Application.Min(availPostBacklogVal, desiredS)
-                            Else
-                                shippedS = desiredS
-                            End If
-                        
-                            outArr(outUsed, COL_SALES_SHIP + (b - 1)) = shippedS
-                        Next b
-                        
-                        '--- AvailStock_PostSales B1..Bn = AvailStock_PostBacklog - SalesShipped ---
-                        For b = 1 To MAX_BOX
-                            availPostBacklogCol = COL_AVAIL_POSTBL + (b - 1)
-                            salesShippedCol = COL_SALES_SHIP + (b - 1)
-                        
-                            availPostSales = CDbl(outArr(outUsed, availPostBacklogCol)) - CDbl(outArr(outUsed, salesShippedCol))
-                            If availPostSales < 0 Then availPostSales = 0
-                        
-                            outArr(outUsed, COL_AVAIL_POSTSALES + (b - 1)) = availPostSales
-                        Next b
-                        
-                        '--- Sales_P1 B1..Bn = Sales - SalesShipped ---
-                        For b = 1 To MAX_BOX
-                            salesCol = COL_SALES + (b - 1)
-                            salesShippedCol = COL_SALES_SHIP + (b - 1)
-                        
-                            salesP1 = CDbl(outArr(outUsed, salesCol)) - CDbl(outArr(outUsed, salesShippedCol))
-                            If salesP1 < 0 Then salesP1 = 0
-                        
-                            outArr(outUsed, COL_SALES_P1 + (b - 1)) = salesP1
-                        Next b
-                                                        
                     Next i
                 Next col
             End If
@@ -1197,14 +1194,10 @@ NextOne:
         Set wsT = Nothing
     Next rMap
 
-'==================== POST-PASS: Fill P1AvailStock_PostLocal =====================
-Dim rowLookup As Object
+'==================== WEEK-BY-WEEK ENGINE (replaces POST-PASS 1..15) =====================
+
 Set rowLookup = CreateObject("Scripting.Dictionary")
 rowLookup.CompareMode = 1 'vbTextCompare
-
-Dim rrLocal As Long, rrP1 As Long
-Dim keyLocal As String, keyP1 As String
-Dim p1City As String
 
 'Index every row by DemandCity|Country|Color|WeekStart
 For rrLocal = 2 To outUsed
@@ -1212,44 +1205,235 @@ For rrLocal = 2 To outUsed
                CStr(outArr(rrLocal, 2)) & "|" & _
                NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
                Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
-    
+
     If Not rowLookup.Exists(keyLocal) Then
         rowLookup.Add keyLocal, rrLocal
     End If
 Next rrLocal
 
-'Fill each row's P1AvailStock_PostLocal from the P1 city's AvailStock_PostSales
+'--- Build sorted unique list of WeekStart dates present in outArr ---
+Set weekDict = CreateObject("Scripting.Dictionary")
+weekDict.CompareMode = 1
+
 For rrLocal = 2 To outUsed
-    
-    p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
-    If Len(p1City) = 0 Then GoTo NextFill
-    
-    keyP1 = p1City & "|" & _
-            CStr(outArr(rrLocal, 2)) & "|" & _
-            NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
-            Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
-    
-    If rowLookup.Exists(keyP1) Then
-        rrP1 = CLng(rowLookup(keyP1))
-        
-        For b = 1 To MAX_BOX
-            outArr(rrLocal, COL_P1_AVAIL_POSTLOCAL + (b - 1)) = _
-                CDbl(outArr(rrP1, COL_AVAIL_POSTSALES + (b - 1)))
-        Next b
-    End If
-    
-NextFill:
+    wkDate = CDate(outArr(rrLocal, 4))
+    wkKey = Format$(wkDate, "yyyy-mm-dd")
+    If Not weekDict.Exists(wkKey) Then weekDict.Add wkKey, wkDate
 Next rrLocal
-'==================== END POST-PASS =====================
 
-'==================== POST-PASS 2: Compute BacklogP1 Orders =====================
-Dim ordersFromAvailP1 As Double
-Dim ordersFromBacklogP1 As Double
-Dim ordersShipped_BacklogP1 As Double
+wkCount = weekDict.Count
+ReDim weeks(1 To wkCount)
 
-Dim p1AvailVal As Double, blP1Val As Double
+idx = 0
+For Each tmpK In weekDict.Keys
+    idx = idx + 1
+    weeks(idx) = weekDict(tmpK)
+Next tmpK
 
+'Sort weeks ascending (simple bubble; wkCount is small ~52)
+For a = 1 To wkCount - 1
+    For j = a + 1 To wkCount
+        If weeks(j) < weeks(a) Then
+            t = weeks(a)
+            weeks(a) = weeks(j)
+            weeks(j) = t
+        End If
+    Next j
+Next a
+
+'Process each week in chronological order
+For iWk = 1 To wkCount
+
+    wkStart = weeks(iWk)
+
+    '==================== 1) Compute Rolling Backlog for this week =====================
+    For rrLocal = 2 To outUsed
+
+        If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_Backlog
+
+        demandCity = Trim$(CStr(outArr(rrLocal, 1)))
+        country = Trim$(CStr(outArr(rrLocal, 2)))
+        colorKey = NormalizeColor(CStr(outArr(rrLocal, 3)))
+
+        'previous week key (assumes weekly cadence = -7 days)
+        keyPrev = demandCity & "|" & country & "|" & colorKey & "|" & Format$(DateAdd("d", -7, wkStart), "yyyy-mm-dd")
+
+        For b = 1 To MAX_BOX
+
+            'baseline backlog from Beg Stock
+            begVal = CDbl(outArr(rrLocal, COL_BEG + (b - 1)))
+            If begVal < 0 Then baselineBL = Abs(begVal) Else baselineBL = 0
+
+            'week 1 rule: backlog = baseline only (we treat "week 1" as forecastStart)
+            If DateValue(wkStart) = DateValue(forecastStart) Then
+                outArr(rrLocal, COL_BACKLOG + (b - 1)) = baselineBL
+            Else
+                prevUnf = 0
+                If rowLookup.Exists(keyPrev) Then
+                    rrPrev = CLng(rowLookup(keyPrev))
+                    prevUnf = CDbl(outArr(rrPrev, COL_UNFULFILLED + (b - 1)))
+                End If
+                outArr(rrLocal, COL_BACKLOG + (b - 1)) = baselineBL + prevUnf
+            End If
+
+        Next b
+
+NextRow_Backlog:
+    Next rrLocal
+
+    '==================== 2) Local Round: Backlog-first =====================
+    For rrLocal = 2 To outUsed
+
+        If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_LocalBL
+
+        ordersFromAvail = 1E+30
+        ordersFromBacklog = 1E+30
+
+        For b = 1 To MAX_BOX
+            If Not isOptional(b) Then
+                availVal = CDbl(outArr(rrLocal, COL_AVAIL + (b - 1)))
+                backlogVal = CDbl(outArr(rrLocal, COL_BACKLOG + (b - 1)))
+                needVal = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
+                If needVal <= 0 Then needVal = 1
+
+                ordersFromAvail = Application.Min(ordersFromAvail, OrdersFromQty(availVal, needVal))
+                ordersFromBacklog = Application.Min(ordersFromBacklog, OrdersFromQty(backlogVal, needVal))
+            End If
+        Next b
+
+        If ordersFromAvail = 1E+30 Then ordersFromAvail = 0
+        If ordersFromBacklog = 1E+30 Then ordersFromBacklog = 0
+
+        ordersShipped_Backlog = Application.Min(ordersFromAvail, ordersFromBacklog)
+
+        outArr(rrLocal, COL_ORD_BL_AVAIL) = WorksheetFunction.Round(ordersFromAvail, 2)
+        outArr(rrLocal, COL_ORD_BL_BACKLOG) = WorksheetFunction.Round(ordersFromBacklog, 2)
+        outArr(rrLocal, COL_ORD_BL_SHIP) = WorksheetFunction.Round(ordersShipped_Backlog, 2)
+
+        'BacklogShipped + AvailPostBL + Backlog_P1
+        For b = 1 To MAX_BOX
+
+            needVal = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
+            If needVal <= 0 Then needVal = 1
+
+            desiredBL = ordersShipped_Backlog * needVal
+
+            If isOptional(b) Then
+                availVal = CDbl(outArr(rrLocal, COL_AVAIL + (b - 1)))
+                shippedBL = Application.Min(availVal, desiredBL)
+            Else
+                shippedBL = desiredBL
+            End If
+
+            outArr(rrLocal, COL_BL_SHIP + (b - 1)) = shippedBL
+
+            availPost = CDbl(outArr(rrLocal, COL_AVAIL + (b - 1))) - shippedBL
+            If availPost < 0 Then availPost = 0
+            outArr(rrLocal, COL_AVAIL_POSTBL + (b - 1)) = availPost
+
+            blP1 = CDbl(outArr(rrLocal, COL_BACKLOG + (b - 1))) - shippedBL
+            If blP1 < 0 Then blP1 = 0
+            outArr(rrLocal, COL_BL_P1 + (b - 1)) = blP1
+
+        Next b
+
+NextRow_LocalBL:
+    Next rrLocal
+
+    '==================== 3) Local Round: Sales-after-backlog =====================
+    For rrLocal = 2 To outUsed
+
+        If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_LocalSales
+
+        ordersFromAvail2 = 1E+30
+        ordersFromSales = 1E+30
+
+        For b = 1 To MAX_BOX
+            If Not isOptional(b) Then
+                salesVal = CDbl(outArr(rrLocal, COL_SALES + (b - 1)))
+                availVal = CDbl(outArr(rrLocal, COL_AVAIL_POSTBL + (b - 1)))
+                needVal = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
+                If needVal <= 0 Then needVal = 1
+
+                ordersFromAvail2 = Application.Min(ordersFromAvail2, OrdersFromQty(availVal, needVal))
+                ordersFromSales = Application.Min(ordersFromSales, OrdersFromQty(salesVal, needVal))
+            End If
+        Next b
+
+        If ordersFromAvail2 = 1E+30 Then ordersFromAvail2 = 0
+        If ordersFromSales = 1E+30 Then ordersFromSales = 0
+
+        ordersShipped_Sales = Application.Min(ordersFromAvail2, ordersFromSales)
+
+        outArr(rrLocal, COL_ORD_SALES_AVAIL) = WorksheetFunction.Round(ordersFromAvail2, 2)
+        outArr(rrLocal, COL_ORD_SALES_DEMAND) = WorksheetFunction.Round(ordersFromSales, 2)
+        outArr(rrLocal, COL_ORD_SALES_SHIP) = WorksheetFunction.Round(ordersShipped_Sales, 2)
+
+        For b = 1 To MAX_BOX
+
+            needVal = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
+            If needVal <= 0 Then needVal = 1
+
+            desiredS = ordersShipped_Sales * needVal
+
+            If isOptional(b) Then
+                availVal = CDbl(outArr(rrLocal, COL_AVAIL_POSTBL + (b - 1)))
+                shippedS = Application.Min(availVal, desiredS)
+            Else
+                shippedS = desiredS
+            End If
+
+            outArr(rrLocal, COL_SALES_SHIP + (b - 1)) = shippedS
+
+            availPostSales = CDbl(outArr(rrLocal, COL_AVAIL_POSTBL + (b - 1))) - shippedS
+            If availPostSales < 0 Then availPostSales = 0
+            outArr(rrLocal, COL_AVAIL_POSTSALES + (b - 1)) = availPostSales
+
+            sP1 = CDbl(outArr(rrLocal, COL_SALES + (b - 1))) - shippedS
+            If sP1 < 0 Then sP1 = 0
+            outArr(rrLocal, COL_SALES_P1 + (b - 1)) = sP1
+
+        Next b
+
+NextRow_LocalSales:
+    Next rrLocal
+
+    '==================== 4) From here, run your existing P1/P2 logic BUT limited to this week =====================
+    'We reuse your existing post-pass math, just constrained to wkStart.
+
+    '---- 4A) Fill P1AvailStock_PostLocal (same as your old POST-PASS 1, week-scoped) ----
+    For rrLocal = 2 To outUsed
+
+        If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P1Fill
+
+        p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
+        If Len(p1City) = 0 Then GoTo NextRow_P1Fill
+
+        keyP1 = p1City & "|" & _
+                CStr(outArr(rrLocal, 2)) & "|" & _
+                NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
+                Format$(wkStart, "yyyy-mm-dd")
+
+        If rowLookup.Exists(keyP1) Then
+            rrP1 = CLng(rowLookup(keyP1))
+            For b = 1 To MAX_BOX
+                outArr(rrLocal, COL_P1_AVAIL_POSTLOCAL + (b - 1)) = CDbl(outArr(rrP1, COL_AVAIL_POSTSALES + (b - 1)))
+            Next b
+        Else
+            For b = 1 To MAX_BOX
+                outArr(rrLocal, COL_P1_AVAIL_POSTLOCAL + (b - 1)) = 0
+            Next b
+        End If
+
+NextRow_P1Fill:
+    Next rrLocal
+
+    '---- 4B) Week-scoped versions of old POST-PASS 2..15 ----
+
+'==================== (Old POST-PASS 2) Compute BacklogP1 Orders =====================
 For rrLocal = 2 To outUsed
+
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P1Orders
 
     ordersFromAvailP1 = 1E+30
     ordersFromBacklogP1 = 1E+30
@@ -1261,18 +1445,15 @@ For rrLocal = 2 To outUsed
             p1AvailVal = CDbl(outArr(rrLocal, COL_P1_AVAIL_POSTLOCAL + (b - 1)))
             blP1Val = CDbl(outArr(rrLocal, COL_BL_P1 + (b - 1)))
 
-            'Need is stored in the Need block (same need(b) you wrote earlier)
-            Dim needVal As Double
-            needVal = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
-            If needVal <= 0 Then needVal = 1 'safety
+            needValP1Orders = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
+            If needValP1Orders <= 0 Then needValP1Orders = 1
 
-            ordersFromAvailP1 = Application.Min(ordersFromAvailP1, OrdersFromQty(p1AvailVal, needVal))
-            ordersFromBacklogP1 = Application.Min(ordersFromBacklogP1, OrdersFromQty(blP1Val, needVal))
+            ordersFromAvailP1 = Application.Min(ordersFromAvailP1, OrdersFromQty(p1AvailVal, needValP1Orders))
+            ordersFromBacklogP1 = Application.Min(ordersFromBacklogP1, OrdersFromQty(blP1Val, needValP1Orders))
 
         End If
     Next b
 
-    'If somehow there were no required boxes, prevent 1E+30 from leaking
     If ordersFromAvailP1 = 1E+30 Then ordersFromAvailP1 = 0
     If ordersFromBacklogP1 = 1E+30 Then ordersFromBacklogP1 = 0
 
@@ -1282,34 +1463,29 @@ For rrLocal = 2 To outUsed
     outArr(rrLocal, COL_ORD_P1_BACKLOG) = WorksheetFunction.Round(ordersFromBacklogP1, 2)
     outArr(rrLocal, COL_ORD_P1_SHIP) = WorksheetFunction.Round(ordersShipped_BacklogP1, 2)
 
+NextRow_P1Orders:
 Next rrLocal
-'==================== END POST-PASS 2 =====================
+'==================== END (Old POST-PASS 2) =====================
 
-'==================== POST-PASS 3: Total backlog-limited P1 orders across sibling cities =====================
-Dim p1BacklogTotals As Object
+
+'==================== (Old POST-PASS 3) Total backlog-limited P1 orders across sibling cities =====================
 Set p1BacklogTotals = CreateObject("Scripting.Dictionary")
 p1BacklogTotals.CompareMode = 1 'vbTextCompare
 
-Dim kTot As String
-Dim wk As String
-Dim totVal As Double
-
-'1) Build totals: key = P1City|Country|Color|WeekStart  -> sum(Orders_BacklogP1_LimitByBacklogP1)
+'1) Build totals: key = P1City|Country|Color|WeekStart -> sum(Orders_BacklogP1_LimitByBacklogP1)
 For rrLocal = 2 To outUsed
 
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P1TotBuild
+
     p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
-    If Len(p1City) = 0 Then GoTo NextTotBuild
+    If Len(p1City) = 0 Then GoTo NextRow_P1TotBuild
 
-    wk = Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd") 'Week Start is column 4
-
-    ' kTot = P1City | Country | Color | WeekStart
     kTot = p1City & "|" & _
            CStr(outArr(rrLocal, 2)) & "|" & _
            NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
-           Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+           Format$(wkStart, "yyyy-mm-dd")
 
-
-    totVal = CDbl(outArr(rrLocal, COL_ORD_P1_BACKLOG)) 'backlog-limited orders for THIS city
+    totVal = CDbl(outArr(rrLocal, COL_ORD_P1_BACKLOG))
 
     If p1BacklogTotals.Exists(kTot) Then
         p1BacklogTotals(kTot) = CDbl(p1BacklogTotals(kTot)) + totVal
@@ -1317,89 +1493,70 @@ For rrLocal = 2 To outUsed
         p1BacklogTotals.Add kTot, totVal
     End If
 
-NextTotBuild:
+NextRow_P1TotBuild:
 Next rrLocal
 
-
-'2) Write totals back to each row in the new column
+'2) Write totals back + shortfall
 For rrLocal = 2 To outUsed
 
-    p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
-    If Len(p1City) = 0 Then GoTo NextTotWrite
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P1TotWrite
 
-    wk = Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+    p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
+    If Len(p1City) = 0 Then GoTo NextRow_P1TotWrite
 
     kTot = p1City & "|" & _
            CStr(outArr(rrLocal, 2)) & "|" & _
            NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
-           wk
+           Format$(wkStart, "yyyy-mm-dd")
 
     If p1BacklogTotals.Exists(kTot) Then
         outArr(rrLocal, COL_TOT_ORD_P1_BACKLOG) = WorksheetFunction.Round(CDbl(p1BacklogTotals(kTot)), 2)
-    
-        Dim shortfall As Double
-        shortfall = CDbl(outArr(rrLocal, COL_TOT_ORD_P1_BACKLOG)) - CDbl(outArr(rrLocal, COL_ORD_P1_AVAIL))
-        If shortfall < 0 Then shortfall = 0
-    
-        outArr(rrLocal, COL_P1_SHORTFALL) = WorksheetFunction.Round(shortfall, 2)
+
+        shortfallP1 = CDbl(outArr(rrLocal, COL_TOT_ORD_P1_BACKLOG)) - CDbl(outArr(rrLocal, COL_ORD_P1_AVAIL))
+        If shortfallP1 < 0 Then shortfallP1 = 0
+
+        outArr(rrLocal, COL_P1_SHORTFALL) = WorksheetFunction.Round(shortfallP1, 2)
     Else
         outArr(rrLocal, COL_TOT_ORD_P1_BACKLOG) = 0
         outArr(rrLocal, COL_P1_SHORTFALL) = 0
     End If
 
-
-NextTotWrite:
+NextRow_P1TotWrite:
 Next rrLocal
-'==================== END POST-PASS 3 =====================
+'==================== END (Old POST-PASS 3) =====================
 
-'==================== POST-PASS 4: Compute P1 BacklogShipped_P1, P1AvailStock_PostBacklog, Backlog_P2 =====================
 
-Dim ordersShippedP1 As Double
-Dim needValP1 As Double
-Dim shippedP1 As Double
-Dim p1AvailPostLocalVal As Double
-Dim blP1BoxVal As Double
-Dim p1AvailPostBacklogVal As Double
-Dim blP2Val As Double
-
+'==================== (Old POST-PASS 4) Compute BacklogShipped_P1, P1AvailStock_PostBacklog, Backlog_P2 =====================
 For rrLocal = 2 To outUsed
 
-    'OrdersShipped_BacklogP1 is stored in the single debug column COL_ORD_P1_SHIP
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P1ShipBL
+
     ordersShippedP1 = CDbl(outArr(rrLocal, COL_ORD_P1_SHIP))
 
     For b = 1 To MAX_BOX
 
-        'need(b) is stored in the Need block starting at COL_NEED
         needValP1 = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
-        If needValP1 <= 0 Then needValP1 = 1 'safety
+        If needValP1 <= 0 Then needValP1 = 1
 
-        Dim desiredP1 As Double
-
-        'Desired shipped units for this box if we ship those orders
         desiredP1 = ordersShippedP1 * needValP1
-        
-        'Available at P1 before backlog shipping (this is what backlog can draw from)
+
         p1AvailPostLocalVal = CDbl(outArr(rrLocal, COL_P1_AVAIL_POSTLOCAL + (b - 1)))
-        
-        'OPTIONAL BOX RULE:
+
         If isOptional(b) Then
             shippedP1 = Application.Min(p1AvailPostLocalVal, desiredP1)
         Else
             shippedP1 = desiredP1
         End If
-        
-        '1) BacklogShipped_P1 Bn
+
+        '1) BacklogShipped_P1
         outArr(rrLocal, COL_BL_SHIP_P1 + (b - 1)) = shippedP1
-        
-        '2) P1AvailStock_PostBacklog Bn
+
+        '2) P1AvailStock_PostBacklog
         p1AvailPostBacklogVal = p1AvailPostLocalVal - shippedP1
         If p1AvailPostBacklogVal < 0 Then p1AvailPostBacklogVal = 0
         outArr(rrLocal, COL_P1_AVAIL_POSTBL + (b - 1)) = p1AvailPostBacklogVal
 
-        If p1AvailPostBacklogVal < 0 Then p1AvailPostBacklogVal = 0
-        outArr(rrLocal, COL_P1_AVAIL_POSTBL + (b - 1)) = p1AvailPostBacklogVal
-
-        '3) Backlog_P2 Bn = Backlog_P1 Bn - BacklogShipped_P1 Bn (floored at 0)
+        '3) Backlog_P2 = Backlog_P1 - BacklogShipped_P1
         blP1BoxVal = CDbl(outArr(rrLocal, COL_BL_P1 + (b - 1)))
         blP2Val = blP1BoxVal - shippedP1
         If blP2Val < 0 Then blP2Val = 0
@@ -1407,35 +1564,26 @@ For rrLocal = 2 To outUsed
 
     Next b
 
+NextRow_P1ShipBL:
 Next rrLocal
+'==================== END (Old POST-PASS 4) =====================
 
-'==================== END POST-PASS 4 =====================
 
-'==================== POST-PASS 5: Compute SalesP1 Orders =====================
-
-Dim ordersFromAvailSalesP1 As Double
-Dim ordersFromSalesP1 As Double
-Dim ordersShipped_SalesP1 As Double
-
-Dim p1AvailPostBL_Val As Double, salesP1Val_Box As Double
-Dim needValSalesP1 As Double
+'==================== (Old POST-PASS 5) Compute SalesP1 Orders =====================
 
 For rrLocal = 2 To outUsed
+
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_SalesP1Orders
 
     ordersFromAvailSalesP1 = 1E+30
     ordersFromSalesP1 = 1E+30
 
-    'Min across REQUIRED boxes (whole-order logic like the other rounds)
     For b = 1 To MAX_BOX
         If Not isOptional(b) Then
 
-            'Avail = P1AvailStock_PostBacklog Bn
             p1AvailPostBL_Val = CDbl(outArr(rrLocal, COL_P1_AVAIL_POSTBL + (b - 1)))
-
-            'Demand = Sales_P1 Bn
             salesP1Val_Box = CDbl(outArr(rrLocal, COL_SALES_P1 + (b - 1)))
 
-            'Need = Need Bn
             needValSalesP1 = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
             If needValSalesP1 <= 0 Then needValSalesP1 = 1
 
@@ -1454,32 +1602,27 @@ For rrLocal = 2 To outUsed
     outArr(rrLocal, COL_ORD_SALESP1_SALES) = WorksheetFunction.Round(ordersFromSalesP1, 2)
     outArr(rrLocal, COL_ORD_SALESP1_SHIP) = WorksheetFunction.Round(ordersShipped_SalesP1, 2)
 
+NextRow_SalesP1Orders:
 Next rrLocal
+'==================== END (Old POST-PASS 5) =====================
 
-'==================== END POST-PASS 5 =====================
 
-'==================== POST-PASS 6: Total SalesP1 demand across sibling cities + shortfall =====================
-
-Dim p1SalesTotals As Object
+'==================== (Old POST-PASS 6) Total SalesP1 demand across sibling cities + shortfall =====================
 Set p1SalesTotals = CreateObject("Scripting.Dictionary")
 p1SalesTotals.CompareMode = 1 'vbTextCompare
 
-Dim kSalesTot As String
-Dim wkSales As String
-Dim totSalesVal As Double
-
-'1) Build totals: key = P1City|Country|Color|WeekStart -> sum(Orders_SalesP1_LimitBySalesP1)
+'1) Build totals
 For rrLocal = 2 To outUsed
 
-    p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
-    If Len(p1City) = 0 Then GoTo NextSalesTotBuild
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P1SalesTotBuild
 
-    wkSales = Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+    p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
+    If Len(p1City) = 0 Then GoTo NextRow_P1SalesTotBuild
 
     kSalesTot = p1City & "|" & _
                 CStr(outArr(rrLocal, 2)) & "|" & _
                 NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
-                wkSales
+                Format$(wkStart, "yyyy-mm-dd")
 
     totSalesVal = CDbl(outArr(rrLocal, COL_ORD_SALESP1_SALES))
 
@@ -1489,56 +1632,44 @@ For rrLocal = 2 To outUsed
         p1SalesTotals.Add kSalesTot, totSalesVal
     End If
 
-NextSalesTotBuild:
+NextRow_P1SalesTotBuild:
 Next rrLocal
 
-'2) Write totals + shortfall = MAX(0, TotalDemand - AvailLimit)
+'2) Write totals + shortfall
 For rrLocal = 2 To outUsed
 
-    p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
-    If Len(p1City) = 0 Then GoTo NextSalesTotWrite
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P1SalesTotWrite
 
-    wkSales = Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+    p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
+    If Len(p1City) = 0 Then GoTo NextRow_P1SalesTotWrite
 
     kSalesTot = p1City & "|" & _
                 CStr(outArr(rrLocal, 2)) & "|" & _
                 NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
-                wkSales
+                Format$(wkStart, "yyyy-mm-dd")
 
     If p1SalesTotals.Exists(kSalesTot) Then
-
         outArr(rrLocal, COL_TOT_ORD_SALESP1_SALES) = WorksheetFunction.Round(CDbl(p1SalesTotals(kSalesTot)), 2)
 
-        Dim shortfallSales As Double
         shortfallSales = CDbl(outArr(rrLocal, COL_TOT_ORD_SALESP1_SALES)) - CDbl(outArr(rrLocal, COL_ORD_SALESP1_AVAIL))
         If shortfallSales < 0 Then shortfallSales = 0
 
         outArr(rrLocal, COL_P1_SHORTFALL_SALES) = WorksheetFunction.Round(shortfallSales, 2)
-
     Else
         outArr(rrLocal, COL_TOT_ORD_SALESP1_SALES) = 0
         outArr(rrLocal, COL_P1_SHORTFALL_SALES) = 0
     End If
 
-NextSalesTotWrite:
+NextRow_P1SalesTotWrite:
 Next rrLocal
+'==================== END (Old POST-PASS 6) =====================
 
-'==================== END POST-PASS 6 =====================
 
-'==================== POST-PASS 7: Compute SalesShipped_P1, P1AvailStock_PostSales, Sales_P2 =====================
-
-Dim ordersShippedSalesP1 As Double
-Dim desiredSalesShipP1 As Double
-Dim shippedSalesP1 As Double
-Dim p1AvailPostBL_Box As Double
-Dim p1AvailPostSales_Box As Double
-Dim salesP1_Box As Double
-Dim salesP2_Box As Double
-Dim needValShip As Double
-
+'==================== (Old POST-PASS 7) Compute SalesShipped_P1, P1AvailStock_PostSales, Sales_P2 =====================
 For rrLocal = 2 To outUsed
 
-    'Shared order count from POST-PASS 5 (OrdersShipped_SalesP1)
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P1ShipSales
+
     ordersShippedSalesP1 = CDbl(outArr(rrLocal, COL_ORD_SALESP1_SHIP))
 
     For b = 1 To MAX_BOX
@@ -1546,117 +1677,101 @@ For rrLocal = 2 To outUsed
         needValShip = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
         If needValShip <= 0 Then needValShip = 1
 
-        'Desired shipped units for this box if we ship those orders
         desiredSalesShipP1 = ordersShippedSalesP1 * needValShip
-
-        'Available at P1 after backlog (this is the stock SalesP1 is allowed to draw from)
         p1AvailPostBL_Box = CDbl(outArr(rrLocal, COL_P1_AVAIL_POSTBL + (b - 1)))
 
-        'OPTIONAL BOX RULE (same as your earlier rounds):
-        'Optional ships MIN(available, desired). Required ships desired.
         If isOptional(b) Then
             shippedSalesP1 = Application.Min(p1AvailPostBL_Box, desiredSalesShipP1)
         Else
             shippedSalesP1 = desiredSalesShipP1
         End If
 
-        '1) SalesShipped_P1 Bn
+        '1) SalesShipped_P1
         outArr(rrLocal, COL_SALES_SHIP_P1 + (b - 1)) = shippedSalesP1
 
-        '2) P1AvailStock_PostSales Bn = PostBacklog - SalesShipped_P1 (floored at 0)
+        '2) P1AvailStock_PostSales
         p1AvailPostSales_Box = p1AvailPostBL_Box - shippedSalesP1
         If p1AvailPostSales_Box < 0 Then p1AvailPostSales_Box = 0
         outArr(rrLocal, COL_P1_AVAIL_POSTSALES + (b - 1)) = p1AvailPostSales_Box
 
-        '3) Sales_P2 Bn = Sales_P1 - SalesShipped_P1 (floored at 0)
-        salesP1_Box = CDbl(outArr(rrLocal, COL_SALES_P1 + (b - 1)))
-        salesP2_Box = salesP1_Box - shippedSalesP1
+        '3) Sales_P2
+        salesP1Val_Box = CDbl(outArr(rrLocal, COL_SALES_P1 + (b - 1)))
+        salesP2_Box = salesP1Val_Box - shippedSalesP1
         If salesP2_Box < 0 Then salesP2_Box = 0
         outArr(rrLocal, COL_SALES_P2 + (b - 1)) = salesP2_Box
 
     Next b
 
+NextRow_P1ShipSales:
 Next rrLocal
+'==================== END (Old POST-PASS 7) =====================
 
-'==================== END POST-PASS 7 =====================
 
-'==================== POST-PASS 8: Fill P2AvailStock_PostP1Sales (special rule) =====================
-
-'Rule:
-'For a given row, let C = P2 City.
-'If C is used as a P1 city anywhere (for same Country|Color|WeekStart),
-'then P2AvailStock_PostP1Sales(Bn) = that city's P1AvailStock_PostSales(Bn).
-'Else fallback to C's local AvailStock_PostSales(Bn).
-
-'1) Build a lookup of "P1City|Country|Color|WeekStart" -> one representative row index
-Dim p1CityRow As Object
+'==================== (Old POST-PASS 8) Fill P2AvailStock_PostP1Sales (special rule) =====================
 Set p1CityRow = CreateObject("Scripting.Dictionary")
 p1CityRow.CompareMode = 1 'vbTextCompare
 
-Dim kP1City As String
+'1) Build lookup of P1City|Country|Color|WeekStart -> representative row (this week only)
 For rrLocal = 2 To outUsed
+
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P1CityRow
+
     p1City = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
     If Len(p1City) > 0 Then
+
         kP1City = p1City & "|" & _
                   CStr(outArr(rrLocal, 2)) & "|" & _
                   NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
-                  Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+                  Format$(wkStart, "yyyy-mm-dd")
 
         If Not p1CityRow.Exists(kP1City) Then
             p1CityRow.Add kP1City, rrLocal
         End If
     End If
+
+NextRow_P1CityRow:
 Next rrLocal
 
-'2) For each row, fill P2AvailStock_PostP1Sales from either:
-'   - representative P1 row (if P2 city is used as P1 anywhere), OR
-'   - the P2 city's own local row's AvailStock_PostSales
-Dim p2City As String
-Dim kP2City As String
-Dim rrRep As Long
-Dim rrP2Local As Long
+'2) Fill each row's P2AvailStock_PostP1Sales
 
 For rrLocal = 2 To outUsed
 
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P2Fill
+
     p2City = Trim$(CStr(outArr(rrLocal, COL_P2_CITY)))
-    If Len(p2City) = 0 Then GoTo NextP2Fill
+    If Len(p2City) = 0 Then GoTo NextRow_P2Fill
 
     kP2City = p2City & "|" & _
               CStr(outArr(rrLocal, 2)) & "|" & _
               NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
-              Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+              Format$(wkStart, "yyyy-mm-dd")
 
     If p1CityRow.Exists(kP2City) Then
-        'P2 city is used as a P1 city somewhere: use P1AvailStock_PostSales Bn from that representative row
         rrRep = CLng(p1CityRow(kP2City))
         For b = 1 To MAX_BOX
-            outArr(rrLocal, COL_P2_AVAIL_POSTP1SALES + (b - 1)) = _
-                CDbl(outArr(rrRep, COL_P1_AVAIL_POSTSALES + (b - 1)))
+            outArr(rrLocal, COL_P2_AVAIL_POSTP1SALES + (b - 1)) = CDbl(outArr(rrRep, COL_P1_AVAIL_POSTSALES + (b - 1)))
         Next b
 
     ElseIf rowLookup.Exists(kP2City) Then
-        'Fallback: use P2 city's own local AvailStock_PostSales
         rrP2Local = CLng(rowLookup(kP2City))
         For b = 1 To MAX_BOX
-            outArr(rrLocal, COL_P2_AVAIL_POSTP1SALES + (b - 1)) = _
-                CDbl(outArr(rrP2Local, COL_AVAIL_POSTSALES + (b - 1)))
+            outArr(rrLocal, COL_P2_AVAIL_POSTP1SALES + (b - 1)) = CDbl(outArr(rrP2Local, COL_AVAIL_POSTSALES + (b - 1)))
+        Next b
+    Else
+        For b = 1 To MAX_BOX
+            outArr(rrLocal, COL_P2_AVAIL_POSTP1SALES + (b - 1)) = 0
         Next b
     End If
 
-NextP2Fill:
+NextRow_P2Fill:
 Next rrLocal
+'==================== END (Old POST-PASS 8) =====================
 
-'==================== END POST-PASS 8 =====================
 
-'==================== POST-PASS 9: Compute BacklogP2 Orders =====================
-
-Dim ordersFromAvailP2 As Double
-Dim ordersFromBacklogP2 As Double
-Dim ordersShipped_BacklogP2 As Double
-
-Dim p2AvailVal As Double, blP2BoxVal As Double, needValP2 As Double
-
+'==================== (Old POST-PASS 9) Compute BacklogP2 Orders =====================
 For rrLocal = 2 To outUsed
+
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P2BLOrders
 
     ordersFromAvailP2 = 1E+30
     ordersFromBacklogP2 = 1E+30
@@ -1685,30 +1800,27 @@ For rrLocal = 2 To outUsed
     outArr(rrLocal, COL_ORD_P2_BACKLOG) = WorksheetFunction.Round(ordersFromBacklogP2, 2)
     outArr(rrLocal, COL_ORD_P2_SHIP_BL) = WorksheetFunction.Round(ordersShipped_BacklogP2, 2)
 
+NextRow_P2BLOrders:
 Next rrLocal
+'==================== END (Old POST-PASS 9) =====================
 
-'==================== END POST-PASS 9 =====================
 
-'==================== POST-PASS 10: Total backlog-limited P2 orders across sibling cities + shortfall =====================
-
-Dim p2BacklogTotals As Object
+'==================== (Old POST-PASS 10) Total backlog-limited P2 orders across sibling cities + shortfall =====================
 Set p2BacklogTotals = CreateObject("Scripting.Dictionary")
 p2BacklogTotals.CompareMode = 1 'vbTextCompare
 
-Dim p2TotKey As String
-Dim p2CityKey As String
-Dim totP2BL As Double
-
-'1) Build totals: key = P2City|Country|Color|WeekStart -> sum(Orders_BacklogP2_LimitByBacklogP2)
+'1) Build totals
 For rrLocal = 2 To outUsed
 
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P2BLTotBuild
+
     p2City = Trim$(CStr(outArr(rrLocal, COL_P2_CITY)))
-    If Len(p2City) = 0 Then GoTo NextP2TotBuild
+    If Len(p2City) = 0 Then GoTo NextRow_P2BLTotBuild
 
     p2TotKey = p2City & "|" & _
                CStr(outArr(rrLocal, 2)) & "|" & _
                NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
-               Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+               Format$(wkStart, "yyyy-mm-dd")
 
     totP2BL = CDbl(outArr(rrLocal, COL_ORD_P2_BACKLOG))
 
@@ -1718,21 +1830,22 @@ For rrLocal = 2 To outUsed
         p2BacklogTotals.Add p2TotKey, totP2BL
     End If
 
-NextP2TotBuild:
+NextRow_P2BLTotBuild:
 Next rrLocal
 
-'2) Write totals and shortfall = MAX(0, TotalDemand - AvailLimit)
-Dim shortfallP2BL As Double
+'2) Write totals + shortfall
 
 For rrLocal = 2 To outUsed
 
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P2BLTotWrite
+
     p2City = Trim$(CStr(outArr(rrLocal, COL_P2_CITY)))
-    If Len(p2City) = 0 Then GoTo NextP2TotWrite
+    If Len(p2City) = 0 Then GoTo NextRow_P2BLTotWrite
 
     p2TotKey = p2City & "|" & _
                CStr(outArr(rrLocal, 2)) & "|" & _
                NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
-               Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+               Format$(wkStart, "yyyy-mm-dd")
 
     If p2BacklogTotals.Exists(p2TotKey) Then
         outArr(rrLocal, COL_TOT_ORD_P2_BACKLOG) = WorksheetFunction.Round(CDbl(p2BacklogTotals(p2TotKey)), 2)
@@ -1745,21 +1858,16 @@ For rrLocal = 2 To outUsed
         outArr(rrLocal, COL_P2_SHORTFALL_BL) = 0
     End If
 
-NextP2TotWrite:
+NextRow_P2BLTotWrite:
 Next rrLocal
+'==================== END (Old POST-PASS 10) =====================
 
-'==================== END POST-PASS 10 =====================
 
-'==================== POST-PASS 11: Compute BacklogShipped_P2, P2AvailStock_PostBacklog, Backlog_Unfulfilled =====================
-
-Dim ordersShippedP2BL As Double
-Dim desiredP2BL As Double
-Dim shippedP2BL As Double
-Dim p2AvailStart As Double
-Dim p2AvailAfterBL As Double
-Dim blUnf As Double
+'==================== (Old POST-PASS 11) Compute BacklogShipped_P2, P2AvailStock_PostBacklog, Backlog_Unfulfilled =====================
 
 For rrLocal = 2 To outUsed
+
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P2BLShip
 
     ordersShippedP2BL = CDbl(outArr(rrLocal, COL_ORD_P2_SHIP_BL))
 
@@ -1793,19 +1901,15 @@ For rrLocal = 2 To outUsed
 
     Next b
 
+NextRow_P2BLShip:
 Next rrLocal
+'==================== END (Old POST-PASS 11) =====================
 
-'==================== END POST-PASS 11 =====================
 
-'==================== POST-PASS 12: Compute SalesP2 Orders =====================
-
-Dim ordersFromAvailSalesP2 As Double
-Dim ordersFromSalesP2 As Double
-Dim ordersShipped_SalesP2 As Double
-
-Dim p2AvailPostBL_Box As Double, salesP2Val_Box As Double, needValSalesP2 As Double
-
+'==================== (Old POST-PASS 12) Compute SalesP2 Orders =====================
 For rrLocal = 2 To outUsed
+
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_SalesP2Orders
 
     ordersFromAvailSalesP2 = 1E+30
     ordersFromSalesP2 = 1E+30
@@ -1834,30 +1938,27 @@ For rrLocal = 2 To outUsed
     outArr(rrLocal, COL_ORD_SALESP2_SALES) = WorksheetFunction.Round(ordersFromSalesP2, 2)
     outArr(rrLocal, COL_ORD_SALESP2_SHIP) = WorksheetFunction.Round(ordersShipped_SalesP2, 2)
 
+NextRow_SalesP2Orders:
 Next rrLocal
+'==================== END (Old POST-PASS 12) =====================
 
-'==================== END POST-PASS 12 =====================
 
-'==================== POST-PASS 13: Total SalesP2 demand across sibling cities + shortfall =====================
-
-Dim p2SalesTotals As Object
+'==================== (Old POST-PASS 13) Total SalesP2 demand across sibling cities + shortfall =====================
 Set p2SalesTotals = CreateObject("Scripting.Dictionary")
 p2SalesTotals.CompareMode = 1 'vbTextCompare
 
-Dim p2SalesKey As String
-Dim totP2Sales As Double
-Dim shortfallP2Sales As Double
-
-'1) Build totals: key = P2City|Country|Color|WeekStart -> sum(Orders_SalesP2_LimitBySalesP2)
+'1) Build totals
 For rrLocal = 2 To outUsed
 
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P2SalesTotBuild
+
     p2City = Trim$(CStr(outArr(rrLocal, COL_P2_CITY)))
-    If Len(p2City) = 0 Then GoTo NextP2SalesTotBuild
+    If Len(p2City) = 0 Then GoTo NextRow_P2SalesTotBuild
 
     p2SalesKey = p2City & "|" & _
                  CStr(outArr(rrLocal, 2)) & "|" & _
                  NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
-                 Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+                 Format$(wkStart, "yyyy-mm-dd")
 
     totP2Sales = CDbl(outArr(rrLocal, COL_ORD_SALESP2_SALES))
 
@@ -1867,19 +1968,21 @@ For rrLocal = 2 To outUsed
         p2SalesTotals.Add p2SalesKey, totP2Sales
     End If
 
-NextP2SalesTotBuild:
+NextRow_P2SalesTotBuild:
 Next rrLocal
 
-'2) Write totals + shortfall = MAX(0, TotalDemand - AvailLimit)
+'2) Write totals + shortfall
 For rrLocal = 2 To outUsed
 
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P2SalesTotWrite
+
     p2City = Trim$(CStr(outArr(rrLocal, COL_P2_CITY)))
-    If Len(p2City) = 0 Then GoTo NextP2SalesTotWrite
+    If Len(p2City) = 0 Then GoTo NextRow_P2SalesTotWrite
 
     p2SalesKey = p2City & "|" & _
                  CStr(outArr(rrLocal, 2)) & "|" & _
                  NormalizeColor(CStr(outArr(rrLocal, 3))) & "|" & _
-                 Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+                 Format$(wkStart, "yyyy-mm-dd")
 
     If p2SalesTotals.Exists(p2SalesKey) Then
         outArr(rrLocal, COL_TOT_ORD_SALESP2_SALES) = WorksheetFunction.Round(CDbl(p2SalesTotals(p2SalesKey)), 2)
@@ -1892,20 +1995,15 @@ For rrLocal = 2 To outUsed
         outArr(rrLocal, COL_P2_SHORTFALL_SALES) = 0
     End If
 
-NextP2SalesTotWrite:
+NextRow_P2SalesTotWrite:
 Next rrLocal
+'==================== END (Old POST-PASS 13) =====================
 
-'==================== END POST-PASS 13 =====================
 
-'==================== POST-PASS 14: Compute SalesShipped_P2, P2AvailStock_PostSales, Sales_Unfulfilled =====================
-
-Dim ordersShippedP2Sales As Double
-Dim desiredP2Sales As Double
-Dim shippedP2Sales As Double
-Dim p2AvailPostSales_Box As Double
-Dim salesUnf As Double
-
+'==================== (Old POST-PASS 14) Compute SalesShipped_P2, P2AvailStock_PostSales, Sales_Unfulfilled =====================
 For rrLocal = 2 To outUsed
+
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_P2ShipSales
 
     ordersShippedP2Sales = CDbl(outArr(rrLocal, COL_ORD_SALESP2_SHIP))
 
@@ -1926,7 +2024,7 @@ For rrLocal = 2 To outUsed
         '1) SalesShipped_P2
         outArr(rrLocal, COL_SALES_SHIP_P2 + (b - 1)) = shippedP2Sales
 
-        '2) P2AvailStock_PostSales = PostBacklog - SalesShipped_P2
+        '2) P2AvailStock_PostSales
         p2AvailPostSales_Box = p2AvailPostBL_Box - shippedP2Sales
         If p2AvailPostSales_Box < 0 Then p2AvailPostSales_Box = 0
         outArr(rrLocal, COL_P2_AVAIL_POSTSALES + (b - 1)) = p2AvailPostSales_Box
@@ -1939,29 +2037,34 @@ For rrLocal = 2 To outUsed
 
     Next b
 
+NextRow_P2ShipSales:
 Next rrLocal
+'==================== END (Old POST-PASS 14) =====================
 
-'==================== END POST-PASS 14 =====================
 
-'==================== POST-PASS 15: Compute Unfulfilled = Backlog_Unfulfilled + Sales_Unfulfilled =====================
-
-Dim unf As Double
+'==================== (Old POST-PASS 15) Compute Unfulfilled = Backlog_Unfulfilled + Sales_Unfulfilled =====================
 
 For rrLocal = 2 To outUsed
+
+    If DateValue(CDate(outArr(rrLocal, 4))) <> DateValue(wkStart) Then GoTo NextRow_Unf
+
     For b = 1 To MAX_BOX
         unf = CDbl(outArr(rrLocal, COL_BL_UNFULFILLED + (b - 1))) + _
               CDbl(outArr(rrLocal, COL_SALES_UNFULFILLED + (b - 1)))
         outArr(rrLocal, COL_UNFULFILLED + (b - 1)) = unf
     Next b
-Next rrLocal
 
-'==================== END POST-PASS 15 =====================
+NextRow_Unf:
+Next rrLocal
+'==================== END (Old POST-PASS 15) =====================
+
+
+Next iWk
+
+'==================== END WEEK-BY-WEEK ENGINE =====================
+
 
 '==================== POST-PASS 16: Compute NEW shipped rollups =====================
-
-Dim sumBL_Local As Double, sumSales_Local As Double
-Dim sumBL_P1 As Double, sumSales_P1 As Double
-Dim sumBL_P2 As Double, sumSales_P2 As Double
 
 For rrLocal = 2 To outUsed
 
@@ -2011,14 +2114,8 @@ Next rrLocal
 'We compute this efficiently by accumulating contributions into a dictionary keyed by:
 '   City|Country|Color|WeekStart
 
-Dim outboundTotals As Object
 Set outboundTotals = CreateObject("Scripting.Dictionary")
 outboundTotals.CompareMode = 1 'vbTextCompare
-
-Dim kOut As String
-Dim demandC As String, countryC As String, colorC As String, wkC As String
-Dim p1C As String, p2C As String
-Dim shippedLocal As Double, shippedFromP1 As Double, shippedFromP2 As Double
 
 '1) Build totals for each city (as demand, as P1, as P2)
 For rrLocal = 2 To outUsed
