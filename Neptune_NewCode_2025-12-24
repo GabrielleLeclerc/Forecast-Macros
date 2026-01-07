@@ -357,6 +357,7 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_LS_FROMP2 As Long                'LocalSalesShipped_FromP2  
     Dim COL_TOT_LBL As Long                  'Total_LocalBacklogShipped
     Dim COL_TOT_LS As Long                   'Total_LocalSalesShipped
+    Dim COL_OUTBOUND As Long              'Total outbound boxes for Demand City (Local + as P1 + as P2)
 
     '==================== Working variables (declared once) ====================
     
@@ -738,6 +739,11 @@ Sub Boxes_Shipped_Forecast()
     wsDebug.Cells(1, hdrCol).Value = "Total_LocalSalesShipped"
     hdrCol = hdrCol + 1
 
+    '--- Outbound boxes for the Demand City (Local + when it acts as P1 + when it acts as P2) ---
+    COL_OUTBOUND = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "Total_OutboundBoxes_ForDemandCity"
+    hdrCol = hdrCol + 1
+
     '=== FINAL column count (A..last header) ===
     Dim totalCols As Long
     totalCols = hdrCol - 1   'hdrCol is the NEXT empty column
@@ -939,6 +945,7 @@ Sub Boxes_Shipped_Forecast()
                         outArr(outUsed, COL_LS_FROMP2) = 0
                         outArr(outUsed, COL_TOT_LBL) = 0
                         outArr(outUsed, COL_TOT_LS) = 0
+                        outArr(outUsed, COL_OUTBOUND) = 0
                         
                         '=== NEW: populate Sales / Beginning Stock / Inbound for each box ===
                         Dim writeCol As Long
@@ -1993,8 +2000,93 @@ For rrLocal = 2 To outUsed
 
 Next rrLocal
 
-
 '==================== END POST-PASS 16 =====================
+
+'==================== POST-PASS 17: Compute Total_OutboundBoxes_ForDemandCity =====================
+'Outbound for a city X (for a given Country|Color|WeekStart) =
+'  1) its own local shipped (FromLocal backlog+sales) on its own demand row
+'  2) PLUS all rows where X is P1: shipped FromP1 backlog+sales
+'  3) PLUS all rows where X is P2: shipped FromP2 backlog+sales
+'
+'We compute this efficiently by accumulating contributions into a dictionary keyed by:
+'   City|Country|Color|WeekStart
+
+Dim outboundTotals As Object
+Set outboundTotals = CreateObject("Scripting.Dictionary")
+outboundTotals.CompareMode = 1 'vbTextCompare
+
+Dim kOut As String
+Dim demandC As String, countryC As String, colorC As String, wkC As String
+Dim p1C As String, p2C As String
+Dim shippedLocal As Double, shippedFromP1 As Double, shippedFromP2 As Double
+
+'1) Build totals for each city (as demand, as P1, as P2)
+For rrLocal = 2 To outUsed
+
+    demandC = Trim$(CStr(outArr(rrLocal, 1))) 'Demand City is column 1
+    countryC = Trim$(CStr(outArr(rrLocal, 2)))
+    colorC = NormalizeColor(CStr(outArr(rrLocal, 3)))
+    wkC = Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+
+    p1C = Trim$(CStr(outArr(rrLocal, COL_P1_CITY)))
+    p2C = Trim$(CStr(outArr(rrLocal, COL_P2_CITY)))
+
+    'How many boxes shipped on THIS ROW from each source (backlog + sales)
+    shippedLocal = CDbl(outArr(rrLocal, COL_LBL_FROMLOCAL)) + CDbl(outArr(rrLocal, COL_LS_FROMLOCAL))
+    shippedFromP1 = CDbl(outArr(rrLocal, COL_LBL_FROMP1)) + CDbl(outArr(rrLocal, COL_LS_FROMP1))
+    shippedFromP2 = CDbl(outArr(rrLocal, COL_LBL_FROMP2)) + CDbl(outArr(rrLocal, COL_LS_FROMP2))
+
+    'A) Demand city contributes its own local shipped
+    If Len(demandC) > 0 Then
+        kOut = demandC & "|" & countryC & "|" & colorC & "|" & wkC
+        If outboundTotals.Exists(kOut) Then
+            outboundTotals(kOut) = CDbl(outboundTotals(kOut)) + shippedLocal
+        Else
+            outboundTotals.Add kOut, shippedLocal
+        End If
+    End If
+
+    'B) P1 city contributes shippedFromP1
+    If Len(p1C) > 0 Then
+        kOut = p1C & "|" & countryC & "|" & colorC & "|" & wkC
+        If outboundTotals.Exists(kOut) Then
+            outboundTotals(kOut) = CDbl(outboundTotals(kOut)) + shippedFromP1
+        Else
+            outboundTotals.Add kOut, shippedFromP1
+        End If
+    End If
+
+    'C) P2 city contributes shippedFromP2
+    If Len(p2C) > 0 Then
+        kOut = p2C & "|" & countryC & "|" & colorC & "|" & wkC
+        If outboundTotals.Exists(kOut) Then
+            outboundTotals(kOut) = CDbl(outboundTotals(kOut)) + shippedFromP2
+        Else
+            outboundTotals.Add kOut, shippedFromP2
+        End If
+    End If
+
+Next rrLocal
+
+'2) Write the outbound total back onto each row for that row's Demand City
+For rrLocal = 2 To outUsed
+
+    demandC = Trim$(CStr(outArr(rrLocal, 1)))
+    countryC = Trim$(CStr(outArr(rrLocal, 2)))
+    colorC = NormalizeColor(CStr(outArr(rrLocal, 3)))
+    wkC = Format$(CDate(outArr(rrLocal, 4)), "yyyy-mm-dd")
+
+    kOut = demandC & "|" & countryC & "|" & colorC & "|" & wkC
+
+    If outboundTotals.Exists(kOut) Then
+        outArr(rrLocal, COL_OUTBOUND) = CDbl(outboundTotals(kOut))
+    Else
+        outArr(rrLocal, COL_OUTBOUND) = 0
+    End If
+
+Next rrLocal
+
+'==================== END POST-PASS 17 =====================
 
     '=== Dump output array to sheet in one shot ===
     wsDebug.Cells.Clear
