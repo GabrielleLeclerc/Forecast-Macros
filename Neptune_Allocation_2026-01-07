@@ -3019,7 +3019,16 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     '5) Prepare output array for the new sheet
     Dim nRows As Long, nCols As Long
     nRows = MapCount(rowKeys) + 1 ' + header row
-    nCols = 3 + (UBound(cities) - LBound(cities) + 1) * 3
+    Dim cityBlockCols As Long
+    cityBlockCols = (UBound(cities) - LBound(cities) + 1) * 3
+    
+    Dim EXTRA_USA_COLS As Long
+    EXTRA_USA_COLS = 1 + 4 + 2  ' scenario + 4 flow columns + 2 total columns
+    
+    nCols = 3 + cityBlockCols + EXTRA_USA_COLS
+
+    
+    nCols = 3 + cityBlockCols + EXTRA_USA_COLS
 
     Dim out2() As Variant
     ReDim out2(1 To nRows, 1 To nCols)
@@ -3037,6 +3046,17 @@ Private Sub Build_DebugSheet_CityWeekColor( _
         out2(1, baseCol + (c * 3) + 1) = cities(c) & "_Orders_Backlog"
         out2(1, baseCol + (c * 3) + 2) = cities(c) & "_Orders_Sales"
     Next c
+
+    Dim usaBaseCol As Long
+    usaBaseCol = baseCol + cityBlockCols
+    
+    out2(1, usaBaseCol + 0) = "USA_Allocation_Scenario"
+    out2(1, usaBaseCol + 1) = "Moreno_Backlog_Shipped_FromMoreno"
+    out2(1, usaBaseCol + 2) = "Moreno_Backlog_Shipped_FromDayton"
+    out2(1, usaBaseCol + 3) = "Dayton_Backlog_Shipped_FromMoreno"
+    out2(1, usaBaseCol + 4) = "Dayton_Backlog_Shipped_FromDayton"
+    out2(1, usaBaseCol + 5) = "Total_Backlog_FromMoreno"
+    out2(1, usaBaseCol + 6) = "Total_Backlog_FromDayton"
 
     '6) Write rows
     Dim keys As Variant
@@ -3080,6 +3100,32 @@ Private Sub Build_DebugSheet_CityWeekColor( _
                 out2(i, baseCol + (c * 3) + 2) = 0
             End If
         Next c
+    
+    '=== USA allocation + flows (Moreno/Dayton backlog shipping) ===
+    Dim morIdx As Long, dayIdx As Long
+    morIdx = 3 ' cities = Array("Montreal","Toronto","Vancouver","Moreno","Dayton") -> Moreno index is 3
+    dayIdx = 4 ' Dayton index is 4
+    
+    Dim A_M As Double, B_M As Double, A_D As Double, B_D As Double
+    A_M = CDbl(out2(i, baseCol + (morIdx * 3) + 0)) 'Moreno_AvailStock_Orders
+    B_M = CDbl(out2(i, baseCol + (morIdx * 3) + 1)) 'Moreno_Orders_Backlog
+    
+    A_D = CDbl(out2(i, baseCol + (dayIdx * 3) + 0)) 'Dayton_AvailStock_Orders
+    B_D = CDbl(out2(i, baseCol + (dayIdx * 3) + 1)) 'Dayton_Orders_Backlog
+    
+    Dim scen As String
+    Dim M_from_M As Double, M_from_D As Double, D_from_M As Double, D_from_D As Double
+    
+    Call Compute_USA_Backlog_Flows(A_M, B_M, A_D, B_D, scen, M_from_M, M_from_D, D_from_M, D_from_D)
+    
+    out2(i, usaBaseCol + 0) = scen
+    out2(i, usaBaseCol + 1) = M_from_M
+    out2(i, usaBaseCol + 2) = M_from_D
+    out2(i, usaBaseCol + 3) = D_from_M
+    out2(i, usaBaseCol + 4) = D_from_D
+    out2(i, usaBaseCol + 5) = M_from_M + D_from_M   ' Total shipped FROM Moreno
+    out2(i, usaBaseCol + 6) = M_from_D + D_from_D   ' Total shipped FROM Dayton
+
     Next keyItem
 
     '7) Dump to sheet
@@ -3088,8 +3134,139 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     '8) Formatting
     ws2.Columns(2).NumberFormat = "yyyy-mm-dd"
     ws2.Columns(3).NumberFormat = "yyyy-mm-dd"
-    ws2.Range(ws2.Cells(2, 4), ws2.Cells(nRows, nCols)).NumberFormat = "0.00"
+    
+    'Format city numeric blocks
+    ws2.Range(ws2.Cells(2, 4), ws2.Cells(nRows, usaBaseCol - 1)).NumberFormat = "0.00"
+    
+    'Scenario column = text
+    ws2.Columns(usaBaseCol).NumberFormat = "@"
+    
+    'Flow columns = numeric
+    ws2.Range(ws2.Cells(2, usaBaseCol + 1), ws2.Cells(nRows, usaBaseCol + 6)).NumberFormat = "0.00"
 
 End Sub
+
+Private Sub Compute_USA_Backlog_Flows( _
+    ByVal A_M As Double, ByVal B_M As Double, _
+    ByVal A_D As Double, ByVal B_D As Double, _
+    ByRef scenario As String, _
+    ByRef M_from_M As Double, ByRef M_from_D As Double, _
+    ByRef D_from_M As Double, ByRef D_from_D As Double)
+
+    Const SH_M As Double = 0.35
+    Const SH_D As Double = 0.65
+    Const EPS As Double = 0.0000001
+
+    Dim A_T As Double, B_T As Double
+    A_T = A_M + A_D
+    B_T = B_M + B_D
+
+    'defaults
+    scenario = ""
+    M_from_M = 0: M_from_D = 0
+    D_from_M = 0: D_from_D = 0
+
+    Dim M_has As Boolean, D_has As Boolean
+    M_has = (A_M > EPS)
+    D_has = (A_D > EPS)
+
+    'Scenario 5: both OOS
+    If (Not M_has) And (Not D_has) Then
+        scenario = "5_Both_OOS"
+        Exit Sub
+    End If
+
+    'Scenario 1: both can cover own backlog with own stock
+    If (A_M >= B_M) And (A_D >= B_D) Then
+        scenario = "1_Both_Cover_Own"
+        M_from_M = B_M
+        D_from_D = B_D
+        Exit Sub
+    End If
+
+    'From here, we only apply scenarios 2/3/4 when EXACTLY ONE city has stock.
+    'If both have stock but not enough, this macro doesn’t define sharing rules -> flag it.
+    If M_has And D_has Then
+        scenario = "UNDEFINED_Both_Have_Stock_But_Not_Covering"
+        Exit Sub
+    End If
+
+    'Exactly one has stock:
+    Dim source As String
+    If M_has Then source = "Moreno" Else source = "Dayton"
+
+    'Scenario 2: one OOS, other can cover ALL backlog
+    If A_T >= B_T Then
+        If source = "Moreno" Then
+            scenario = "2_Dayton_OOS_Moreno_Covers_All"
+            M_from_M = B_M
+            D_from_M = B_D
+        Else
+            scenario = "2_Moreno_OOS_Dayton_Covers_All"
+            M_from_D = B_M
+            D_from_D = B_D
+        End If
+        Exit Sub
+    End If
+
+    'Scenario 3/4: one OOS, other only partially covers total backlog -> 35/65 allocation + spill from Moreno share
+    Dim allocM As Double, allocD As Double
+    Dim shipM As Double, shipD As Double
+    
+    'Start with proportional allocations
+    allocM = SH_M * A_T
+    allocD = SH_D * A_T
+    
+    'Cap each city at its backlog first
+    shipM = Application.Min(B_M, allocM)
+    shipD = Application.Min(B_D, allocD)
+    
+    'Compute leftover from each share (unused allocated stock)
+    Dim leftoverM As Double, leftoverD As Double
+    leftoverM = allocM - shipM  'unused Moreno-share
+    leftoverD = allocD - shipD  'unused Dayton-share
+    
+    'Spill leftovers to the OTHER city if that other city still has unmet backlog
+    '1) Moreno leftover -> Dayton
+    If leftoverM > EPS Then
+        If shipD + EPS < B_D Then
+            shipD = Application.Min(B_D, shipD + leftoverM)
+            leftoverM = allocM - shipM 'not needed further, but keep clean
+        End If
+    End If
+    
+    '2) Dayton leftover -> Moreno  (NEW scenario)
+    If leftoverD > EPS Then
+        If shipM + EPS < B_M Then
+            shipM = Application.Min(B_M, shipM + leftoverD)
+            leftoverD = allocD - shipD
+        End If
+    End If
+    
+    'Now choose scenario label for sanity checking
+    If (allocM <= B_M + EPS) And (allocD <= B_D + EPS) Then
+        scenario = "3_One_OOS_Partial_Strict_35_65"
+    ElseIf (allocM > B_M + EPS) And (allocD <= B_D + EPS) Then
+        scenario = "4_One_OOS_Partial_Spill_MorenoShare_To_Dayton"
+    ElseIf (allocD > B_D + EPS) And (allocM <= B_M + EPS) Then
+        scenario = "6_One_OOS_Partial_Spill_DaytonShare_To_Moreno"
+    Else
+        'Both shares exceed their respective backlog (rare but possible if B_M/B_D are tiny)
+        'Spills may happen both ways but shipments are capped by backlog anyway.
+        scenario = "7_One_OOS_Partial_BothShares_Exceed_Backlog"
+    End If
+
+    'Write flows depending on which city is the SOURCE of stock
+    If source = "Moreno" Then
+        M_from_M = shipM
+        D_from_M = shipD
+    Else
+        M_from_D = shipM
+        D_from_D = shipD
+    End If
+    
+        
+    End Sub
+    
 
 
