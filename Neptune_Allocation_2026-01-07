@@ -472,6 +472,20 @@ Sub Boxes_Shipped_Forecast()
 
     '=== Active colors list from table "Colors" (Status = Active) ===
     Set colors = GetActiveColors_Configured()
+
+    If colors.Count = 0 Then
+            MsgBox "No Active colors found in table 'Colors'.", vbExclamation
+            Exit Sub
+        End If
+    
+        '=== MAX_BOX driven by table "Boxes" row count (data rows only) ===
+        MAX_BOX = GetBoxCount_Configured()
+        If MAX_BOX <= 0 Then
+            MsgBox "Table 'Boxes' not found or has no rows.", vbExclamation
+            Exit Sub
+        End If
+    
+        isOptional = GetIsOptionalByBox_Configured(MAX_BOX)
     
     '==================== Build NEED cache once ====================
     Set needCache = MapCreate()
@@ -486,48 +500,41 @@ Sub Boxes_Shipped_Forecast()
     
         If idxNeedColor > 0 And Not loColors.DataBodyRange Is Nothing Then
     
-            Dim rNeed As Long, bNeed As Long
+            'Pre-resolve Box column indexes ONCE (Box 1..MAX_BOX)
+            Dim boxColIdx() As Long
+            Dim bNeed As Long
+            ReDim boxColIdx(1 To MAX_BOX)
+    
+            For bNeed = 1 To MAX_BOX
+                boxColIdx(bNeed) = GetListColumnIndexByAliases(loColors, Array("Box " & bNeed))
+            Next bNeed
+    
+            Dim rNeed As Long
             Dim clrNeed As String, keyNeed As String
-            Dim idxBoxNeed As Long, valNeed As Double
+            Dim rawNeed As Variant, valNeed As Double
     
             For rNeed = 1 To loColors.DataBodyRange.Rows.Count
     
-                clrNeed = NormalizeColor(CStr(loColors.DataBodyRange.Cells(rNeed, idxNeedColor).value))
+                clrNeed = NormalizeColor(CStr(loColors.DataBodyRange.Cells(rNeed, idxNeedColor).Value))
                 If Len(clrNeed) = 0 Then GoTo NextNeedRow
     
                 For bNeed = 1 To MAX_BOX
-    
-                    idxBoxNeed = GetListColumnIndexByAliases(loColors, Array("Box " & bNeed))
-                    If idxBoxNeed > 0 Then
-                        valNeed = CDbl(Val(loColors.DataBodyRange.Cells(rNeed, idxBoxNeed).value))
+                    If boxColIdx(bNeed) > 0 Then
+                        rawNeed = loColors.DataBodyRange.Cells(rNeed, boxColIdx(bNeed)).Value
+                        valNeed = CDbl(Val(rawNeed))   'blank/non-numeric -> 0
                     Else
-                        valNeed = 0
+                        valNeed = 0#
                     End If
     
                     keyNeed = clrNeed & "|" & CStr(bNeed)
                     MapSet needCache, keyNeed, valNeed
-    
                 Next bNeed
     
-NextNeedRow:
+    NextNeedRow:
             Next rNeed
     
         End If
     End If
-
-    If colors.Count = 0 Then
-        MsgBox "No Active colors found in table 'Colors'.", vbExclamation
-        Exit Sub
-    End If
-
-    '=== MAX_BOX driven by table "Boxes" row count (data rows only) ===
-    MAX_BOX = GetBoxCount_Configured()
-    If MAX_BOX <= 0 Then
-        MsgBox "Table 'Boxes' not found or has no rows.", vbExclamation
-        Exit Sub
-    End If
-
-    isOptional = GetIsOptionalByBox_Configured(MAX_BOX)
 
     '==================== Working variables (declared once) ====================
     
@@ -740,9 +747,8 @@ NextNeedRow:
                         ReDim need(1 To MAX_BOX)
                         
                         For b = 1 To MAX_BOX
+                            'Need must match Colors table exactly (blank/non-numeric -> 0)
                             need(b) = MapGetDouble(needCache, colorKey & "|" & CStr(b), 0#)
-                            'Safety: if missing/0, set to 1 to avoid divide-by-zero
-                            If need(b) <= 0 Then need(b) = 1
                         Next b
 
                         'Advance output row (into the array)
