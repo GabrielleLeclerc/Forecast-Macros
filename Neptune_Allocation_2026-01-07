@@ -1058,13 +1058,23 @@ NextRow_LocalSales:
 
 '==================== END WEEK-BY-WEEK ENGINE =====================
 
-    '=== Dump output array to sheet in one shot ===
-    wsDebug.Cells.Clear
-    wsDebug.Range("A1").Resize(outUsed, totalCols).value = outArr
-      
     '=== Build second debug sheet (City x Week x Color) ===
     Call Build_DebugSheet_CityWeekColor(outArr, outUsed, COL_ORD_BL_AVAIL, COL_ORD_BL_BACKLOG, COL_ORD_SALES_DEMAND, allocMap)
-
+    
+    '=== NEW: Override OrdersShipped_Backlog using CityWeek totals, then recompute BacklogShipped/AvailPostBL/Sales ===
+    Call Apply_BacklogOverride_FromCityWeek( _
+        outArr, outUsed, _
+        COL_ORD_BL_SHIP, _
+        COL_AVAIL, COL_NEED, COL_BL_SHIP, COL_AVAIL_POSTBL, _
+        COL_SALES, _
+        COL_ORD_SALES_AVAIL, COL_ORD_SALES_DEMAND, COL_ORD_SALES_SHIP, _
+        COL_SALES_SHIP, _
+        MAX_BOX, isOptional)
+    
+    '=== Dump FINAL output array to Boxes_Shipped_DEBUG ===
+    wsDebug.Cells.Clear
+    wsDebug.Range("A1").Resize(outUsed, totalCols).Value = outArr
+    
     '=== Format only the used rows (fast) ===
     If outUsed >= 2 Then
         'wsDebug.Range(wsDebug.Cells(2, 7), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
@@ -2277,6 +2287,229 @@ Private Sub Build_DebugSheet_CityWeekColor( _
 
 
 End Sub
+
+'==================== NEW: Override OrdersShipped_Backlog from CityWeek totals =====================
+'After Boxes_Shipped_DEBUG_CityWeek is created, we read:
+'  Total_Backlog_FromMontreal/Toronto/Vancouver/Moreno/Dayton
+'and override OrdersShipped_Backlog in outArr for matching (DemandCity, Color, WeekStart).
+'Then we recompute:
+'  BacklogShipped Bn
+'  AvailStock_PostBacklog Bn
+'  Sales orders + SalesShipped Bn
+'so everything behaves the same as current logic, just with the new OrdersShipped_Backlog.
+
+Private Sub Apply_BacklogOverride_FromCityWeek( _
+    ByRef outArr As Variant, _
+    ByVal outUsed As Long, _
+    ByVal COL_ORD_BL_SHIP As Long, _
+    ByVal COL_AVAIL As Long, _
+    ByVal COL_NEED As Long, _
+    ByVal COL_BL_SHIP As Long, _
+    ByVal COL_AVAIL_POSTBL As Long, _
+    ByVal COL_SALES As Long, _
+    ByVal COL_ORD_SALES_AVAIL As Long, _
+    ByVal COL_ORD_SALES_DEMAND As Long, _
+    ByVal COL_ORD_SALES_SHIP As Long, _
+    ByVal COL_SALES_SHIP As Long, _
+    ByVal MAX_BOX As Long, _
+    ByRef isOptional() As Boolean)
+
+    Dim wsCW As Worksheet
+    On Error Resume Next
+    Set wsCW = ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG_CityWeek")
+    On Error GoTo 0
+    If wsCW Is Nothing Then Exit Sub
+
+    'Read CityWeek sheet into an array
+    Dim lastRow As Long, lastCol As Long
+    lastRow = wsCW.Cells(wsCW.Rows.Count, 1).End(xlUp).Row
+    lastCol = wsCW.Cells(1, wsCW.Columns.Count).End(xlToLeft).Column
+    If lastRow < 2 Or lastCol < 3 Then Exit Sub
+
+    Dim cw As Variant
+    cw = wsCW.Range(wsCW.Cells(1, 1), wsCW.Cells(lastRow, lastCol)).Value
+
+    'Locate needed columns by header name
+    Dim cColor As Long, cWkStart As Long
+    Dim cTotMon As Long, cTotTor As Long, cTotVan As Long
+    Dim cTotMor As Long, cTotDay As Long
+
+    cColor = FindHeaderCol_1Row(cw, "Color")
+    cWkStart = FindHeaderCol_1Row(cw, "Week Start")
+
+    cTotMon = FindHeaderCol_1Row(cw, "Total_Backlog_FromMontreal")
+    cTotTor = FindHeaderCol_1Row(cw, "Total_Backlog_FromToronto")
+    cTotVan = FindHeaderCol_1Row(cw, "Total_Backlog_FromVancouver")
+    cTotMor = FindHeaderCol_1Row(cw, "Total_Backlog_FromMoreno")
+    cTotDay = FindHeaderCol_1Row(cw, "Total_Backlog_FromDayton")
+
+    'Minimum required: Color + Week Start + at least one Total_Backlog_From*
+    If cColor = 0 Or cWkStart = 0 Then Exit Sub
+    If cTotMon = 0 And cTotTor = 0 And cTotVan = 0 And cTotMor = 0 And cTotDay = 0 Then Exit Sub
+
+    'Build map: key = COLOR|yyyy-mm-dd -> Array(mon, tor, van, mor, day)
+    Dim mTotals As Object
+    Set mTotals = MapCreate()
+
+    Dim r As Long
+    Dim colorKey As String, wkKey As String, k As String
+    Dim arr5 As Variant
+
+    For r = 2 To UBound(cw, 1)
+        colorKey = NormalizeColor(CStr(cw(r, cColor)))
+        If Len(colorKey) = 0 Then GoTo NextCWRow
+
+        If IsDate(cw(r, cWkStart)) Then
+            wkKey = Format$(CDate(cw(r, cWkStart)), "yyyy-mm-dd")
+        Else
+            GoTo NextCWRow
+        End If
+
+        arr5 = Array( _
+            NzD(cw(r, cTotMon)), _
+            NzD(cw(r, cTotTor)), _
+            NzD(cw(r, cTotVan)), _
+            NzD(cw(r, cTotMor)), _
+            NzD(cw(r, cTotDay)) _
+        )
+
+        k = colorKey & "|" & wkKey
+        MapSet mTotals, k, arr5
+
+NextCWRow:
+    Next r
+
+    'Apply override row-by-row in outArr, and recompute dependent columns
+    Dim rr As Long, b As Long
+    Dim demandCity As String
+    Dim newShipOrders As Double
+    Dim payload As Variant
+    Dim ordersFromAvail2 As Double, ordersFromSales As Double, ordersShipped_Sales As Double
+    Dim availVal As Double, needVal As Double, salesVal As Double
+    Dim desiredBL As Double, shippedBL As Double, availPost As Double
+    Dim desiredS As Double, shippedS As Double
+
+    For rr = 2 To outUsed
+
+        demandCity = UCase$(Trim$(CStr(outArr(rr, 1))))
+        colorKey = NormalizeColor(CStr(outArr(rr, 3)))
+        wkKey = Format$(CDate(outArr(rr, 4)), "yyyy-mm-dd")
+
+        k = colorKey & "|" & wkKey
+
+        If MapExists(mTotals, k) Then
+            payload = MapGetVariant(mTotals, k, Empty)
+
+            Select Case demandCity
+                Case "MONTREAL":  newShipOrders = CDbl(payload(0))
+                Case "TORONTO":   newShipOrders = CDbl(payload(1))
+                Case "VANCOUVER": newShipOrders = CDbl(payload(2))
+                Case "MORENO":    newShipOrders = CDbl(payload(3))
+                Case "DAYTON":    newShipOrders = CDbl(payload(4))
+                Case Else
+                    'Unknown city -> don't override
+                    GoTo NextOutRow
+            End Select
+
+            'Override OrdersShipped_Backlog
+            outArr(rr, COL_ORD_BL_SHIP) = WorksheetFunction.Round(newShipOrders, 2)
+
+            'Recompute BacklogShipped + AvailStock_PostBacklog using the same logic you already use
+            For b = 1 To MAX_BOX
+
+                needVal = CDbl(outArr(rr, COL_NEED + (b - 1)))
+                If needVal <= 0 Then needVal = 1
+
+                desiredBL = newShipOrders * needVal
+
+                If isOptional(b) Then
+                    availVal = CDbl(outArr(rr, COL_AVAIL + (b - 1)))
+                    shippedBL = Application.Min(availVal, desiredBL)
+                Else
+                    shippedBL = desiredBL
+                End If
+
+                outArr(rr, COL_BL_SHIP + (b - 1)) = shippedBL
+
+                availPost = CDbl(outArr(rr, COL_AVAIL + (b - 1))) - shippedBL
+                If availPost < 0 Then availPost = 0
+                outArr(rr, COL_AVAIL_POSTBL + (b - 1)) = availPost
+
+            Next b
+
+            'Recompute Sales-after-backlog (because it depends on AvailStock_PostBacklog)
+            ordersFromAvail2 = 1E+30
+            ordersFromSales = 1E+30
+
+            For b = 1 To MAX_BOX
+                If Not isOptional(b) Then
+                    salesVal = CDbl(outArr(rr, COL_SALES + (b - 1)))
+                    availVal = CDbl(outArr(rr, COL_AVAIL_POSTBL + (b - 1)))
+                    needVal = CDbl(outArr(rr, COL_NEED + (b - 1)))
+                    If needVal <= 0 Then needVal = 1
+
+                    ordersFromAvail2 = Application.Min(ordersFromAvail2, OrdersFromQty(availVal, needVal))
+                    ordersFromSales = Application.Min(ordersFromSales, OrdersFromQty(salesVal, needVal))
+                End If
+            Next b
+
+            If ordersFromAvail2 = 1E+30 Then ordersFromAvail2 = 0
+            If ordersFromSales = 1E+30 Then ordersFromSales = 0
+
+            ordersShipped_Sales = Application.Min(ordersFromAvail2, ordersFromSales)
+
+            outArr(rr, COL_ORD_SALES_AVAIL) = WorksheetFunction.Round(ordersFromAvail2, 2)
+            outArr(rr, COL_ORD_SALES_DEMAND) = WorksheetFunction.Round(ordersFromSales, 2)
+            outArr(rr, COL_ORD_SALES_SHIP) = WorksheetFunction.Round(ordersShipped_Sales, 2)
+
+            For b = 1 To MAX_BOX
+                needVal = CDbl(outArr(rr, COL_NEED + (b - 1)))
+                If needVal <= 0 Then needVal = 1
+
+                desiredS = ordersShipped_Sales * needVal
+
+                If isOptional(b) Then
+                    availVal = CDbl(outArr(rr, COL_AVAIL_POSTBL + (b - 1)))
+                    shippedS = Application.Min(availVal, desiredS)
+                Else
+                    shippedS = desiredS
+                End If
+
+                outArr(rr, COL_SALES_SHIP + (b - 1)) = shippedS
+            Next b
+
+        End If
+
+NextOutRow:
+    Next rr
+
+End Sub
+
+'Finds a header in row 1 of a 2D Variant array (1-based),
+'returns the column index or 0 if not found.
+Private Function FindHeaderCol_1Row(ByVal arr As Variant, ByVal headerName As String) As Long
+    Dim c As Long
+    For c = 1 To UBound(arr, 2)
+        If StrComp(Trim$(CStr(arr(1, c))), Trim$(headerName), vbTextCompare) = 0 Then
+            FindHeaderCol_1Row = c
+            Exit Function
+        End If
+    Next c
+    FindHeaderCol_1Row = 0
+End Function
+
+'Numeric-safe conversion (blank/errors -> 0)
+Private Function NzD(ByVal v As Variant) As Double
+    If IsError(v) Or IsNull(v) Then
+        NzD = 0#
+    ElseIf Len(Trim$(CStr(v))) = 0 Then
+        NzD = 0#
+    ElseIf IsNumeric(v) Then
+        NzD = CDbl(v)
+    Else
+        NzD = 0#
+    End If
+End Function
 
 Private Sub Compute_USA_Backlog_Flows( _
     ByVal A_M As Double, ByVal B_M As Double, _
