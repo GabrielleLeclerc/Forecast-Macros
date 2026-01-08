@@ -247,6 +247,7 @@ Sub Boxes_Shipped_Forecast()
     Dim COL_BL_SHIP As Long, COL_AVAIL_POSTBL As Long
     Dim COL_ORD_SALES_AVAIL As Long, COL_ORD_SALES_DEMAND As Long, COL_ORD_SALES_SHIP As Long
     Dim COL_SALES_SHIP As Long, COL_AVAIL_POSTSALES As Long
+    Dim COL_TOTAL_FROM_DEMAND As Long
 
     '==================== WEEK ENGINE INDEXING ====================
     Dim rowLookup As Object
@@ -677,6 +678,11 @@ Sub Boxes_Shipped_Forecast()
         hdrCol = hdrCol + 1
     Next b
 
+    '=== Total_BoxesShipped_FromDemandCity (scalar) ===
+    COL_TOTAL_FROM_DEMAND = hdrCol
+    wsDebug.Cells(1, hdrCol).Value = "Total_BoxesShipped_FromDemandCity"
+    hdrCol = hdrCol + 1
+
     '=== FINAL column count (A..last header) ===
     totalCols = hdrCol - 1   'hdrCol is the NEXT empty column
     
@@ -922,6 +928,8 @@ Sub Boxes_Shipped_Forecast()
                             outArr(outUsed, COL_SALES_SHIP + (b - 1)) = 0
                         Next b
 
+                        outArr(outUsed, COL_TOTAL_FROM_DEMAND) = 0
+
                     Next i
                 Next col
             End If
@@ -1141,10 +1149,24 @@ NextRow_LocalSales:
         COL_ORD_SALES_SHIP, _
         COL_AVAIL_POSTBL, COL_NEED, COL_SALES_SHIP, _
         MAX_BOX, isOptional)
+
+    '==================== Total_BoxesShipped_FromDemandCity ====================
+    Dim rrTot As Long, bTot As Long
+    Dim sumTot As Double
     
+    For rrTot = 2 To outUsed
+        sumTot = 0#
+        For bTot = 1 To MAX_BOX
+            sumTot = sumTot + _
+                     CDbl(outArr(rrTot, COL_BL_SHIP + (bTot - 1))) + _
+                     CDbl(outArr(rrTot, COL_SALES_SHIP + (bTot - 1)))
+        Next bTot
+        outArr(rrTot, COL_TOTAL_FROM_DEMAND) = sumTot
+    Next rrTot
+   
     '=== Dump FINAL output array to Boxes_Shipped_DEBUG ===
     wsDebug.Range("A1").Resize(outUsed, totalCols).Value = outArr
-    
+
     '=== Format only the used rows (fast) ===
     If outUsed >= 2 Then
         'wsDebug.Range(wsDebug.Cells(2, 7), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
