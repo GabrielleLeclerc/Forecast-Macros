@@ -170,10 +170,10 @@ Sub Boxes_Shipped_Forecast()
     Dim wsA As Worksheet
     Dim lo As ListObject
     Dim idxWs As Long, idxCountry As Long
-    Dim idxPartner1 As Long, idxPartner2 As Long
+    Dim idxPartner1 As Long, idxPartner2 As Long, idxAlloc As Long
 
-    'Partner maps
-    Dim p1Map As Object, p2Map As Object
+    'Partner maps + allocation map
+    Dim p1Map As Object, p2Map As Object, allocMap As Object
     Dim mapKey As String
     Dim wsName As String, p1WsName As String, p2WsName As String
     Dim rP As Long
@@ -477,6 +477,42 @@ Sub Boxes_Shipped_Forecast()
             MapAddFirst p2Map, mapKey, p2WsName
         End If
     Next rP
+
+    '=== Build Allocation lookup map from WorksheetNames ===
+    'Key: Country|Worksheet (e.g., "USA|Neptune-Moreno") -> Double share (e.g., 0.35)
+    idxAlloc = GetListColumnIndexByAliases(lo, Array("Allocation", "Alloc", "Share"))
+    If idxAlloc = 0 Then
+        MsgBox "WorksheetNames table found, but could not find column 'Allocation'.", vbExclamation
+        Exit Sub
+    End If
+    
+    Set allocMap = MapCreate()
+    
+    Dim rawAlloc As Variant, allocShare As Double
+    For rP = 1 To lo.DataBodyRange.Rows.Count
+    
+        wsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxWs).Value))
+        If Len(wsName) = 0 Then GoTo NextAllocRow
+    
+        mapKey = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxCountry).Value)) & "|" & wsName
+    
+        rawAlloc = lo.DataBodyRange.Cells(rP, idxAlloc).Value
+    
+        'Excel may store 35% as 0.35 (numeric) or as "35%" (string).
+        If IsNumeric(rawAlloc) Then
+            allocShare = CDbl(rawAlloc)
+        Else
+            allocShare = Val(CStr(rawAlloc)) / 100#
+        End If
+    
+        'If user typed 35 (not 35%), treat as 35%
+        If allocShare > 1# Then allocShare = allocShare / 100#
+    
+        MapSet allocMap, mapKey, allocShare
+    
+    NextAllocRow:
+    Next rP
+
 
     '=== Forecast start date from assumptions ===
      forecastStart = CDate(wsA.Range(CFG_FORECAST_START_CELL).value)
@@ -2189,7 +2225,7 @@ Next rrLocal
     wsDebug.Range("A1").Resize(outUsed, totalCols).value = outArr
     
     '=== Build second debug sheet (City x Week x Color) ===
-    Call Build_DebugSheet_CityWeekColor(outArr, outUsed, COL_ORD_BL_AVAIL, COL_ORD_BL_BACKLOG, COL_ORD_SALES_DEMAND)
+    Call Build_DebugSheet_CityWeekColor(outArr, outUsed, COL_ORD_BL_AVAIL, COL_ORD_BL_BACKLOG, COL_ORD_SALES_DEMAND, allocMap)
 
     '=== Format only the used rows (fast) ===
     If outUsed >= 2 Then
@@ -2908,6 +2944,41 @@ Private Function StripNeptunePrefix(ByVal wsName As String) As String
     End If
 End Function
 
+'Finds the allocMap key for a given USA city by scanning allocMap keys:
+'  returns e.g. "USA|Neptune-Moreno" (or whatever the worksheet is called in WorksheetNames)
+'If not found, returns "".
+Private Function GetUSAAllocKeyForCity(ByVal allocMap As Object, ByVal city As String) As String
+    Dim target As String
+    target = UCase$(Trim$(city))
+
+    Dim k As Variant
+    Dim keyStr As String
+    Dim parts() As String
+    Dim wsName As String
+    Dim wsCity As String
+
+    For Each k In MapKeys(allocMap)
+        keyStr = CStr(k)
+
+        'Key format is "Country|Worksheet"
+        If UCase$(Left$(keyStr, 4)) = "USA|" Then
+            parts = Split(keyStr, "|")
+            If UBound(parts) >= 1 Then
+                wsName = parts(1) 'worksheet name portion
+                wsCity = UCase$(StripNeptunePrefix(wsName))
+
+                If wsCity = target Then
+                    GetUSAAllocKeyForCity = "USA|" & wsName
+                    Exit Function
+                End If
+            End If
+        End If
+    Next k
+
+    GetUSAAllocKeyForCity = vbNullString
+End Function
+
+
 Private Function GetP1City(ByVal p1Map As Object, ByVal country As String, ByVal demandCity As String) As String
     Dim key As String
     Dim wsName As String, p1Ws As String
@@ -2949,7 +3020,8 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     ByVal outUsed As Long, _
     ByVal COL_ORD_BL_AVAIL As Long, _
     ByVal COL_ORD_BL_BACKLOG As Long, _
-    ByVal COL_ORD_SALES_DEMAND As Long)
+    ByVal COL_ORD_SALES_DEMAND As Long, _
+    ByVal allocMap As Object)
 
     Dim ws2 As Worksheet
     Dim sheetName As String
@@ -3116,7 +3188,29 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     Dim scen As String
     Dim M_from_M As Double, M_from_D As Double, D_from_M As Double, D_from_D As Double
     
-    Call Compute_USA_Backlog_Flows(A_M, B_M, A_D, B_D, scen, M_from_M, M_from_D, D_from_M, D_from_D)
+    '--- Get USA allocation shares dynamically from allocMap (built from WorksheetNames) ---
+    Dim shMor As Double, shDay As Double
+    Dim kMor As String, kDay As String
+    
+    kMor = GetUSAAllocKeyForCity(allocMap, "Moreno")
+    kDay = GetUSAAllocKeyForCity(allocMap, "Dayton")
+
+    If Len(kMor) = 0 Or Len(kDay) = 0 Then
+        scen = "WARN_USA_AllocKey_Missing_In_WorksheetNames"
+    End If
+    
+    shMor = MapGetDouble(allocMap, kMor, 0.35)
+    shDay = MapGetDouble(allocMap, kDay, 0.65)
+    
+    'Optional safety: if they don't sum to ~1, normalize (prevents bad inputs)
+    Dim shSum As Double
+    shSum = shMor + shDay
+    If shSum > 0.0000001 Then
+        shMor = shMor / shSum
+        shDay = shDay / shSum
+    End If
+    
+    Call Compute_USA_Backlog_Flows(A_M, B_M, A_D, B_D, shMor, shDay, scen, M_from_M, M_from_D, D_from_M, D_from_D)
     
     out2(i, usaBaseCol + 0) = scen
     out2(i, usaBaseCol + 1) = M_from_M
@@ -3149,13 +3243,13 @@ End Sub
 Private Sub Compute_USA_Backlog_Flows( _
     ByVal A_M As Double, ByVal B_M As Double, _
     ByVal A_D As Double, ByVal B_D As Double, _
+    ByVal SH_M As Double, ByVal SH_D As Double, _
     ByRef scenario As String, _
     ByRef M_from_M As Double, ByRef M_from_D As Double, _
     ByRef D_from_M As Double, ByRef D_from_D As Double)
 
-    Const SH_M As Double = 0.35
-    Const SH_D As Double = 0.65
     Const EPS As Double = 0.0000001
+
 
     Dim A_T As Double, B_T As Double
     A_T = A_M + A_D
