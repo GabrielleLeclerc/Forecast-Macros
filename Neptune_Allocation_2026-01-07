@@ -2744,9 +2744,7 @@ Private Sub Compute_USA_Backlog_Flows( _
     End If
 
     'Scenario 3/4: one OOS, other only partially covers total backlog -> 35/65 allocation + spill from Moreno share
-    Dim allocM As Double, allocD As Double
-    Dim shipM As Double, shipD As Double
-    
+      
     'Start with proportional allocations
     allocM = SH_M * A_T
     allocD = SH_D * A_T
