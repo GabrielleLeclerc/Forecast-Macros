@@ -2754,7 +2754,6 @@ Private Sub Compute_USA_Backlog_Flows( _
     shipD = MinD(B_D, allocD)
     
     'Compute leftover from each share (unused allocated stock)
-    Dim leftoverM As Double, leftoverD As Double
     leftoverM = allocM - shipM  'unused Moreno-share
     leftoverD = allocD - shipD  'unused Dayton-share
     
