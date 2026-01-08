@@ -2188,6 +2188,9 @@ Next rrLocal
     wsDebug.Cells.Clear
     wsDebug.Range("A1").Resize(outUsed, totalCols).value = outArr
     
+    '=== Build second debug sheet (City x Week x Color) ===
+    Call Build_DebugSheet_CityWeekColor(outArr, outUsed, COL_ORD_BL_AVAIL, COL_ORD_BL_BACKLOG, COL_ORD_SALES_DEMAND)
+
     '=== Format only the used rows (fast) ===
     If outUsed >= 2 Then
         'wsDebug.Range(wsDebug.Cells(2, 7), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
@@ -2936,5 +2939,157 @@ Private Function GetP2City(ByVal p2Map As Object, ByVal country As String, ByVal
     End If
 
 End Function
+
+'==================== NEW DEBUG SHEET (City x Week x Color) =====================
+'Creates a second debug sheet:
+'Color | Week Start | Week End | <City>_AvailStock_Orders | <City>_Orders_Backlog | <City>_Orders_Sales ...
+
+Private Sub Build_DebugSheet_CityWeekColor( _
+    ByVal outArr As Variant, _
+    ByVal outUsed As Long, _
+    ByVal COL_ORD_BL_AVAIL As Long, _
+    ByVal COL_ORD_BL_BACKLOG As Long, _
+    ByVal COL_ORD_SALES_DEMAND As Long)
+
+    Dim ws2 As Worksheet
+    Dim sheetName As String
+    sheetName = "Boxes_Shipped_DEBUG_CityWeek"
+
+    '1) Create/clear sheet
+    On Error Resume Next
+    Set ws2 = ThisWorkbook.Worksheets(sheetName)
+    On Error GoTo 0
+
+    If ws2 Is Nothing Then
+        Set ws2 = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+        ws2.Name = sheetName
+    End If
+    ws2.Cells.Clear
+
+    '2) Define cities in the exact order you want
+    Dim cities As Variant
+    cities = Array("Montreal", "Toronto", "Vancouver", "Moreno", "Dayton")
+
+    '3) Build lookup map: key = City|Color|WeekStart -> Array(availOrders, backlogOrders, salesOrders)
+    Dim m As Object
+    Set m = MapCreate()
+
+    Dim r As Long
+    Dim city As String, colorKey As String, wkStartKey As String
+    Dim k As String
+
+    For r = 2 To outUsed
+        city = Trim$(CStr(outArr(r, 1)))                 'Demand City
+        colorKey = NormalizeColor(CStr(outArr(r, 3)))    'Color (normalized)
+        wkStartKey = Format$(CDate(outArr(r, 4)), "yyyy-mm-dd")
+
+        If Len(city) > 0 And Len(colorKey) > 0 Then
+            k = city & "|" & colorKey & "|" & wkStartKey
+
+            Dim payload As Variant
+            payload = Array( _
+                CDbl(outArr(r, COL_ORD_BL_AVAIL)), _
+                CDbl(outArr(r, COL_ORD_BL_BACKLOG)), _
+                CDbl(outArr(r, COL_ORD_SALES_DEMAND)) _
+            )
+
+            'First match wins
+            MapAddFirst m, k, payload
+        End If
+    Next r
+
+    '4) Build unique list of (Color|WeekStart) rows and remember WeekEnd
+    Dim rowKeys As Object
+    Set rowKeys = MapCreate()
+
+    Dim wkStartDate As Date, wkEndDate As Date
+    Dim rowKey As String
+
+    For r = 2 To outUsed
+        colorKey = NormalizeColor(CStr(outArr(r, 3)))
+        wkStartDate = CDate(outArr(r, 4))
+        wkEndDate = CDate(outArr(r, 5))
+
+        rowKey = colorKey & "|" & Format$(wkStartDate, "yyyy-mm-dd")
+
+        'Store WeekEnd as the value (first match wins)
+        MapAddFirst rowKeys, rowKey, wkEndDate
+    Next r
+
+    '5) Prepare output array for the new sheet
+    Dim nRows As Long, nCols As Long
+    nRows = MapCount(rowKeys) + 1 ' + header row
+    nCols = 3 + (UBound(cities) - LBound(cities) + 1) * 3
+
+    Dim out2() As Variant
+    ReDim out2(1 To nRows, 1 To nCols)
+
+    'Headers
+    out2(1, 1) = "Color"
+    out2(1, 2) = "Week Start"
+    out2(1, 3) = "Week End"
+
+    Dim c As Long, baseCol As Long
+    baseCol = 4
+
+    For c = LBound(cities) To UBound(cities)
+        out2(1, baseCol + (c * 3) + 0) = cities(c) & "_AvailStock_Orders"
+        out2(1, baseCol + (c * 3) + 1) = cities(c) & "_Orders_Backlog"
+        out2(1, baseCol + (c * 3) + 2) = cities(c) & "_Orders_Sales"
+    Next c
+
+    '6) Write rows
+    Dim keys As Variant
+    keys = MapKeys(rowKeys)
+
+    Dim i As Long
+    Dim parts() As String
+    Dim wkStartStr As String
+    Dim wkEndVal As Date
+
+    Dim payloadOut As Variant
+    Dim kk As String
+
+    i = 1
+    Dim keyItem As Variant
+    For Each keyItem In keys
+        i = i + 1
+
+        parts = Split(CStr(keyItem), "|")
+        colorKey = parts(0)
+        wkStartStr = parts(1)
+        wkEndVal = CDate(MapGetVariant(rowKeys, CStr(keyItem), 0))
+
+        out2(i, 1) = colorKey
+        out2(i, 2) = CDate(wkStartStr)
+        out2(i, 3) = wkEndVal
+
+        'Fill city metrics
+        For c = LBound(cities) To UBound(cities)
+            kk = cities(c) & "|" & colorKey & "|" & wkStartStr
+
+            If MapExists(m, kk) Then
+                payloadOut = MapGetVariant(m, kk, Empty)
+
+                out2(i, baseCol + (c * 3) + 0) = CDbl(payloadOut(0)) ' avail orders
+                out2(i, baseCol + (c * 3) + 1) = CDbl(payloadOut(1)) ' backlog orders
+                out2(i, baseCol + (c * 3) + 2) = CDbl(payloadOut(2)) ' sales orders
+            Else
+                out2(i, baseCol + (c * 3) + 0) = 0
+                out2(i, baseCol + (c * 3) + 1) = 0
+                out2(i, baseCol + (c * 3) + 2) = 0
+            End If
+        Next c
+    Next keyItem
+
+    '7) Dump to sheet
+    ws2.Range("A1").Resize(nRows, nCols).Value = out2
+
+    '8) Formatting
+    ws2.Columns(2).NumberFormat = "yyyy-mm-dd"
+    ws2.Columns(3).NumberFormat = "yyyy-mm-dd"
+    ws2.Range(ws2.Cells(2, 4), ws2.Cells(nRows, nCols)).NumberFormat = "0.00"
+
+End Sub
 
 
