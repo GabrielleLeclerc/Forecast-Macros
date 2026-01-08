@@ -117,7 +117,7 @@ End Function
 Private Sub GuessDescAndColorColumns(ByVal sectionRng As Range, ByRef descRelCol As Long, ByRef colorRelCol As Long)
     Dim relC As Long, r As Long, s As String
     Dim maxCols As Long
-    maxCols = Application.Min(sectionRng.Columns.Count, 6) 'only inspect first few columns in the block
+    maxCols = MinL(sectionRng.Columns.Count, 6) 'only inspect first few columns in the block
 
     Dim boxHits() As Long, textHits() As Long, blankHits() As Long
     ReDim boxHits(1 To maxCols)
@@ -208,6 +208,12 @@ Sub Boxes_Shipped_Forecast()
     Dim salesTbl As Range, begTbl As Range, endTbl As Range, poTbl As Range
     Dim salesIdx As Variant, begIdx As Variant, endIdx As Variant, poIdx As Variant
     Dim salesMap As Object, begMap As Object, poMap As Object
+    
+    'Arrays for fast reads (per sheet)
+    Dim salesArr As Variant, begArr As Variant, poArr As Variant
+    Dim salesFirstCol As Long, begFirstCol As Long, poFirstCol As Long
+    Dim salesFirstRow As Long, begFirstRow As Long, poFirstRow As Long
+    Dim colRelSales As Long, colRelBeg As Long, colRelPO As Long
 
     'Forecast column scan
     Dim startCol As Long, lastCol As Long, col As Long
@@ -217,6 +223,9 @@ Sub Boxes_Shipped_Forecast()
     Dim i As Long
     Dim need() As Double
     Dim needCache As Object
+    Dim needByColor As Object          
+    Dim needTmp() As Double
+    Dim vNeed As Variant
 
     'Row write helpers
     Dim writeCol As Long
@@ -536,6 +545,22 @@ Sub Boxes_Shipped_Forecast()
         End If
     End If
 
+    '==================== Prebuild Need arrays per color (speed) ====================
+    Set needByColor = MapCreate()
+    
+    Dim cKey As String
+    Dim nb As Long
+    
+    For i = 1 To colors.Count
+        cKey = NormalizeColor(colors(i))
+        ReDim needTmp(1 To MAX_BOX)
+        For nb = 1 To MAX_BOX
+            needTmp(nb) = MapGetDouble(needCache, cKey & "|" & CStr(nb), 0#)
+        Next nb
+        'store the whole array as a Variant
+        MapSet needByColor, cKey, needTmp
+    Next i
+
     '==================== Working variables (declared once) ====================
     
     'Column index helpers used in Round 1/2 calculations
@@ -656,7 +681,7 @@ Sub Boxes_Shipped_Forecast()
     totalCols = hdrCol - 1   'hdrCol is the NEXT empty column
     
     '=== Output buffer (write once at the end) ===
-    outCapacity = 5000
+    outCapacity = 50000
     ReDim outArr(1 To outCapacity, 1 To totalCols)
     
     '=== Copy headers into outArr row 1 ===
@@ -694,7 +719,26 @@ Sub Boxes_Shipped_Forecast()
             Set begTbl = BuildSectionTable_Block(wsT, "Beginning Stock")
             Set endTbl = BuildSectionTable_Block(wsT, "Ending Stock")
             Set poTbl = BuildSectionTable_Block(wsT, "POs to be received")
+
+            '=== Load section blocks into arrays once (FAST) ===
+            If Not salesTbl Is Nothing Then
+                salesArr = salesTbl.Value2
+                salesFirstCol = salesTbl.Column
+                salesFirstRow = salesTbl.Row
+            End If
             
+            If Not begTbl Is Nothing Then
+                begArr = begTbl.Value2
+                begFirstCol = begTbl.Column
+                begFirstRow = begTbl.Row
+            End If
+            
+            If Not poTbl Is Nothing Then
+                poArr = poTbl.Value2
+                poFirstCol = poTbl.Column
+                poFirstRow = poTbl.Row
+            End If
+
             'Optional: quick debug if any section is missing
             If salesTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'Sales'"
             If begTbl Is Nothing Then Debug.Print wsT.Name & ": Missing section 'Beginning Stock'"
@@ -746,15 +790,22 @@ Sub Boxes_Shipped_Forecast()
                        '=== Load "need per order" from CACHE (Box 1..MAX_BOX) ===
                         ReDim need(1 To MAX_BOX)
                         
-                        For b = 1 To MAX_BOX
-                            'Need must match Colors table exactly (blank/non-numeric -> 0)
-                            need(b) = MapGetDouble(needCache, colorKey & "|" & CStr(b), 0#)
-                        Next b
+                        'Pull prebuilt need array for this color (FAST)
+                        vNeed = MapGetVariant(needByColor, colorKey, Empty)
+                        If IsEmpty(vNeed) Then
+                            ReDim need(1 To MAX_BOX)
+                            'fallback (should be rare)
+                            For b = 1 To MAX_BOX
+                                need(b) = MapGetDouble(needCache, colorKey & "|" & CStr(b), 0#)
+                            Next b
+                        Else
+                            need = vNeed   'assign Double() array
+                        End If
 
                         'Advance output row (into the array)
                         outUsed = outUsed + 1
                         If outUsed > outCapacity Then
-                            outCapacity = outCapacity + 5000
+                            outCapacity = outCapacity + 50000
                             ReDim Preserve outArr(1 To outCapacity, 1 To totalCols)
                         End If
                         
@@ -771,13 +822,15 @@ Sub Boxes_Shipped_Forecast()
                          writeCol = COL_SALES
                                               
                         '--- Sales B1..Bn ---
+                        'Compute column-relative index once
+                        colRelSales = col - salesFirstCol + 1
+                        
                         For b = 1 To MAX_BOX
                             key = colorKey & "|" & CStr(b)
                         
-                            rr = MapGetLong(salesMap, key, 0)
+                            rr = MapGetLong(salesMap, key, 0) 'rr is RELATIVE row now
                             If rr > 0 Then
-                                'outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
-                                outArr(outUsed, writeCol) = wsT.Cells(rr, col).value
+                                outArr(outUsed, writeCol) = salesArr(rr, colRelSales)
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
@@ -786,13 +839,14 @@ Sub Boxes_Shipped_Forecast()
                         Next b
                     
                         '--- Beginning Stock B1..Bn ---
+                        colRelBeg = col - begFirstCol + 1
+
                         For b = 1 To MAX_BOX
                             key = colorKey & "|" & CStr(b)
                         
                             rr = MapGetLong(begMap, key, 0)
                             If rr > 0 Then
-                                'outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
-                                outArr(outUsed, writeCol) = wsT.Cells(rr, col).value
+                                outArr(outUsed, writeCol) = begArr(rr, colRelBeg)
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
@@ -801,13 +855,14 @@ Sub Boxes_Shipped_Forecast()
                         Next b
 
                         '--- Inbound B1..Bn (POs to be received) ---
+                        colRelPO = col - poFirstCol + 1
+                        
                         For b = 1 To MAX_BOX
                             key = colorKey & "|" & CStr(b)
                         
                             rr = MapGetLong(poMap, key, 0)
                             If rr > 0 Then
-                                'outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
-                                outArr(outUsed, writeCol) = wsT.Cells(rr, col).value
+                                outArr(outUsed, writeCol) = poArr(rr, colRelPO)
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
@@ -970,15 +1025,15 @@ NextRow_Backlog:
                 needVal = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
                 If needVal <= 0 Then needVal = 1
 
-                ordersFromAvail = Application.Min(ordersFromAvail, OrdersFromQty(availVal, needVal))
-                ordersFromBacklog = Application.Min(ordersFromBacklog, OrdersFromQty(backlogVal, needVal))
+                ordersFromAvail = MinD(ordersFromAvail, OrdersFromQty(availVal, needVal))
+                ordersFromBacklog = MinD(ordersFromBacklog, OrdersFromQty(backlogVal, needVal))
             End If
         Next b
 
         If ordersFromAvail = 1E+30 Then ordersFromAvail = 0
         If ordersFromBacklog = 1E+30 Then ordersFromBacklog = 0
 
-        ordersShipped_Backlog = Application.Min(ordersFromAvail, ordersFromBacklog)
+        ordersShipped_Backlog = MinD(ordersFromAvail, ordersFromBacklog)
 
         outArr(rrLocal, COL_ORD_BL_AVAIL) = WorksheetFunction.Round(ordersFromAvail, 2)
         outArr(rrLocal, COL_ORD_BL_BACKLOG) = WorksheetFunction.Round(ordersFromBacklog, 2)
@@ -994,7 +1049,7 @@ NextRow_Backlog:
 
             If isOptional(b) Then
                 availVal = CDbl(outArr(rrLocal, COL_AVAIL + (b - 1)))
-                shippedBL = Application.Min(availVal, desiredBL)
+                shippedBL = MinD(availVal, desiredBL)
             Else
                 shippedBL = desiredBL
             End If
@@ -1025,15 +1080,15 @@ NextRow_LocalBL:
                 needVal = CDbl(outArr(rrLocal, COL_NEED + (b - 1)))
                 If needVal <= 0 Then needVal = 1
 
-                ordersFromAvail2 = Application.Min(ordersFromAvail2, OrdersFromQty(availVal, needVal))
-                ordersFromSales = Application.Min(ordersFromSales, OrdersFromQty(salesVal, needVal))
+                ordersFromAvail2 = MinD(ordersFromAvail2, OrdersFromQty(availVal, needVal))
+                ordersFromSales = MinD(ordersFromSales, OrdersFromQty(salesVal, needVal))
             End If
         Next b
 
         If ordersFromAvail2 = 1E+30 Then ordersFromAvail2 = 0
         If ordersFromSales = 1E+30 Then ordersFromSales = 0
 
-        ordersShipped_Sales = Application.Min(ordersFromAvail2, ordersFromSales)
+        ordersShipped_Sales = MinD(ordersFromAvail2, ordersFromSales)
 
         outArr(rrLocal, COL_ORD_SALES_AVAIL) = WorksheetFunction.Round(ordersFromAvail2, 2)
         outArr(rrLocal, COL_ORD_SALES_DEMAND) = WorksheetFunction.Round(ordersFromSales, 2)
@@ -1048,7 +1103,7 @@ NextRow_LocalBL:
 
             If isOptional(b) Then
                 availVal = CDbl(outArr(rrLocal, COL_AVAIL_POSTBL + (b - 1)))
-                shippedS = Application.Min(availVal, desiredS)
+                shippedS = MinD(availVal, desiredS)
             Else
                 shippedS = desiredS
             End If
@@ -1078,7 +1133,6 @@ NextRow_LocalSales:
         MAX_BOX, isOptional)
     
     '=== Dump FINAL output array to Boxes_Shipped_DEBUG ===
-    wsDebug.Cells.Clear
     wsDebug.Range("A1").Resize(outUsed, totalCols).Value = outArr
     
     '=== Format only the used rows (fast) ===
@@ -1439,7 +1493,8 @@ Private Function BuildSectionIndex_FromRange(ByVal sectionRng As Range) As Varia
 
         tmp(1, cnt) = colorKey
         tmp(2, cnt) = bx
-        tmp(3, cnt) = sectionRng.Cells(r, 1).Row 'worksheet row number (first col of sectionRng)
+        tmp(3, cnt) = r  'RELATIVE row inside sectionRng (1..Rows.Count)
+
 NextRow:
     Next r
 
@@ -1704,6 +1759,22 @@ Private Function OrdersFromQty(ByVal qty As Double, ByVal need As Double) As Dou
         OrdersFromQty = 0
     Else
         OrdersFromQty = qty / need
+    End If
+End Function
+
+Private Function MinD(ByVal a As Double, ByVal b As Double) As Double
+    If a < b Then
+        MinD = a
+    Else
+        MinD = b
+    End If
+End Function
+
+Private Function MinL(ByVal a As Long, ByVal b As Long) As Long
+    If a < b Then
+        MinL = a
+    Else
+        MinL = b
     End If
 End Function
 
@@ -2430,7 +2501,7 @@ NextCWRow:
 
                 If isOptional(b) Then
                     availVal = CDbl(outArr(rr, COL_AVAIL + (b - 1)))
-                    shippedBL = Application.Min(availVal, desiredBL)
+                    shippedBL = MinD(availVal, desiredBL)
                 Else
                     shippedBL = desiredBL
                 End If
@@ -2454,15 +2525,15 @@ NextCWRow:
                     needVal = CDbl(outArr(rr, COL_NEED + (b - 1)))
                     If needVal <= 0 Then needVal = 1
 
-                    ordersFromAvail2 = Application.Min(ordersFromAvail2, OrdersFromQty(availVal, needVal))
-                    ordersFromSales = Application.Min(ordersFromSales, OrdersFromQty(salesVal, needVal))
+                    ordersFromAvail2 = MinD(ordersFromAvail2, OrdersFromQty(availVal, needVal))
+                    ordersFromSales = MinD(ordersFromSales, OrdersFromQty(salesVal, needVal))
                 End If
             Next b
 
             If ordersFromAvail2 = 1E+30 Then ordersFromAvail2 = 0
             If ordersFromSales = 1E+30 Then ordersFromSales = 0
 
-            ordersShipped_Sales = Application.Min(ordersFromAvail2, ordersFromSales)
+            ordersShipped_Sales = MinD(ordersFromAvail2, ordersFromSales)
 
             outArr(rr, COL_ORD_SALES_AVAIL) = WorksheetFunction.Round(ordersFromAvail2, 2)
             outArr(rr, COL_ORD_SALES_DEMAND) = WorksheetFunction.Round(ordersFromSales, 2)
@@ -2476,7 +2547,7 @@ NextCWRow:
 
                 If isOptional(b) Then
                     availVal = CDbl(outArr(rr, COL_AVAIL_POSTBL + (b - 1)))
-                    shippedS = Application.Min(availVal, desiredS)
+                    shippedS = MinD(availVal, desiredS)
                 Else
                     shippedS = desiredS
                 End If
@@ -2589,8 +2660,8 @@ Private Sub Compute_USA_Backlog_Flows( _
     allocD = SH_D * A_T
     
     'Cap each city at its backlog first
-    shipM = Application.Min(B_M, allocM)
-    shipD = Application.Min(B_D, allocD)
+    shipM = MinD(B_M, allocM)
+    shipD = MinD(B_D, allocD)
     
     'Compute leftover from each share (unused allocated stock)
     Dim leftoverM As Double, leftoverD As Double
@@ -2601,7 +2672,7 @@ Private Sub Compute_USA_Backlog_Flows( _
     '1) Moreno leftover -> Dayton
     If leftoverM > EPS Then
         If shipD + EPS < B_D Then
-            shipD = Application.Min(B_D, shipD + leftoverM)
+            shipD = MinD(B_D, shipD + leftoverM)
             leftoverM = allocM - shipM 'not needed further, but keep clean
         End If
     End If
@@ -2609,7 +2680,7 @@ Private Sub Compute_USA_Backlog_Flows( _
     '2) Dayton leftover -> Moreno  (NEW scenario)
     If leftoverD > EPS Then
         If shipM + EPS < B_M Then
-            shipM = Application.Min(B_M, shipM + leftoverD)
+            shipM = MinD(B_M, shipM + leftoverD)
             leftoverD = allocD - shipD
         End If
     End If
@@ -2686,9 +2757,9 @@ Private Sub Compute_CAN_Backlog_Flows( _
     allocTor = SH_Tor * A_Tot
     allocVan = SH_Van * A_Tot
 
-    shipMon = Application.Min(B_Mon, allocMon)
-    shipTor = Application.Min(B_Tor, allocTor)
-    shipVan = Application.Min(B_Van, allocVan)
+    shipMon = MinD(B_Mon, allocMon)
+    shipTor = MinD(B_Tor, allocTor)
+    shipVan = MinD(B_Van, allocVan)
 
     Dim used As Double, leftover As Double
     used = shipMon + shipTor + shipVan
@@ -2779,17 +2850,17 @@ Private Sub Compute_CAN_Backlog_Flows( _
     '--- Pass 0: Local ---
     Dim x As Double
 
-    x = Application.Min(remSrcMon, remDestMon)
+    x = MinD(remSrcMon, remDestMon)
     Mon_from_Mon = Mon_from_Mon + x
     remSrcMon = remSrcMon - x
     remDestMon = remDestMon - x
 
-    x = Application.Min(remSrcTor, remDestTor)
+    x = MinD(remSrcTor, remDestTor)
     Tor_from_Tor = Tor_from_Tor + x
     remSrcTor = remSrcTor - x
     remDestTor = remDestTor - x
 
-    x = Application.Min(remSrcVan, remDestVan)
+    x = MinD(remSrcVan, remDestVan)
     Van_from_Van = Van_from_Van + x
     remSrcVan = remSrcVan - x
     remDestVan = remDestVan - x
@@ -2845,10 +2916,10 @@ Private Sub AllocateSourceToDests( _
 
     'If only one dest exists, give it everything it can take
     If remDest2 <= EPS Then
-        alloc1 = Application.Min(remSource, remDest1)
+        alloc1 = MinD(remSource, remDest1)
         alloc2 = 0
     ElseIf remDest1 <= EPS Then
-        alloc2 = Application.Min(remSource, remDest2)
+        alloc2 = MinD(remSource, remDest2)
         alloc1 = 0
     End If
 
