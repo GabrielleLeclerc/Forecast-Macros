@@ -2978,6 +2978,35 @@ Private Function GetUSAAllocKeyForCity(ByVal allocMap As Object, ByVal city As S
     GetUSAAllocKeyForCity = vbNullString
 End Function
 
+Private Function GetAllocKeyForCityCountry(ByVal allocMap As Object, ByVal country As String, ByVal city As String) As String
+    Dim targetCountry As String, targetCity As String
+    targetCountry = UCase$(Trim$(country))
+    targetCity = UCase$(Trim$(city))
+
+    Dim k As Variant, keyStr As String
+    Dim parts() As String, wsName As String, wsCity As String
+
+    For Each k In MapKeys(allocMap)
+        keyStr = CStr(k)
+
+        'Key format is "Country|Worksheet"
+        parts = Split(keyStr, "|")
+        If UBound(parts) >= 1 Then
+            If UCase$(Trim$(parts(0))) = targetCountry Then
+                wsName = parts(1)
+                wsCity = UCase$(StripNeptunePrefix(wsName))
+
+                If wsCity = targetCity Then
+                    GetAllocKeyForCityCountry = targetCountry & "|" & wsName
+                    Exit Function
+                End If
+            End If
+        End If
+    Next k
+
+    GetAllocKeyForCityCountry = vbNullString
+End Function
+
 
 Private Function GetP1City(ByVal p1Map As Object, ByVal country As String, ByVal demandCity As String) As String
     Dim key As String
@@ -3096,11 +3125,12 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     
     Dim EXTRA_USA_COLS As Long
     EXTRA_USA_COLS = 1 + 4 + 2  ' scenario + 4 flow columns + 2 total columns
-    
-    nCols = 3 + cityBlockCols + EXTRA_USA_COLS
 
-    
-    nCols = 3 + cityBlockCols + EXTRA_USA_COLS
+    Dim EXTRA_CAN_COLS As Long
+    EXTRA_CAN_COLS = 1 + 9 + 3  ' scenario + 9 flow cells + 3 source totals
+
+    nCols = 3 + cityBlockCols + EXTRA_USA_COLS + EXTRA_CAN_COLS
+
 
     Dim out2() As Variant
     ReDim out2(1 To nRows, 1 To nCols)
@@ -3129,6 +3159,28 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     out2(1, usaBaseCol + 4) = "Dayton_Backlog_Shipped_FromDayton"
     out2(1, usaBaseCol + 5) = "Total_Backlog_FromMoreno"
     out2(1, usaBaseCol + 6) = "Total_Backlog_FromDayton"
+
+    Dim canBaseCol As Long
+    canBaseCol = usaBaseCol + EXTRA_USA_COLS
+
+    out2(1, canBaseCol + 0) = "CAN_Allocation_Scenario"
+
+    out2(1, canBaseCol + 1) = "Montreal_Backlog_Shipped_FromMontreal"
+    out2(1, canBaseCol + 2) = "Montreal_Backlog_Shipped_FromToronto"
+    out2(1, canBaseCol + 3) = "Montreal_Backlog_Shipped_FromVancouver"
+
+    out2(1, canBaseCol + 4) = "Toronto_Backlog_Shipped_FromMontreal"
+    out2(1, canBaseCol + 5) = "Toronto_Backlog_Shipped_FromToronto"
+    out2(1, canBaseCol + 6) = "Toronto_Backlog_Shipped_FromVancouver"
+
+    out2(1, canBaseCol + 7) = "Vancouver_Backlog_Shipped_FromMontreal"
+    out2(1, canBaseCol + 8) = "Vancouver_Backlog_Shipped_FromToronto"
+    out2(1, canBaseCol + 9) = "Vancouver_Backlog_Shipped_FromVancouver"
+
+    out2(1, canBaseCol + 10) = "Total_Backlog_FromMontreal"
+    out2(1, canBaseCol + 11) = "Total_Backlog_FromToronto"
+    out2(1, canBaseCol + 12) = "Total_Backlog_FromVancouver"
+
 
     '6) Write rows
     Dim keys As Variant
@@ -3220,6 +3272,78 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     out2(i, usaBaseCol + 5) = M_from_M + D_from_M   ' Total shipped FROM Moreno
     out2(i, usaBaseCol + 6) = M_from_D + D_from_D   ' Total shipped FROM Dayton
 
+    '=== CAN allocation + flows (Montreal/Toronto/Vancouver backlog shipping) ===
+    Dim monIdx As Long, torIdx As Long, vanIdx As Long
+    monIdx = 0 ' cities = Array("Montreal","Toronto","Vancouver","Moreno","Dayton")
+    torIdx = 1
+    vanIdx = 2
+
+    Dim A_Mon As Double, B_Mon As Double
+    Dim A_Tor As Double, B_Tor As Double
+    Dim A_Van As Double, B_Van As Double
+
+    A_Mon = CDbl(out2(i, baseCol + (monIdx * 3) + 0)) ' Montreal_AvailStock_Orders
+    B_Mon = CDbl(out2(i, baseCol + (monIdx * 3) + 1)) ' Montreal_Orders_Backlog
+
+    A_Tor = CDbl(out2(i, baseCol + (torIdx * 3) + 0)) ' Toronto_AvailStock_Orders
+    B_Tor = CDbl(out2(i, baseCol + (torIdx * 3) + 1)) ' Toronto_Orders_Backlog
+
+    A_Van = CDbl(out2(i, baseCol + (vanIdx * 3) + 0)) ' Vancouver_AvailStock_Orders
+    B_Van = CDbl(out2(i, baseCol + (vanIdx * 3) + 1)) ' Vancouver_Orders_Backlog
+
+    Dim scenCAN As String
+    Dim Mon_from_Mon As Double, Mon_from_Tor As Double, Mon_from_Van As Double
+    Dim Tor_from_Mon As Double, Tor_from_Tor As Double, Tor_from_Van As Double
+    Dim Van_from_Mon As Double, Van_from_Tor As Double, Van_from_Van As Double
+
+    '--- Get CAN allocation shares dynamically from allocMap (WorksheetNames) ---
+    'Fallback defaults: 25/50/25 if keys not found
+    Dim shMon As Double, shTor As Double, shVan As Double
+    Dim kMon As String, kTor As String, kVan As String
+
+    kMon = GetAllocKeyForCityCountry(allocMap, "CAN", "Montreal")
+    kTor = GetAllocKeyForCityCountry(allocMap, "CAN", "Toronto")
+    kVan = GetAllocKeyForCityCountry(allocMap, "CAN", "Vancouver")
+
+    shMon = MapGetDouble(allocMap, kMon, 0.25)
+    shTor = MapGetDouble(allocMap, kTor, 0.5)
+    shVan = MapGetDouble(allocMap, kVan, 0.25)
+
+    'Normalize if they don't sum to ~1
+    Dim shSumCAN As Double
+    shSumCAN = shMon + shTor + shVan
+    If shSumCAN > 0.0000001 Then
+        shMon = shMon / shSumCAN
+        shTor = shTor / shSumCAN
+        shVan = shVan / shSumCAN
+    End If
+
+    Call Compute_CAN_Backlog_Flows( _
+        A_Mon, B_Mon, A_Tor, B_Tor, A_Van, B_Van, _
+        shMon, shTor, shVan, _
+        scenCAN, _
+        Mon_from_Mon, Mon_from_Tor, Mon_from_Van, _
+        Tor_from_Mon, Tor_from_Tor, Tor_from_Van, _
+        Van_from_Mon, Van_from_Tor, Van_from_Van)
+
+    out2(i, canBaseCol + 0) = scenCAN
+
+    out2(i, canBaseCol + 1) = Mon_from_Mon
+    out2(i, canBaseCol + 2) = Mon_from_Tor
+    out2(i, canBaseCol + 3) = Mon_from_Van
+
+    out2(i, canBaseCol + 4) = Tor_from_Mon
+    out2(i, canBaseCol + 5) = Tor_from_Tor
+    out2(i, canBaseCol + 6) = Tor_from_Van
+
+    out2(i, canBaseCol + 7) = Van_from_Mon
+    out2(i, canBaseCol + 8) = Van_from_Tor
+    out2(i, canBaseCol + 9) = Van_from_Van
+
+    out2(i, canBaseCol + 10) = Mon_from_Mon + Tor_from_Mon + Van_from_Mon  ' total shipped FROM Montreal
+    out2(i, canBaseCol + 11) = Mon_from_Tor + Tor_from_Tor + Van_from_Tor  ' total shipped FROM Toronto
+    out2(i, canBaseCol + 12) = Mon_from_Van + Tor_from_Van + Van_from_Van  ' total shipped FROM Vancouver
+
     Next keyItem
 
     '7) Dump to sheet
@@ -3232,11 +3356,16 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     'Format city numeric blocks
     ws2.Range(ws2.Cells(2, 4), ws2.Cells(nRows, usaBaseCol - 1)).NumberFormat = "0.00"
     
-    'Scenario column = text
+    'Scenario columns = text
     ws2.Columns(usaBaseCol).NumberFormat = "@"
-    
-    'Flow columns = numeric
+    ws2.Columns(canBaseCol).NumberFormat = "@"
+
+    'USA flow columns = numeric
     ws2.Range(ws2.Cells(2, usaBaseCol + 1), ws2.Cells(nRows, usaBaseCol + 6)).NumberFormat = "0.00"
+
+    'CAN flow columns = numeric (12 numeric columns after scenario)
+    ws2.Range(ws2.Cells(2, canBaseCol + 1), ws2.Cells(nRows, canBaseCol + 12)).NumberFormat = "0.00"
+
 
 End Sub
 
@@ -3361,6 +3490,227 @@ Private Sub Compute_USA_Backlog_Flows( _
     
         
     End Sub
-    
+
+Private Sub Compute_CAN_Backlog_Flows( _
+    ByVal A_Mon As Double, ByVal B_Mon As Double, _
+    ByVal A_Tor As Double, ByVal B_Tor As Double, _
+    ByVal A_Van As Double, ByVal B_Van As Double, _
+    ByVal SH_Mon As Double, ByVal SH_Tor As Double, ByVal SH_Van As Double, _
+    ByRef scenario As String, _
+    ByRef Mon_from_Mon As Double, ByRef Mon_from_Tor As Double, ByRef Mon_from_Van As Double, _
+    ByRef Tor_from_Mon As Double, ByRef Tor_from_Tor As Double, ByRef Tor_from_Van As Double, _
+    ByRef Van_from_Mon As Double, ByRef Van_from_Tor As Double, ByRef Van_from_Van As Double)
+
+    Const EPS As Double = 0.0000001
+
+    '--- Defaults ---
+    scenario = ""
+    Mon_from_Mon = 0: Mon_from_Tor = 0: Mon_from_Van = 0
+    Tor_from_Mon = 0: Tor_from_Tor = 0: Tor_from_Van = 0
+    Van_from_Mon = 0: Van_from_Tor = 0: Van_from_Van = 0
+
+    Dim A_Tot As Double, B_Tot As Double
+    A_Tot = A_Mon + A_Tor + A_Van
+    B_Tot = B_Mon + B_Tor + B_Van
+
+    If A_Tot <= EPS Then
+        If B_Tot <= EPS Then
+            scenario = "CAN_0_NoData"
+        Else
+            scenario = "CAN_A1_NoSupply"
+        End If
+        Exit Sub
+    End If
+
+    If A_Tot + EPS >= B_Tot And B_Tot > EPS Then
+        scenario = "CAN_A2_SupplyCoversAll"
+    ElseIf B_Tot <= EPS Then
+        scenario = "CAN_0_NoBacklog"
+    Else
+        scenario = "CAN_A3_ScarceSupply"
+    End If
+
+    '==================== 1) DESTINATION TOTALS via Share -> Cap -> Iterative Spill ====================
+    Dim allocMon As Double, allocTor As Double, allocVan As Double
+    Dim shipMon As Double, shipTor As Double, shipVan As Double
+
+    allocMon = SH_Mon * A_Tot
+    allocTor = SH_Tor * A_Tot
+    allocVan = SH_Van * A_Tot
+
+    shipMon = Application.Min(B_Mon, allocMon)
+    shipTor = Application.Min(B_Tor, allocTor)
+    shipVan = Application.Min(B_Van, allocVan)
+
+    Dim used As Double, leftover As Double
+    used = shipMon + shipTor + shipVan
+    leftover = A_Tot - used
+
+    Dim unmetMon As Double, unmetTor As Double, unmetVan As Double
+    unmetMon = B_Mon - shipMon: If unmetMon < 0 Then unmetMon = 0
+    unmetTor = B_Tor - shipTor: If unmetTor < 0 Then unmetTor = 0
+    unmetVan = B_Van - shipVan: If unmetVan < 0 Then unmetVan = 0
+
+    'Label cap pattern after first pass (informational)
+    Dim capCount As Long
+    capCount = 0
+    If allocMon > B_Mon + EPS Then capCount = capCount + 1
+    If allocTor > B_Tor + EPS Then capCount = capCount + 1
+    If allocVan > B_Van + EPS Then capCount = capCount + 1
+
+    If scenario = "CAN_A3_ScarceSupply" Then
+        If capCount = 0 Then
+            scenario = "CAN_B0_NoOneCapped"
+        ElseIf capCount = 1 Then
+            scenario = "CAN_B1_OneCapped"
+        ElseIf capCount = 2 Then
+            scenario = "CAN_B2_TwoCapped"
+        Else
+            scenario = "CAN_B3_AllCapped" 'rare; usually implies supply>=backlog
+        End If
+    End If
+
+    'Iterative spill (Option 2: spill by remaining share weights among unmet cities)
+    Dim guard As Long
+    guard = 0
+
+    Do While leftover > EPS And (unmetMon + unmetTor + unmetVan) > EPS And guard < 50
+        guard = guard + 1
+
+        Dim wMon As Double, wTor As Double, wVan As Double, wSum As Double
+        wMon = 0: wTor = 0: wVan = 0
+
+        If unmetMon > EPS Then wMon = SH_Mon
+        If unmetTor > EPS Then wTor = SH_Tor
+        If unmetVan > EPS Then wVan = SH_Van
+
+        wSum = wMon + wTor + wVan
+        If wSum <= EPS Then Exit Do
+
+        Dim addMon As Double, addTor As Double, addVan As Double
+        addMon = leftover * (wMon / wSum)
+        addTor = leftover * (wTor / wSum)
+        addVan = leftover * (wVan / wSum)
+
+        'Cap adds by remaining unmet
+        If addMon > unmetMon Then addMon = unmetMon
+        If addTor > unmetTor Then addTor = unmetTor
+        If addVan > unmetVan Then addVan = unmetVan
+
+        shipMon = shipMon + addMon
+        shipTor = shipTor + addTor
+        shipVan = shipVan + addVan
+
+        used = addMon + addTor + addVan
+        leftover = leftover - used
+
+        unmetMon = B_Mon - shipMon: If unmetMon < 0 Then unmetMon = 0
+        unmetTor = B_Tor - shipTor: If unmetTor < 0 Then unmetTor = 0
+        unmetVan = B_Van - shipVan: If unmetVan < 0 Then unmetVan = 0
+
+        'If nothing moved, break to avoid infinite loop
+        If used <= EPS Then Exit Do
+    Loop
+
+    '==================== 2) ROUTING: Local -> Partner1 -> Partner2 (conflicts split by remaining dest need) ====================
+    'Partners (hard-coded as per your spec):
+    ' Montreal: P1=Toronto,   P2=Vancouver
+    ' Toronto:  P1=Montreal,  P2=Vancouver
+    ' Vancouver:P1=Toronto,   P2=Montreal
+
+    Dim remSrcMon As Double, remSrcTor As Double, remSrcVan As Double
+    remSrcMon = A_Mon
+    remSrcTor = A_Tor
+    remSrcVan = A_Van
+
+    Dim remDestMon As Double, remDestTor As Double, remDestVan As Double
+    remDestMon = shipMon
+    remDestTor = shipTor
+    remDestVan = shipVan
+
+    '--- Pass 0: Local ---
+    Dim x As Double
+
+    x = Application.Min(remSrcMon, remDestMon)
+    Mon_from_Mon = Mon_from_Mon + x
+    remSrcMon = remSrcMon - x
+    remDestMon = remDestMon - x
+
+    x = Application.Min(remSrcTor, remDestTor)
+    Tor_from_Tor = Tor_from_Tor + x
+    remSrcTor = remSrcTor - x
+    remDestTor = remDestTor - x
+
+    x = Application.Min(remSrcVan, remDestVan)
+    Van_from_Van = Van_from_Van + x
+    remSrcVan = remSrcVan - x
+    remDestVan = remDestVan - x
+
+    '--- Helper: allocate one source to up to 2 destination requests proportionally to remaining dest need ---
+    'Toronto as source can be requested by Montreal (P1) and Vancouver (P1)
+    'Montreal as source can be requested by Toronto (P1) and Vancouver (P2)
+    'Vancouver as source can be requested by Montreal (P2) and Toronto (P2)
+
+    '--- Pass 1: Partner 1 ---
+    'Dest Montreal wants Toronto
+    'Dest Toronto wants Montreal
+    'Dest Vancouver wants Toronto
+    Call AllocateSourceToDests(remSrcTor, remDestMon, remDestVan, Mon_from_Tor, Van_from_Tor)
+    Call AllocateSourceToDests(remSrcMon, remDestTor, 0, Tor_from_Mon, x) 'second dest none
+
+    '--- Pass 2: Partner 2 ---
+    'Dest Montreal wants Vancouver
+    'Dest Toronto wants Vancouver
+    'Dest Vancouver wants Montreal
+    Call AllocateSourceToDests(remSrcVan, remDestMon, remDestTor, Mon_from_Van, Tor_from_Van)
+    Call AllocateSourceToDests(remSrcMon, remDestVan, 0, Van_from_Mon, x)
+
+    'Done. Any remaining remDest* means not routable under this partner graph (should be rare in triangle).
+
+End Sub
+
+Private Sub AllocateSourceToDests( _
+    ByRef remSource As Double, _
+    ByRef remDest1 As Double, _
+    ByRef remDest2 As Double, _
+    ByRef flowToDest1 As Double, _
+    ByRef flowToDest2 As Double)
+
+    Const EPS As Double = 0.0000001
+
+    If remSource <= EPS Then Exit Sub
+
+    Dim need1 As Double, need2 As Double, needSum As Double
+    need1 = remDest1: If need1 < 0 Then need1 = 0
+    need2 = remDest2: If need2 < 0 Then need2 = 0
+    needSum = need1 + need2
+
+    If needSum <= EPS Then Exit Sub
+
+    Dim alloc1 As Double, alloc2 As Double
+    alloc1 = remSource * (need1 / needSum)
+    alloc2 = remSource * (need2 / needSum)
+
+    'Cap by remaining dest needs
+    If alloc1 > remDest1 Then alloc1 = remDest1
+    If alloc2 > remDest2 Then alloc2 = remDest2
+
+    'If only one dest exists, give it everything it can take
+    If remDest2 <= EPS Then
+        alloc1 = Application.Min(remSource, remDest1)
+        alloc2 = 0
+    ElseIf remDest1 <= EPS Then
+        alloc2 = Application.Min(remSource, remDest2)
+        alloc1 = 0
+    End If
+
+    flowToDest1 = flowToDest1 + alloc1
+    flowToDest2 = flowToDest2 + alloc2
+
+    remDest1 = remDest1 - alloc1
+    remDest2 = remDest2 - alloc2
+    remSource = remSource - (alloc1 + alloc2)
+End Sub
+
 
 
