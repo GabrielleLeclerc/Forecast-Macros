@@ -192,6 +192,11 @@ Sub Boxes_Shipped_Forecast()
     Dim totalCols As Long
     Dim h As Long
 
+    'Summary sheet
+    Dim wsSummary As Worksheet
+    Dim sumArr() As Variant
+    Dim sumCols As Long
+
     'Output buffer
     Dim outArr() As Variant
     Dim outCapacity As Long, outUsed As Long
@@ -1167,6 +1172,51 @@ NextRow_LocalSales:
     '=== Dump FINAL output array to Boxes_Shipped_DEBUG ===
     wsDebug.Range("A1").Resize(outUsed, totalCols).Value = outArr
 
+    '==================== OVERWRITE Boxes_Shipped SUMMARY ====================
+    On Error Resume Next
+    Set wsSummary = ThisWorkbook.Worksheets("Boxes_Shipped")
+    On Error GoTo 0
+
+    If wsSummary Is Nothing Then
+        Set wsSummary = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+        wsSummary.Name = "Boxes_Shipped"
+    End If
+
+    '1) Clear existing data
+    wsSummary.Cells.Clear
+
+    '2) Build 6-column summary array (headers + data)
+    sumCols = 6
+    ReDim sumArr(1 To outUsed, 1 To sumCols)
+
+    'Headers (exact order requested)
+    sumArr(1, 1) = "Demand City"
+    sumArr(1, 2) = "Country"
+    sumArr(1, 3) = "Color"
+    sumArr(1, 4) = "Week Start"
+    sumArr(1, 5) = "Week End"
+    sumArr(1, 6) = "Total_BoxesShipped_FromDemandCity"
+
+    'Rows
+    Dim rSum As Long
+    For rSum = 2 To outUsed
+        sumArr(rSum, 1) = outArr(rSum, 1)                 'Demand City
+        sumArr(rSum, 2) = outArr(rSum, 2)                 'Country
+        sumArr(rSum, 3) = outArr(rSum, 3)                 'Color
+        sumArr(rSum, 4) = outArr(rSum, 4)                 'Week Start
+        sumArr(rSum, 5) = outArr(rSum, 5)                 'Week End
+        sumArr(rSum, 6) = outArr(rSum, COL_TOTAL_FROM_DEMAND) 'Total_BoxesShipped_FromDemandCity
+    Next rSum
+
+    '3) Write summary to Boxes_Shipped
+    wsSummary.Range("A1").Resize(outUsed, sumCols).Value = sumArr
+
+    '4) Formats (match your debug date formatting)
+    If outUsed >= 2 Then
+        wsSummary.Range(wsSummary.Cells(2, 4), wsSummary.Cells(outUsed, 5)).NumberFormat = "yyyy-mm-dd"
+        wsSummary.Range(wsSummary.Cells(2, 6), wsSummary.Cells(outUsed, 6)).NumberFormat = "0.00"
+    End If
+
     '=== Format only the used rows (fast) ===
     If outUsed >= 2 Then
         'wsDebug.Range(wsDebug.Cells(2, 7), wsDebug.Cells(outUsed, totalCols)).NumberFormat = "0"
@@ -2008,7 +2058,7 @@ Private Sub Build_DebugSheet_CityWeekColor( _
 
     Dim ws2 As Worksheet
     Dim sheetName As String
-    sheetName = "Boxes_Shipped_DEBUG_CityWeek"
+    sheetName = "Boxes_Shipped_DEBUG_Allocation"
 
     '1) Create/clear sheet
     On Error Resume Next
@@ -2537,7 +2587,7 @@ Private Sub Build_DebugSheet_CityWeekColor( _
 End Sub
 
 '==================== NEW: Override OrdersShipped_Backlog from CityWeek totals =====================
-'After Boxes_Shipped_DEBUG_CityWeek is created, we read:
+'After Boxes_Shipped_DEBUG_Allocation is created, we read:
 '  Total_Backlog_FromMontreal/Toronto/Vancouver/Moreno/Dayton
 'and override OrdersShipped_Backlog in outArr for matching (DemandCity, Color, WeekStart).
 'Then we recompute:
@@ -2564,7 +2614,7 @@ Private Sub Apply_BacklogOverride_FromCityWeek( _
 
     Dim wsCW As Worksheet
     On Error Resume Next
-    Set wsCW = ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG_CityWeek")
+    Set wsCW = ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG_Allocation")
     On Error GoTo 0
     If wsCW Is Nothing Then Exit Sub
 
@@ -2745,7 +2795,7 @@ Private Sub Apply_SalesOverride_FromCityWeek( _
 
     Dim wsCW As Worksheet
     On Error Resume Next
-    Set wsCW = ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG_CityWeek")
+    Set wsCW = ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG_Allocation")
     On Error GoTo 0
     If wsCW Is Nothing Then Exit Sub
 
