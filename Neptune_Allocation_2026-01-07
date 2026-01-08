@@ -2137,11 +2137,13 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     
     colPtr = usaBaseCol + 7
     
-    'FINAL 10 columns (exact order requested):
-    ' Montreal_AvailStockPostBacklog_Orders, Montreal_Sales_Orders, Toronto_AvailStockPostBacklog_Orders, Toronto_Sales_Orders, ...
+    'FINAL columns (CAN only here):
+    ' Montreal_AvailStockPostBacklog_Orders, Montreal_Sales_Orders,
+    ' Toronto_AvailStockPostBacklog_Orders, Toronto_Sales_Orders,
+    ' Vancouver_AvailStockPostBacklog_Orders, Vancouver_Sales_Orders
     
-    Dim COL_Mon_PostBL As Long, COL_Tor_PostBL As Long, COL_Van_PostBL As Long, COL_Mor_PostBL As Long, COL_Day_PostBL As Long
-    Dim COL_Mon_Sales As Long, COL_Tor_Sales As Long, COL_Van_Sales As Long, COL_Mor_Sales As Long, COL_Day_Sales As Long
+    Dim COL_Mon_PostBL As Long, COL_Tor_PostBL As Long, COL_Van_PostBL As Long
+    Dim COL_Mon_Sales As Long, COL_Tor_Sales As Long, COL_Van_Sales As Long
     
     COL_Mon_PostBL = colPtr: out2(1, colPtr) = "Montreal_AvailStockPostBacklog_Orders": colPtr = colPtr + 1
     COL_Mon_Sales  = colPtr: out2(1, colPtr) = "Montreal_Sales_Orders":                 colPtr = colPtr + 1
@@ -2151,12 +2153,6 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     
     COL_Van_PostBL = colPtr: out2(1, colPtr) = "Vancouver_AvailStockPostBacklog_Orders": colPtr = colPtr + 1
     COL_Van_Sales  = colPtr: out2(1, colPtr) = "Vancouver_Sales_Orders":                 colPtr = colPtr + 1
-    
-    COL_Mor_PostBL = colPtr: out2(1, colPtr) = "Moreno_AvailStockPostBacklog_Orders":    colPtr = colPtr + 1
-    COL_Mor_Sales  = colPtr: out2(1, colPtr) = "Moreno_Sales_Orders":                    colPtr = colPtr + 1
-    
-    COL_Day_PostBL = colPtr: out2(1, colPtr) = "Dayton_AvailStockPostBacklog_Orders":    colPtr = colPtr + 1
-    COL_Day_Sales  = colPtr: out2(1, colPtr) = "Dayton_Sales_Orders":                    colPtr = colPtr + 1
 
     '==================== CAN SALES allocation + flows + totals ====================
     Dim canSalesBaseCol As Long
@@ -2181,6 +2177,16 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     out2(1, canSalesBaseCol + 12) = "Total_Sales_FromVancouver"
     
     colPtr = canSalesBaseCol + 13
+
+    '==================== USA PostBacklog/Sales columns HERE ====================
+    Dim COL_Mor_PostBL As Long, COL_Day_PostBL As Long
+    Dim COL_Mor_Sales As Long, COL_Day_Sales As Long
+    
+    COL_Mor_PostBL = colPtr: out2(1, colPtr) = "Moreno_AvailStockPostBacklog_Orders": colPtr = colPtr + 1
+    COL_Mor_Sales  = colPtr: out2(1, colPtr) = "Moreno_Sales_Orders":                 colPtr = colPtr + 1
+    
+    COL_Day_PostBL = colPtr: out2(1, colPtr) = "Dayton_AvailStockPostBacklog_Orders": colPtr = colPtr + 1
+    COL_Day_Sales  = colPtr: out2(1, colPtr) = "Dayton_Sales_Orders":                 colPtr = colPtr + 1
     
     '==================== USA SALES allocation + flows + totals ====================
     Dim usaSalesBaseCol As Long
@@ -2734,33 +2740,17 @@ Private Sub Apply_SalesOverride_FromCityWeek( _
     cWkStart = FindHeaderCol_1Row(cw, "Week Start")
     If cColor = 0 Or cWkStart = 0 Then Exit Sub
 
-    'We will read destination-total shipped sales orders by summing inbound flows per destination.
-    'CAN inbound per dest:
-    Dim cMon_Mon As Long, cMon_Tor As Long, cMon_Van As Long
-    Dim cTor_Mon As Long, cTor_Tor As Long, cTor_Van As Long
-    Dim cVan_Mon As Long, cVan_Tor As Long, cVan_Van As Long
-
-    cMon_Mon = FindHeaderCol_1Row(cw, "Montreal_Sales_Shipped_FromMontreal")
-    cMon_Tor = FindHeaderCol_1Row(cw, "Montreal_Sales_Shipped_FromToronto")
-    cMon_Van = FindHeaderCol_1Row(cw, "Montreal_Sales_Shipped_FromVancouver")
-
-    cTor_Mon = FindHeaderCol_1Row(cw, "Toronto_Sales_Shipped_FromMontreal")
-    cTor_Tor = FindHeaderCol_1Row(cw, "Toronto_Sales_Shipped_FromToronto")
-    cTor_Van = FindHeaderCol_1Row(cw, "Toronto_Sales_Shipped_FromVancouver")
-
-    cVan_Mon = FindHeaderCol_1Row(cw, "Vancouver_Sales_Shipped_FromMontreal")
-    cVan_Tor = FindHeaderCol_1Row(cw, "Vancouver_Sales_Shipped_FromToronto")
-    cVan_Van = FindHeaderCol_1Row(cw, "Vancouver_Sales_Shipped_FromVancouver")
-
-    'USA inbound per dest:
-    Dim cMor_Mor As Long, cMor_Day As Long, cDay_Mor As Long, cDay_Day As Long
-    cMor_Mor = FindHeaderCol_1Row(cw, "Moreno_Sales_Shipped_FromMoreno")
-    cMor_Day = FindHeaderCol_1Row(cw, "Moreno_Sales_Shipped_FromDayton")
-    cDay_Mor = FindHeaderCol_1Row(cw, "Dayton_Sales_Shipped_FromMoreno")
-    cDay_Day = FindHeaderCol_1Row(cw, "Dayton_Sales_Shipped_FromDayton")
-
-    'If these are missing, nothing to override
-    If cMon_Mon = 0 And cMor_Mor = 0 Then Exit Sub
+    'We will read SOURCE totals directly:
+    Dim cTotMon As Long, cTotTor As Long, cTotVan As Long, cTotMor As Long, cTotDay As Long
+    
+    cTotMon = FindHeaderCol_1Row(cw, "Total_Sales_FromMontreal")
+    cTotTor = FindHeaderCol_1Row(cw, "Total_Sales_FromToronto")
+    cTotVan = FindHeaderCol_1Row(cw, "Total_Sales_FromVancouver")
+    cTotMor = FindHeaderCol_1Row(cw, "Total_Sales_FromMoreno")
+    cTotDay = FindHeaderCol_1Row(cw, "Total_Sales_FromDayton")
+    
+    'Need at least one
+    If cTotMon = 0 And cTotTor = 0 And cTotVan = 0 And cTotMor = 0 And cTotDay = 0 Then Exit Sub
 
     'Map: key = COLOR|yyyy-mm-dd -> Array(destSalesOrders for [Mon,Tor,Van,Mor,Day])
     Dim mSalesTotals As Object
@@ -2778,12 +2768,12 @@ Private Sub Apply_SalesOverride_FromCityWeek( _
         wkKey = Format$(CDate(cw(r, cWkStart)), "yyyy-mm-dd")
 
         Dim monTot As Double, torTot As Double, vanTot As Double, morTot As Double, dayTot As Double
-        monTot = NzD(cw(r, cMon_Mon)) + NzD(cw(r, cMon_Tor)) + NzD(cw(r, cMon_Van))
-        torTot = NzD(cw(r, cTor_Mon)) + NzD(cw(r, cTor_Tor)) + NzD(cw(r, cTor_Van))
-        vanTot = NzD(cw(r, cVan_Mon)) + NzD(cw(r, cVan_Tor)) + NzD(cw(r, cVan_Van))
-        morTot = NzD(cw(r, cMor_Mor)) + NzD(cw(r, cMor_Day))
-        dayTot = NzD(cw(r, cDay_Mor)) + NzD(cw(r, cDay_Day))
-
+        monTot = NzD(cw(r, cTotMon))
+        torTot = NzD(cw(r, cTotTor))
+        vanTot = NzD(cw(r, cTotVan))
+        morTot = NzD(cw(r, cTotMor))
+        dayTot = NzD(cw(r, cTotDay))
+        
         arr5 = Array(monTot, torTot, vanTot, morTot, dayTot)
 
         k = colorKey & "|" & wkKey
