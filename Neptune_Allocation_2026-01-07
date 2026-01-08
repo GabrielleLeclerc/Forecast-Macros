@@ -1135,6 +1135,12 @@ NextRow_LocalSales:
         COL_ORD_SALES_AVAIL, COL_ORD_SALES_DEMAND, COL_ORD_SALES_SHIP, _
         COL_SALES_SHIP, _
         MAX_BOX, isOptional)
+
+    Call Apply_SalesOverride_FromCityWeek( _
+        outArr, outUsed, _
+        COL_ORD_SALES_SHIP, _
+        COL_AVAIL_POSTBL, COL_NEED, COL_SALES_SHIP, _
+        MAX_BOX, isOptional)
     
     '=== Dump FINAL output array to Boxes_Shipped_DEBUG ===
     wsDebug.Range("A1").Resize(outUsed, totalCols).Value = outArr
@@ -2055,7 +2061,7 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     '4 USA city cols (avail/backlog for Moreno/Dayton) +
     '7 USA flow cols (scenario + 4 flows + 2 totals) +
     '5 sales cols (one per city)
-    nCols = 3 + 6 + 13 + 4 + 7 + 10
+    nCols = 3 + 6 + 13 + 4 + 7 + 10 + 13 + 7
 
     Dim out2() As Variant
     ReDim out2(1 To nRows, 1 To nCols)
@@ -2151,6 +2157,45 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     
     COL_Day_PostBL = colPtr: out2(1, colPtr) = "Dayton_AvailStockPostBacklog_Orders":    colPtr = colPtr + 1
     COL_Day_Sales  = colPtr: out2(1, colPtr) = "Dayton_Sales_Orders":                    colPtr = colPtr + 1
+
+    '==================== CAN SALES allocation + flows + totals ====================
+    Dim canSalesBaseCol As Long
+    canSalesBaseCol = colPtr
+    
+    out2(1, canSalesBaseCol + 0) = "CAN_Sales_Allocation_Scenario"
+    
+    out2(1, canSalesBaseCol + 1) = "Montreal_Sales_Shipped_FromMontreal"
+    out2(1, canSalesBaseCol + 2) = "Montreal_Sales_Shipped_FromToronto"
+    out2(1, canSalesBaseCol + 3) = "Montreal_Sales_Shipped_FromVancouver"
+    
+    out2(1, canSalesBaseCol + 4) = "Toronto_Sales_Shipped_FromMontreal"
+    out2(1, canSalesBaseCol + 5) = "Toronto_Sales_Shipped_FromToronto"
+    out2(1, canSalesBaseCol + 6) = "Toronto_Sales_Shipped_FromVancouver"
+    
+    out2(1, canSalesBaseCol + 7) = "Vancouver_Sales_Shipped_FromMontreal"
+    out2(1, canSalesBaseCol + 8) = "Vancouver_Sales_Shipped_FromToronto"
+    out2(1, canSalesBaseCol + 9) = "Vancouver_Sales_Shipped_FromVancouver"
+    
+    out2(1, canSalesBaseCol + 10) = "Total_Sales_FromMontreal"
+    out2(1, canSalesBaseCol + 11) = "Total_Sales_FromToronto"
+    out2(1, canSalesBaseCol + 12) = "Total_Sales_FromVancouver"
+    
+    colPtr = canSalesBaseCol + 13
+    
+    '==================== USA SALES allocation + flows + totals ====================
+    Dim usaSalesBaseCol As Long
+    usaSalesBaseCol = colPtr
+    
+    out2(1, usaSalesBaseCol + 0) = "USA_Sales_Allocation_Scenario"
+    out2(1, usaSalesBaseCol + 1) = "Moreno_Sales_Shipped_FromMoreno"
+    out2(1, usaSalesBaseCol + 2) = "Moreno_Sales_Shipped_FromDayton"
+    out2(1, usaSalesBaseCol + 3) = "Dayton_Sales_Shipped_FromMoreno"
+    out2(1, usaSalesBaseCol + 4) = "Dayton_Sales_Shipped_FromDayton"
+    out2(1, usaSalesBaseCol + 5) = "Total_Sales_FromMoreno"
+    out2(1, usaSalesBaseCol + 6) = "Total_Sales_FromDayton"
+    
+    colPtr = usaSalesBaseCol + 7
+    
 
     '6) Write rows
     Dim keys As Variant
@@ -2300,6 +2345,29 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     out2(i, usaBaseCol + 5) = M_from_M + D_from_M   ' Total shipped FROM Moreno
     out2(i, usaBaseCol + 6) = M_from_D + D_from_D   ' Total shipped FROM Dayton
 
+    '=== USA SALES allocation + flows (Moreno/Dayton sales shipping) ===
+    Dim A_M_S As Double, B_M_S As Double, A_D_S As Double, B_D_S As Double
+    A_M_S = CDbl(out2(i, COL_Mor_PostBL)) 'Moreno_AvailStockPostBacklog_Orders
+    B_M_S = CDbl(out2(i, COL_Mor_Sales))  'Moreno_Sales_Orders
+    
+    A_D_S = CDbl(out2(i, COL_Day_PostBL)) 'Dayton_AvailStockPostBacklog_Orders
+    B_D_S = CDbl(out2(i, COL_Day_Sales))  'Dayton_Sales_Orders
+    
+    Dim scenSalesUSA As String
+    Dim M_S_from_M As Double, M_S_from_D As Double, D_S_from_M As Double, D_S_from_D As Double
+    
+    'Reuse the SAME shares shMor/shDay you already computed above (or recompute if you prefer)
+    Call Compute_USA_Sales_Flows(A_M_S, B_M_S, A_D_S, B_D_S, shMor, shDay, scenSalesUSA, M_S_from_M, M_S_from_D, D_S_from_M, D_S_from_D)
+    
+    out2(i, usaSalesBaseCol + 0) = scenSalesUSA
+    out2(i, usaSalesBaseCol + 1) = M_S_from_M
+    out2(i, usaSalesBaseCol + 2) = M_S_from_D
+    out2(i, usaSalesBaseCol + 3) = D_S_from_M
+    out2(i, usaSalesBaseCol + 4) = D_S_from_D
+    out2(i, usaSalesBaseCol + 5) = M_S_from_M + D_S_from_M  ' Total shipped FROM Moreno
+    out2(i, usaSalesBaseCol + 6) = M_S_from_D + D_S_from_D  ' Total shipped FROM Dayton
+
+
     '=== CAN allocation + flows (Montreal/Toronto/Vancouver backlog shipping) ===
     Dim A_Mon As Double, B_Mon As Double
     Dim A_Tor As Double, B_Tor As Double
@@ -2367,6 +2435,51 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     out2(i, canBaseCol + 11) = Mon_from_Tor + Tor_from_Tor + Van_from_Tor  ' total shipped FROM Toronto
     out2(i, canBaseCol + 12) = Mon_from_Van + Tor_from_Van + Van_from_Van  ' total shipped FROM Vancouver
 
+    '=== CAN SALES allocation + flows (Montreal/Toronto/Vancouver sales shipping) ===
+    Dim A_Mon_S As Double, B_Mon_S As Double
+    Dim A_Tor_S As Double, B_Tor_S As Double
+    Dim A_Van_S As Double, B_Van_S As Double
+    
+    A_Mon_S = CDbl(out2(i, COL_Mon_PostBL)) ' Montreal_AvailStockPostBacklog_Orders
+    B_Mon_S = CDbl(out2(i, COL_Mon_Sales))  ' Montreal_Sales_Orders
+    
+    A_Tor_S = CDbl(out2(i, COL_Tor_PostBL)) ' Toronto_AvailStockPostBacklog_Orders
+    B_Tor_S = CDbl(out2(i, COL_Tor_Sales))  ' Toronto_Sales_Orders
+    
+    A_Van_S = CDbl(out2(i, COL_Van_PostBL)) ' Vancouver_AvailStockPostBacklog_Orders
+    B_Van_S = CDbl(out2(i, COL_Van_Sales))  ' Vancouver_Sales_Orders
+    
+    Dim scenCAN_Sales As String
+    Dim MonS_from_Mon As Double, MonS_from_Tor As Double, MonS_from_Van As Double
+    Dim TorS_from_Mon As Double, TorS_from_Tor As Double, TorS_from_Van As Double
+    Dim VanS_from_Mon As Double, VanS_from_Tor As Double, VanS_from_Van As Double
+    
+    Call Compute_CAN_Sales_Flows( _
+        A_Mon_S, B_Mon_S, A_Tor_S, B_Tor_S, A_Van_S, B_Van_S, _
+        shMon, shTor, shVan, _
+        scenCAN_Sales, _
+        MonS_from_Mon, MonS_from_Tor, MonS_from_Van, _
+        TorS_from_Mon, TorS_from_Tor, TorS_from_Van, _
+        VanS_from_Mon, VanS_from_Tor, VanS_from_Van)
+    
+    out2(i, canSalesBaseCol + 0) = scenCAN_Sales
+    
+    out2(i, canSalesBaseCol + 1) = MonS_from_Mon
+    out2(i, canSalesBaseCol + 2) = MonS_from_Tor
+    out2(i, canSalesBaseCol + 3) = MonS_from_Van
+    
+    out2(i, canSalesBaseCol + 4) = TorS_from_Mon
+    out2(i, canSalesBaseCol + 5) = TorS_from_Tor
+    out2(i, canSalesBaseCol + 6) = TorS_from_Van
+    
+    out2(i, canSalesBaseCol + 7) = VanS_from_Mon
+    out2(i, canSalesBaseCol + 8) = VanS_from_Tor
+    out2(i, canSalesBaseCol + 9) = VanS_from_Van
+    
+    out2(i, canSalesBaseCol + 10) = MonS_from_Mon + TorS_from_Mon + VanS_from_Mon ' total FROM Montreal
+    out2(i, canSalesBaseCol + 11) = MonS_from_Tor + TorS_from_Tor + VanS_from_Tor ' total FROM Toronto
+    out2(i, canSalesBaseCol + 12) = MonS_from_Van + TorS_from_Van + VanS_from_Van ' total FROM Vancouver
+
     Next keyItem
 
     '7) Dump to sheet
@@ -2382,13 +2495,16 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     'Scenario columns = text
     ws2.Columns(usaBaseCol).NumberFormat = "@"
     ws2.Columns(canBaseCol).NumberFormat = "@"
+    ws2.Columns(usaSalesBaseCol).NumberFormat = "@"
+    ws2.Columns(canSalesBaseCol).NumberFormat = "@"
 
     'USA flow columns = numeric
     ws2.Range(ws2.Cells(2, usaBaseCol + 1), ws2.Cells(nRows, usaBaseCol + 6)).NumberFormat = "0.00"
+    ws2.Range(ws2.Cells(2, usaSalesBaseCol + 1), ws2.Cells(nRows, usaSalesBaseCol + 6)).NumberFormat = "0.00"
 
     'CAN flow columns = numeric (12 numeric columns after scenario)
     ws2.Range(ws2.Cells(2, canBaseCol + 1), ws2.Cells(nRows, canBaseCol + 12)).NumberFormat = "0.00"
-
+    ws2.Range(ws2.Cells(2, canSalesBaseCol + 1), ws2.Cells(nRows, canSalesBaseCol + 12)).NumberFormat = "0.00"
 
 End Sub
 
@@ -2588,6 +2704,146 @@ NextOutRow:
     Next rr
 
 End Sub
+
+Private Sub Apply_SalesOverride_FromCityWeek( _
+    ByRef outArr As Variant, _
+    ByVal outUsed As Long, _
+    ByVal COL_ORD_SALES_SHIP As Long, _
+    ByVal COL_AVAIL_POSTBL As Long, _
+    ByVal COL_NEED As Long, _
+    ByVal COL_SALES_SHIP As Long, _
+    ByVal MAX_BOX As Long, _
+    ByRef isOptional() As Boolean)
+
+    Dim wsCW As Worksheet
+    On Error Resume Next
+    Set wsCW = ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG_CityWeek")
+    On Error GoTo 0
+    If wsCW Is Nothing Then Exit Sub
+
+    Dim lastRow As Long, lastCol As Long
+    lastRow = wsCW.Cells(wsCW.Rows.Count, 1).End(xlUp).Row
+    lastCol = wsCW.Cells(1, wsCW.Columns.Count).End(xlToLeft).Column
+    If lastRow < 2 Or lastCol < 3 Then Exit Sub
+
+    Dim cw As Variant
+    cw = wsCW.Range(wsCW.Cells(1, 1), wsCW.Cells(lastRow, lastCol)).Value
+
+    Dim cColor As Long, cWkStart As Long
+    cColor = FindHeaderCol_1Row(cw, "Color")
+    cWkStart = FindHeaderCol_1Row(cw, "Week Start")
+    If cColor = 0 Or cWkStart = 0 Then Exit Sub
+
+    'We will read destination-total shipped sales orders by summing inbound flows per destination.
+    'CAN inbound per dest:
+    Dim cMon_Mon As Long, cMon_Tor As Long, cMon_Van As Long
+    Dim cTor_Mon As Long, cTor_Tor As Long, cTor_Van As Long
+    Dim cVan_Mon As Long, cVan_Tor As Long, cVan_Van As Long
+
+    cMon_Mon = FindHeaderCol_1Row(cw, "Montreal_Sales_Shipped_FromMontreal")
+    cMon_Tor = FindHeaderCol_1Row(cw, "Montreal_Sales_Shipped_FromToronto")
+    cMon_Van = FindHeaderCol_1Row(cw, "Montreal_Sales_Shipped_FromVancouver")
+
+    cTor_Mon = FindHeaderCol_1Row(cw, "Toronto_Sales_Shipped_FromMontreal")
+    cTor_Tor = FindHeaderCol_1Row(cw, "Toronto_Sales_Shipped_FromToronto")
+    cTor_Van = FindHeaderCol_1Row(cw, "Toronto_Sales_Shipped_FromVancouver")
+
+    cVan_Mon = FindHeaderCol_1Row(cw, "Vancouver_Sales_Shipped_FromMontreal")
+    cVan_Tor = FindHeaderCol_1Row(cw, "Vancouver_Sales_Shipped_FromToronto")
+    cVan_Van = FindHeaderCol_1Row(cw, "Vancouver_Sales_Shipped_FromVancouver")
+
+    'USA inbound per dest:
+    Dim cMor_Mor As Long, cMor_Day As Long, cDay_Mor As Long, cDay_Day As Long
+    cMor_Mor = FindHeaderCol_1Row(cw, "Moreno_Sales_Shipped_FromMoreno")
+    cMor_Day = FindHeaderCol_1Row(cw, "Moreno_Sales_Shipped_FromDayton")
+    cDay_Mor = FindHeaderCol_1Row(cw, "Dayton_Sales_Shipped_FromMoreno")
+    cDay_Day = FindHeaderCol_1Row(cw, "Dayton_Sales_Shipped_FromDayton")
+
+    'If these are missing, nothing to override
+    If cMon_Mon = 0 And cMor_Mor = 0 Then Exit Sub
+
+    'Map: key = COLOR|yyyy-mm-dd -> Array(destSalesOrders for [Mon,Tor,Van,Mor,Day])
+    Dim mSalesTotals As Object
+    Set mSalesTotals = MapCreate()
+
+    Dim r As Long, colorKey As String, wkKey As String, k As String
+    Dim arr5 As Variant
+
+    For r = 2 To UBound(cw, 1)
+
+        colorKey = NormalizeColor(CStr(cw(r, cColor)))
+        If Len(colorKey) = 0 Then GoTo NextCW
+
+        If Not IsDate(cw(r, cWkStart)) Then GoTo NextCW
+        wkKey = Format$(CDate(cw(r, cWkStart)), "yyyy-mm-dd")
+
+        Dim monTot As Double, torTot As Double, vanTot As Double, morTot As Double, dayTot As Double
+        monTot = NzD(cw(r, cMon_Mon)) + NzD(cw(r, cMon_Tor)) + NzD(cw(r, cMon_Van))
+        torTot = NzD(cw(r, cTor_Mon)) + NzD(cw(r, cTor_Tor)) + NzD(cw(r, cTor_Van))
+        vanTot = NzD(cw(r, cVan_Mon)) + NzD(cw(r, cVan_Tor)) + NzD(cw(r, cVan_Van))
+        morTot = NzD(cw(r, cMor_Mor)) + NzD(cw(r, cMor_Day))
+        dayTot = NzD(cw(r, cDay_Mor)) + NzD(cw(r, cDay_Day))
+
+        arr5 = Array(monTot, torTot, vanTot, morTot, dayTot)
+
+        k = colorKey & "|" & wkKey
+        MapSet mSalesTotals, k, arr5
+
+NextCW:
+    Next r
+
+    'Apply override: set OrdersShipped_Sales, then recompute SalesShipped Bn using AvailPostBL
+    Dim rr As Long, b As Long
+    Dim demandCity As String
+    Dim newSalesOrders As Double
+    Dim payload As Variant
+    Dim needVal As Double, availVal As Double
+    Dim desiredS As Double, shippedS As Double
+
+    For rr = 2 To outUsed
+
+        demandCity = UCase$(Trim$(CStr(outArr(rr, 1))))
+        colorKey = NormalizeColor(CStr(outArr(rr, 3)))
+        wkKey = Format$(CDate(outArr(rr, 4)), "yyyy-mm-dd")
+        k = colorKey & "|" & wkKey
+
+        If Not MapExists(mSalesTotals, k) Then GoTo NextOut
+
+        payload = MapGetVariant(mSalesTotals, k, Empty)
+
+        Select Case demandCity
+            Case "MONTREAL":  newSalesOrders = CDbl(payload(0))
+            Case "TORONTO":   newSalesOrders = CDbl(payload(1))
+            Case "VANCOUVER": newSalesOrders = CDbl(payload(2))
+            Case "MORENO":    newSalesOrders = CDbl(payload(3))
+            Case "DAYTON":    newSalesOrders = CDbl(payload(4))
+            Case Else: GoTo NextOut
+        End Select
+
+        outArr(rr, COL_ORD_SALES_SHIP) = WorksheetFunction.Round(newSalesOrders, 2)
+
+        For b = 1 To MAX_BOX
+
+            needVal = CDbl(outArr(rr, COL_NEED + (b - 1)))
+            If needVal <= 0 Then needVal = 1
+
+            desiredS = newSalesOrders * needVal
+
+            If isOptional(b) Then
+                availVal = CDbl(outArr(rr, COL_AVAIL_POSTBL + (b - 1)))
+                shippedS = MinD(availVal, desiredS)
+            Else
+                shippedS = desiredS
+            End If
+
+            outArr(rr, COL_SALES_SHIP + (b - 1)) = shippedS
+        Next b
+
+NextOut:
+    Next rr
+
+End Sub
+
 
 'Finds a header in row 1 of a 2D Variant array (1-based),
 'returns the column index or 0 if not found.
@@ -2799,6 +3055,27 @@ Private Sub Compute_USA_Backlog_Flows( _
         
     End Sub
 
+Private Sub Compute_USA_Sales_Flows( _
+    ByVal A_M As Double, ByVal B_M As Double, _
+    ByVal A_D As Double, ByVal B_D As Double, _
+    ByVal SH_M As Double, ByVal SH_D As Double, _
+    ByRef scenario As String, _
+    ByRef M_from_M As Double, ByRef M_from_D As Double, _
+    ByRef D_from_M As Double, ByRef D_from_D As Double)
+
+    'Same logic, different inputs
+    Call Compute_USA_Backlog_Flows( _
+        A_M, B_M, _
+        A_D, B_D, _
+        SH_M, SH_D, _
+        scenario, _
+        M_from_M, M_from_D, _
+        D_from_M, D_from_D)
+
+    'Optional: rename scenario prefix to make debugging clearer
+    If Len(scenario) > 0 Then scenario = "SALES_" & scenario
+End Sub
+
 Private Sub Compute_CAN_Backlog_Flows( _
     ByVal A_Mon As Double, ByVal B_Mon As Double, _
     ByVal A_Tor As Double, ByVal B_Tor As Double, _
@@ -2975,6 +3252,29 @@ Private Sub Compute_CAN_Backlog_Flows( _
 
     'Done. Any remaining remDest* means not routable under this partner graph (should be rare in triangle).
 
+End Sub
+
+Private Sub Compute_CAN_Sales_Flows( _
+    ByVal A_Mon As Double, ByVal B_Mon As Double, _
+    ByVal A_Tor As Double, ByVal B_Tor As Double, _
+    ByVal A_Van As Double, ByVal B_Van As Double, _
+    ByVal SH_Mon As Double, ByVal SH_Tor As Double, ByVal SH_Van As Double, _
+    ByRef scenario As String, _
+    ByRef Mon_from_Mon As Double, ByRef Mon_from_Tor As Double, ByRef Mon_from_Van As Double, _
+    ByRef Tor_from_Mon As Double, ByRef Tor_from_Tor As Double, ByRef Tor_from_Van As Double, _
+    ByRef Van_from_Mon As Double, ByRef Van_from_Tor As Double, ByRef Van_from_Van As Double)
+
+    Call Compute_CAN_Backlog_Flows( _
+        A_Mon, B_Mon, _
+        A_Tor, B_Tor, _
+        A_Van, B_Van, _
+        SH_Mon, SH_Tor, SH_Van, _
+        scenario, _
+        Mon_from_Mon, Mon_from_Tor, Mon_from_Van, _
+        Tor_from_Mon, Tor_from_Tor, Tor_from_Van, _
+        Van_from_Mon, Van_from_Tor, Van_from_Van)
+
+    If Len(scenario) > 0 Then scenario = "SALES_" & scenario
 End Sub
 
 Private Sub AllocateSourceToDests( _
