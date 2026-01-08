@@ -126,7 +126,7 @@ Private Sub GuessDescAndColorColumns(ByVal sectionRng As Range, ByRef descRelCol
 
     For relC = 1 To maxCols
         For r = 1 To sectionRng.Rows.Count
-            s = Trim$(CStr(sectionRng.Cells(r, relC).Value))
+            s = Trim$(CStr(sectionRng.Cells(r, relC).value))
 
             If Len(s) = 0 Then
                 blankHits(relC) = blankHits(relC) + 1
@@ -216,6 +216,7 @@ Sub Boxes_Shipped_Forecast()
     'Color loop + need array
     Dim i As Long
     Dim need() As Double
+    Dim needCache As Object
 
     'Row write helpers
     Dim writeCol As Long
@@ -448,11 +449,11 @@ Sub Boxes_Shipped_Forecast()
     Set p1Map = MapCreate()
     
     For rP = 1 To lo.DataBodyRange.Rows.Count
-        wsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxWs).Value))
-        p1WsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxPartner1).Value))
+        wsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxWs).value))
+        p1WsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxPartner1).value))
     
         If Len(wsName) > 0 And Len(p1WsName) > 0 Then
-            mapKey = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxCountry).Value)) & "|" & wsName
+            mapKey = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxCountry).value)) & "|" & wsName
             MapAddFirst p1Map, mapKey, p1WsName
         End If
     Next rP
@@ -468,23 +469,65 @@ Sub Boxes_Shipped_Forecast()
     Set p2Map = MapCreate()
     
     For rP = 1 To lo.DataBodyRange.Rows.Count
-        wsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxWs).Value))
-        p2WsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxPartner2).Value))
+        wsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxWs).value))
+        p2WsName = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxPartner2).value))
     
         If Len(wsName) > 0 And Len(p2WsName) > 0 Then
-            mapKey = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxCountry).Value)) & "|" & wsName
+            mapKey = Trim$(CStr(lo.DataBodyRange.Cells(rP, idxCountry).value)) & "|" & wsName
             MapAddFirst p2Map, mapKey, p2WsName
         End If
     Next rP
 
     '=== Forecast start date from assumptions ===
-     forecastStart = CDate(wsA.Range(CFG_FORECAST_START_CELL).Value)
+     forecastStart = CDate(wsA.Range(CFG_FORECAST_START_CELL).value)
 
     '=== Only run 1 year forward ===
     forecastCutoff = DateAdd("yyyy", 1, forecastStart)   'example: 2025-12-08 -> 2026-12-08, if we want 6 months instead of 1 year of forecast, change this line to: forecastCutoff = DateAdd("m", 6, forecastStart)
 
     '=== Active colors list from table "Colors" (Status = Active) ===
     Set colors = GetActiveColors_Configured()
+    
+    '==================== Build NEED cache once ====================
+    Set needCache = MapCreate()
+    
+    Dim loColors As ListObject
+    Set loColors = FindTableByHeaders(Array("Color", "Status"), CFG_TABLE_COLORS_PREFERRED)
+    
+    If Not loColors Is Nothing Then
+    
+        Dim idxNeedColor As Long
+        idxNeedColor = GetListColumnIndexByAliases(loColors, CFG_COLOR_HEADERS)
+    
+        If idxNeedColor > 0 And Not loColors.DataBodyRange Is Nothing Then
+    
+            Dim rNeed As Long, bNeed As Long
+            Dim clrNeed As String, keyNeed As String
+            Dim idxBoxNeed As Long, valNeed As Double
+    
+            For rNeed = 1 To loColors.DataBodyRange.Rows.Count
+    
+                clrNeed = NormalizeColor(CStr(loColors.DataBodyRange.Cells(rNeed, idxNeedColor).value))
+                If Len(clrNeed) = 0 Then GoTo NextNeedRow
+    
+                For bNeed = 1 To MAX_BOX
+    
+                    idxBoxNeed = GetListColumnIndexByAliases(loColors, Array("Box " & bNeed))
+                    If idxBoxNeed > 0 Then
+                        valNeed = CDbl(Val(loColors.DataBodyRange.Cells(rNeed, idxBoxNeed).value))
+                    Else
+                        valNeed = 0
+                    End If
+    
+                    keyNeed = clrNeed & "|" & CStr(bNeed)
+                    MapSet needCache, keyNeed, valNeed
+    
+                Next bNeed
+    
+NextNeedRow:
+            Next rNeed
+    
+        End If
+    End If
 
     If colors.Count = 0 Then
         MsgBox "No Active colors found in table 'Colors'.", vbExclamation
@@ -530,349 +573,349 @@ Sub Boxes_Shipped_Forecast()
     '--- Sales B1..Bn ---
     COL_SALES = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Sales B" & b
+        wsDebug.Cells(1, hdrCol).value = "Sales B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- Beg Stock B1..Bn ---
     COL_BEG = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Beg Stock B" & b
+        wsDebug.Cells(1, hdrCol).value = "Beg Stock B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- IB B1..Bn ---
     COL_IB = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "IB B" & b
+        wsDebug.Cells(1, hdrCol).value = "IB B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- AvailStock B1..Bn ---
     COL_AVAIL = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "AvailStock B" & b
+        wsDebug.Cells(1, hdrCol).value = "AvailStock B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- Backlog B1..Bn ---
     COL_BACKLOG = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Backlog B" & b
+        wsDebug.Cells(1, hdrCol).value = "Backlog B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- Need B1..Bn ---
     COL_NEED = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Need B" & b
+        wsDebug.Cells(1, hdrCol).value = "Need B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- Backlog orders debug (3 columns) ---
     COL_ORD_BL_AVAIL = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Orders_Backlog_LimitByAvail"
+    wsDebug.Cells(1, hdrCol).value = "Orders_Backlog_LimitByAvail"
     hdrCol = hdrCol + 1
 
     COL_ORD_BL_BACKLOG = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Orders_Backlog_LimitByBacklog"
+    wsDebug.Cells(1, hdrCol).value = "Orders_Backlog_LimitByBacklog"
     hdrCol = hdrCol + 1
 
     COL_ORD_BL_SHIP = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_Backlog"
+    wsDebug.Cells(1, hdrCol).value = "OrdersShipped_Backlog"
     hdrCol = hdrCol + 1
 
     '--- BacklogShipped B1..Bn ---
     COL_BL_SHIP = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "BacklogShipped B" & b
+        wsDebug.Cells(1, hdrCol).value = "BacklogShipped B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- AvailStock_PostBacklog B1..Bn ---
     COL_AVAIL_POSTBL = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "AvailStock_PostBacklog B" & b
+        wsDebug.Cells(1, hdrCol).value = "AvailStock_PostBacklog B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- Backlog_P1 B1..Bn ---
     COL_BL_P1 = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Backlog_P1 B" & b
+        wsDebug.Cells(1, hdrCol).value = "Backlog_P1 B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- Sales orders debug (3 columns) ---
     COL_ORD_SALES_AVAIL = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Orders_Sales_LimitByAvail"
+    wsDebug.Cells(1, hdrCol).value = "Orders_Sales_LimitByAvail"
     hdrCol = hdrCol + 1
 
     COL_ORD_SALES_DEMAND = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Orders_Sales_LimitBySales"
+    wsDebug.Cells(1, hdrCol).value = "Orders_Sales_LimitBySales"
     hdrCol = hdrCol + 1
 
     COL_ORD_SALES_SHIP = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_Sales"
+    wsDebug.Cells(1, hdrCol).value = "OrdersShipped_Sales"
     hdrCol = hdrCol + 1
 
     '--- SalesShipped B1..Bn ---
     COL_SALES_SHIP = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "SalesShipped B" & b
+        wsDebug.Cells(1, hdrCol).value = "SalesShipped B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- AvailStock_PostSales B1..Bn ---
     COL_AVAIL_POSTSALES = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "AvailStock_PostSales B" & b
+        wsDebug.Cells(1, hdrCol).value = "AvailStock_PostSales B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- Sales_P1 B1..Bn ---
     COL_SALES_P1 = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Sales_P1 B" & b
+        wsDebug.Cells(1, hdrCol).value = "Sales_P1 B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- P1 City ---
     COL_P1_CITY = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "P1 City"
+    wsDebug.Cells(1, hdrCol).value = "P1 City"
     hdrCol = hdrCol + 1
 
     '--- P1AvailStock_PostLocal B1..Bn ---
     COL_P1_AVAIL_POSTLOCAL = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "P1AvailStock_PostLocal B" & b
+        wsDebug.Cells(1, hdrCol).value = "P1AvailStock_PostLocal B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- BacklogP1 orders debug ---
     COL_ORD_P1_AVAIL = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Orders_BacklogP1_LimitByAvail"
+    wsDebug.Cells(1, hdrCol).value = "Orders_BacklogP1_LimitByAvail"
     hdrCol = hdrCol + 1
 
     COL_ORD_P1_BACKLOG = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Orders_BacklogP1_LimitByBacklogP1"
+    wsDebug.Cells(1, hdrCol).value = "Orders_BacklogP1_LimitByBacklogP1"
     hdrCol = hdrCol + 1
 
     COL_TOT_ORD_P1_BACKLOG = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "TotalOrders_BacklogP1_LimitByBacklogP1"
+    wsDebug.Cells(1, hdrCol).value = "TotalOrders_BacklogP1_LimitByBacklogP1"
     hdrCol = hdrCol + 1
 
     COL_P1_SHORTFALL = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "P1Shortfall_BacklogOrders"
+    wsDebug.Cells(1, hdrCol).value = "P1Shortfall_BacklogOrders"
     hdrCol = hdrCol + 1
 
     COL_ORD_P1_SHIP = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_BacklogP1"
+    wsDebug.Cells(1, hdrCol).value = "OrdersShipped_BacklogP1"
     hdrCol = hdrCol + 1
 
     '--- BacklogShipped_P1 B1..Bn ---
     COL_BL_SHIP_P1 = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "BacklogShipped_P1 B" & b
+        wsDebug.Cells(1, hdrCol).value = "BacklogShipped_P1 B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- P1AvailStock_PostBacklog B1..Bn ---
     COL_P1_AVAIL_POSTBL = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "P1AvailStock_PostBacklog B" & b
+        wsDebug.Cells(1, hdrCol).value = "P1AvailStock_PostBacklog B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- Backlog_P2 B1..Bn ---
     COL_BL_P2 = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Backlog_P2 B" & b
+        wsDebug.Cells(1, hdrCol).value = "Backlog_P2 B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- SalesP1 orders debug (5 columns) ---
     COL_ORD_SALESP1_AVAIL = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Orders_SalesP1_LimitByAvail"
+    wsDebug.Cells(1, hdrCol).value = "Orders_SalesP1_LimitByAvail"
     hdrCol = hdrCol + 1
     
     COL_ORD_SALESP1_SALES = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Orders_SalesP1_LimitBySalesP1"
+    wsDebug.Cells(1, hdrCol).value = "Orders_SalesP1_LimitBySalesP1"
     hdrCol = hdrCol + 1
     
     COL_TOT_ORD_SALESP1_SALES = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "TotalOrders_SalesP1_LimitBySalesP1"
+    wsDebug.Cells(1, hdrCol).value = "TotalOrders_SalesP1_LimitBySalesP1"
     hdrCol = hdrCol + 1
     
     COL_P1_SHORTFALL_SALES = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "P1Shortfall_SalesOrders"
+    wsDebug.Cells(1, hdrCol).value = "P1Shortfall_SalesOrders"
     hdrCol = hdrCol + 1
     
     COL_ORD_SALESP1_SHIP = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_SalesP1"
+    wsDebug.Cells(1, hdrCol).value = "OrdersShipped_SalesP1"
     hdrCol = hdrCol + 1
 
     '--- SalesShipped_P1 B1..Bn ---
     COL_SALES_SHIP_P1 = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "SalesShipped_P1 B" & b
+        wsDebug.Cells(1, hdrCol).value = "SalesShipped_P1 B" & b
         hdrCol = hdrCol + 1
     Next b
     
     '--- P1AvailStock_PostSales B1..Bn ---
     COL_P1_AVAIL_POSTSALES = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "P1AvailStock_PostSales B" & b
+        wsDebug.Cells(1, hdrCol).value = "P1AvailStock_PostSales B" & b
         hdrCol = hdrCol + 1
     Next b
     
     '--- Sales_P2 B1..Bn ---
     COL_SALES_P2 = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Sales_P2 B" & b
+        wsDebug.Cells(1, hdrCol).value = "Sales_P2 B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- P2 City ---
     COL_P2_CITY = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "P2 City"
+    wsDebug.Cells(1, hdrCol).value = "P2 City"
     hdrCol = hdrCol + 1
     
     '--- P2AvailStock_PostP1Sales B1..Bn ---
     COL_P2_AVAIL_POSTP1SALES = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "P2AvailStock_PostP1Sales B" & b
+        wsDebug.Cells(1, hdrCol).value = "P2AvailStock_PostP1Sales B" & b
         hdrCol = hdrCol + 1
     Next b
     
     '--- BacklogP2 orders debug (5 columns) ---
     COL_ORD_P2_AVAIL = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Orders_BacklogP2_LimitByAvail"
+    wsDebug.Cells(1, hdrCol).value = "Orders_BacklogP2_LimitByAvail"
     hdrCol = hdrCol + 1
     
     COL_ORD_P2_BACKLOG = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Orders_BacklogP2_LimitByBacklogP2"
+    wsDebug.Cells(1, hdrCol).value = "Orders_BacklogP2_LimitByBacklogP2"
     hdrCol = hdrCol + 1
     
     COL_TOT_ORD_P2_BACKLOG = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "TotalOrders_BacklogP2_LimitByBacklogP2"
+    wsDebug.Cells(1, hdrCol).value = "TotalOrders_BacklogP2_LimitByBacklogP2"
     hdrCol = hdrCol + 1
     
     COL_P2_SHORTFALL_BL = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "P2Shortfall_BacklogOrders"
+    wsDebug.Cells(1, hdrCol).value = "P2Shortfall_BacklogOrders"
     hdrCol = hdrCol + 1
     
     COL_ORD_P2_SHIP_BL = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_BacklogP2"
+    wsDebug.Cells(1, hdrCol).value = "OrdersShipped_BacklogP2"
     hdrCol = hdrCol + 1
     
     '--- BacklogShipped_P2 B1..Bn ---
     COL_BL_SHIP_P2 = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "BacklogShipped_P2 B" & b
+        wsDebug.Cells(1, hdrCol).value = "BacklogShipped_P2 B" & b
         hdrCol = hdrCol + 1
     Next b
     
     '--- P2AvailStock_PostBacklog B1..Bn ---
     COL_P2_AVAIL_POSTBL = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "P2AvailStock_PostBacklog B" & b
+        wsDebug.Cells(1, hdrCol).value = "P2AvailStock_PostBacklog B" & b
         hdrCol = hdrCol + 1
     Next b
     
     '--- Backlog_Unfulfilled B1..Bn ---
     COL_BL_UNFULFILLED = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Backlog_Unfulfilled B" & b
+        wsDebug.Cells(1, hdrCol).value = "Backlog_Unfulfilled B" & b
         hdrCol = hdrCol + 1
     Next b
     
     '--- SalesP2 orders debug (5 columns) ---
     COL_ORD_SALESP2_AVAIL = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Orders_SalesP2_LimitByAvail"
+    wsDebug.Cells(1, hdrCol).value = "Orders_SalesP2_LimitByAvail"
     hdrCol = hdrCol + 1
     
     COL_ORD_SALESP2_SALES = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Orders_SalesP2_LimitBySalesP2"
+    wsDebug.Cells(1, hdrCol).value = "Orders_SalesP2_LimitBySalesP2"
     hdrCol = hdrCol + 1
     
     COL_TOT_ORD_SALESP2_SALES = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "TotalOrders_SalesP2_LimitBySalesP2"
+    wsDebug.Cells(1, hdrCol).value = "TotalOrders_SalesP2_LimitBySalesP2"
     hdrCol = hdrCol + 1
     
     COL_P2_SHORTFALL_SALES = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "P2Shortfall_SalesOrders"
+    wsDebug.Cells(1, hdrCol).value = "P2Shortfall_SalesOrders"
     hdrCol = hdrCol + 1
     
     COL_ORD_SALESP2_SHIP = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "OrdersShipped_SalesP2"
+    wsDebug.Cells(1, hdrCol).value = "OrdersShipped_SalesP2"
     hdrCol = hdrCol + 1
     
     '--- SalesShipped_P2 B1..Bn ---
     COL_SALES_SHIP_P2 = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "SalesShipped_P2 B" & b
+        wsDebug.Cells(1, hdrCol).value = "SalesShipped_P2 B" & b
         hdrCol = hdrCol + 1
     Next b
     
     '--- P2AvailStock_PostSales B1..Bn ---
     COL_P2_AVAIL_POSTSALES = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "P2AvailStock_PostSales B" & b
+        wsDebug.Cells(1, hdrCol).value = "P2AvailStock_PostSales B" & b
         hdrCol = hdrCol + 1
     Next b
     
     '--- Sales_Unfulfilled B1..Bn ---
     COL_SALES_UNFULFILLED = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Sales_Unfulfilled B" & b
+        wsDebug.Cells(1, hdrCol).value = "Sales_Unfulfilled B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- Unfulfilled B1..Bn = Backlog_Unfulfilled + Sales_Unfulfilled ---
     COL_UNFULFILLED = hdrCol
     For b = 1 To MAX_BOX
-        wsDebug.Cells(1, hdrCol).Value = "Unfulfilled B" & b
+        wsDebug.Cells(1, hdrCol).value = "Unfulfilled B" & b
         hdrCol = hdrCol + 1
     Next b
 
     '--- Rollup columns at the very end (8 columns) ---
     
     COL_LBL_FROMLOCAL = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "LocalBacklogShipped_FromLocal"
+    wsDebug.Cells(1, hdrCol).value = "LocalBacklogShipped_FromLocal"
     hdrCol = hdrCol + 1
     
     COL_LS_FROMLOCAL = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "LocalSalesShipped_FromLocal"
+    wsDebug.Cells(1, hdrCol).value = "LocalSalesShipped_FromLocal"
     hdrCol = hdrCol + 1
     
     COL_LBL_FROMP1 = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "LocalBacklogShipped_FromP1"
+    wsDebug.Cells(1, hdrCol).value = "LocalBacklogShipped_FromP1"
     hdrCol = hdrCol + 1
     
     COL_LS_FROMP1 = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "LocalSalesShipped_FromP1"
+    wsDebug.Cells(1, hdrCol).value = "LocalSalesShipped_FromP1"
     hdrCol = hdrCol + 1
     
     COL_LBL_FROMP2 = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "LocalBacklogShipped_FromP2"
+    wsDebug.Cells(1, hdrCol).value = "LocalBacklogShipped_FromP2"
     hdrCol = hdrCol + 1
     
     COL_LS_FROMP2 = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "LocalSalesShipped_FromP2"
+    wsDebug.Cells(1, hdrCol).value = "LocalSalesShipped_FromP2"
     hdrCol = hdrCol + 1
     
     COL_TOT_LBL = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Total_LocalBacklogShipped"
+    wsDebug.Cells(1, hdrCol).value = "Total_LocalBacklogShipped"
     hdrCol = hdrCol + 1
     
     COL_TOT_LS = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Total_LocalSalesShipped"
+    wsDebug.Cells(1, hdrCol).value = "Total_LocalSalesShipped"
     hdrCol = hdrCol + 1
 
     '--- Outbound boxes for the Demand City (Local + when it acts as P1 + when it acts as P2) ---
     COL_OUTBOUND = hdrCol
-    wsDebug.Cells(1, hdrCol).Value = "Total_OutboundBoxes_ForDemandCity"
+    wsDebug.Cells(1, hdrCol).value = "Total_OutboundBoxes_ForDemandCity"
     hdrCol = hdrCol + 1
 
     '=== FINAL column count (A..last header) ===
@@ -895,10 +938,10 @@ Sub Boxes_Shipped_Forecast()
     
     For rMap = 1 To lo.DataBodyRange.Rows.Count
 
-        sheetName = Trim$(CStr(lo.DataBodyRange.Cells(rMap, idxWs).Value))
+        sheetName = Trim$(CStr(lo.DataBodyRange.Cells(rMap, idxWs).value))
         If Len(sheetName) = 0 Then GoTo NextOne
 
-        country = Trim$(CStr(lo.DataBodyRange.Cells(rMap, idxCountry).Value))
+        country = Trim$(CStr(lo.DataBodyRange.Cells(rMap, idxCountry).value))
 
         On Error Resume Next
         Set wsT = ThisWorkbook.Worksheets(sheetName)
@@ -958,7 +1001,7 @@ Sub Boxes_Shipped_Forecast()
                     If Not IsDate(wsT.Cells(2, col).value) Then Exit For
                 
                     '=== Stop once Week Start is at/after the cutoff ===
-                    If DateValue(wsT.Cells(2, col).Value) >= DateValue(forecastCutoff) Then Exit For
+                    If DateValue(wsT.Cells(2, col).value) >= DateValue(forecastCutoff) Then Exit For
                     
                     colLetter = Split(wsT.Cells(1, col).Address(False, False), "1")(0)
 
@@ -966,15 +1009,15 @@ Sub Boxes_Shipped_Forecast()
                         
                         colorKey = NormalizeColor(colors(i))  ' make sure it matches index normalization
 
-                        '=== Load "need per order" for this color (Box 1..MAX_BOX) from Colors table ===
+                       '=== Load "need per order" from CACHE (Box 1..MAX_BOX) ===
                         ReDim need(1 To MAX_BOX)
                         
                         For b = 1 To MAX_BOX
-                            need(b) = GetNeedFromColorsTable(colorKey, b)
-                            'Safety: if missing/0, set to 1 to avoid divide-by-zero and make issues obvious
+                            need(b) = MapGetDouble(needCache, colorKey & "|" & CStr(b), 0#)
+                            'Safety: if missing/0, set to 1 to avoid divide-by-zero
                             If need(b) <= 0 Then need(b) = 1
                         Next b
-                       
+
                         'Advance output row (into the array)
                         outUsed = outUsed + 1
                         If outUsed > outCapacity Then
@@ -1069,7 +1112,7 @@ Sub Boxes_Shipped_Forecast()
                             rr = MapGetLong(salesMap, key, 0)
                             If rr > 0 Then
                                 'outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
-                                outArr(outUsed, writeCol) = wsT.Cells(rr, col).Value
+                                outArr(outUsed, writeCol) = wsT.Cells(rr, col).value
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
@@ -1084,7 +1127,7 @@ Sub Boxes_Shipped_Forecast()
                             rr = MapGetLong(begMap, key, 0)
                             If rr > 0 Then
                                 'outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
-                                outArr(outUsed, writeCol) = wsT.Cells(rr, col).Value
+                                outArr(outUsed, writeCol) = wsT.Cells(rr, col).value
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
@@ -1099,7 +1142,7 @@ Sub Boxes_Shipped_Forecast()
                             rr = MapGetLong(poMap, key, 0)
                             If rr > 0 Then
                                 'outArr(outUsed, writeCol) = ToWhole(wsT.Cells(rr, col).value)
-                                outArr(outUsed, writeCol) = wsT.Cells(rr, col).Value
+                                outArr(outUsed, writeCol) = wsT.Cells(rr, col).value
                             Else
                                 outArr(outUsed, writeCol) = 0
                             End If
@@ -1107,7 +1150,7 @@ Sub Boxes_Shipped_Forecast()
                             writeCol = writeCol + 1
                         Next b
 
-                        '--- AvailStock B1..Bn = MAX(0, Beg Stock + IB) ---                       
+                        '--- AvailStock B1..Bn = MAX(0, Beg Stock + IB) ---
                         For b = 1 To MAX_BOX
                             begCol = COL_BEG + (b - 1)         'Beg Stock block starts after Sales
                             ibCol = COL_IB + (b - 1)    'IB block starts after Sales+Beg
@@ -1142,7 +1185,7 @@ Sub Boxes_Shipped_Forecast()
                         For b = 1 To MAX_BOX
                             outArr(outUsed, writeCol) = need(b)
                             writeCol = writeCol + 1
-                        Next b  
+                        Next b
 
                         '=== INIT (Local rounds now computed later in week-by-week pass) ===
                         outArr(outUsed, COL_ORD_BL_AVAIL) = 0
@@ -1948,7 +1991,7 @@ For rrLocal = 2 To outUsed
                  Format$(wkStart, "yyyy-mm-dd")
 
     If MapExists(p2SalesTotals, p2SalesKey) Then
-        outArr(rrLocal, COL_TOT_ORD_SALESP2_SALES) = WorksheetFunction.Round(MapGetDouble(p2SalesTotals,p2SalesKey, 0#), 2)
+        outArr(rrLocal, COL_TOT_ORD_SALESP2_SALES) = WorksheetFunction.Round(MapGetDouble(p2SalesTotals, p2SalesKey, 0#), 2)
 
         shortfallP2Sales = CDbl(outArr(rrLocal, COL_TOT_ORD_SALESP2_SALES)) - CDbl(outArr(rrLocal, COL_ORD_SALESP2_AVAIL))
         If shortfallP2Sales < 0 Then shortfallP2Sales = 0
@@ -2049,7 +2092,7 @@ For rrLocal = 2 To outUsed
 
         'From P2
         sumBL_P2 = sumBL_P2 + CDbl(outArr(rrLocal, COL_BL_SHIP_P2 + (b - 1)))
-        sumSales_P2 = sumSales_P2 + CDbl(outArr(rrLocal, COL_SALES_SHIP_P2 + (b - 1))) 
+        sumSales_P2 = sumSales_P2 + CDbl(outArr(rrLocal, COL_SALES_SHIP_P2 + (b - 1)))
     Next b
 
     outArr(rrLocal, COL_LBL_FROMLOCAL) = sumBL_Local
@@ -2101,7 +2144,7 @@ For rrLocal = 2 To outUsed
 
         MapAddSumDouble outboundTotals, kOut, shippedLocal
 
-    End If  
+    End If
 
     'B) P1 city contributes shippedFromP1
     If Len(p1C) > 0 Then
@@ -2132,7 +2175,7 @@ For rrLocal = 2 To outUsed
     kOut = demandC & "|" & countryC & "|" & colorC & "|" & wkC
 
     If MapExists(outboundTotals, kOut) Then
-        outArr(rrLocal, COL_OUTBOUND) = MapGetDouble(outboundTotals,kOut,0#)
+        outArr(rrLocal, COL_OUTBOUND) = MapGetDouble(outboundTotals, kOut, 0#)
     Else
         outArr(rrLocal, COL_OUTBOUND) = 0
     End If
@@ -2211,7 +2254,7 @@ Private Function BuildSectionTable_Block(ByVal ws As Worksheet, ByVal sectionHea
     endRow = lastRow
 
     For r = startRow + 1 To lastRow
-        If IsSectionHeader(ws.Cells(r, sectionCol).Value) Then
+        If IsSectionHeader(ws.Cells(r, sectionCol).value) Then
             endRow = r - 1
             Exit For
         End If
@@ -2249,7 +2292,7 @@ Private Function FindInColumnExact_Num(ByVal ws As Worksheet, ByVal colNum As Lo
 
     Dim r As Long
     For r = 1 To lastRow
-        If UCase$(Trim$(CStr(ws.Cells(r, colNum).Value))) = UCase$(Trim$(textToFind)) Then
+        If UCase$(Trim$(CStr(ws.Cells(r, colNum).value))) = UCase$(Trim$(textToFind)) Then
             Set FindInColumnExact_Num = ws.Cells(r, colNum)
             Exit Function
         End If
@@ -2304,7 +2347,7 @@ Private Sub AddColorsFromSection(ByRef colors As Collection, ByVal sectionRng As
     Dim r As Long
     For r = 1 To sectionRng.Rows.Count
         Dim raw As String
-        raw = Trim$(CStr(sectionRng.Cells(r, colorCol).Value))
+        raw = Trim$(CStr(sectionRng.Cells(r, colorCol).value))
 
         If Len(raw) > 0 Then
             lastSeen = NormalizeColor(raw)
@@ -2360,10 +2403,10 @@ Private Function GetActiveColors_Configured() As Collection
 
     Dim i As Long, statusVal As String, clr As String
     For i = 1 To lo.DataBodyRange.Rows.Count
-        statusVal = Trim$(CStr(lo.DataBodyRange.Cells(i, idxStatus).Value))
+        statusVal = Trim$(CStr(lo.DataBodyRange.Cells(i, idxStatus).value))
 
         If UCase$(statusVal) = "ACTIVE" Or UCase$(statusVal) = "TRUE" Or statusVal = "1" Then
-            clr = NormalizeColor(CStr(lo.DataBodyRange.Cells(i, idxColor).Value))
+            clr = NormalizeColor(CStr(lo.DataBodyRange.Cells(i, idxColor).value))
             If Len(clr) > 0 Then AddUniqueKeyed result, clr
         End If
     Next i
@@ -2478,7 +2521,7 @@ Private Function BuildSectionIndex_FromRange(ByVal sectionRng As Range) As Varia
     For r = 1 To sectionRng.Rows.Count
 
         Dim desc As String
-        desc = CStr(sectionRng.Cells(r, descCol).Value)
+        desc = CStr(sectionRng.Cells(r, descCol).value)
 
         Dim bx As Long
         bx = ParseBoxNum(desc)
@@ -2493,7 +2536,7 @@ Private Function BuildSectionIndex_FromRange(ByVal sectionRng As Range) As Varia
 
         'Color with fill-down using detected color column
         Dim colorRaw As String, colorKey As String
-        colorRaw = CStr(sectionRng.Cells(r, colorCol).Value)
+        colorRaw = CStr(sectionRng.Cells(r, colorCol).value)
         colorKey = ""
 
         If IsLikelyColor(colorRaw) Then colorKey = NormalizeColor(colorRaw)
@@ -2741,7 +2784,7 @@ End Function
 Private Function MapKeys(ByVal m As Object) As Variant
     'Returns a Variant array of keys. Safe for both Dictionary and Collection fallback.
     If MapIsDictionary(m) Then
-        MapKeys = m.Keys
+        MapKeys = m.keys
     Else
         Dim keys() As Variant
         Dim i As Long, pair As Variant
@@ -2763,51 +2806,6 @@ Private Sub MapAddSumDouble(ByVal m As Object, ByVal key As String, ByVal addVal
     cur = MapGetDouble(m, key, 0#)
     MapSet m, key, (cur + addValue)
 End Sub
-
-'=== Get the "boxes per average order" (need) for a given Color + Box # from the Colors table ===
-Private Function GetNeedFromColorsTable(ByVal colorKey As String, ByVal boxNum As Long) As Double
-    'Looks in table CFG_TABLE_COLORS_PREFERRED ("Colors") for row where [Color] matches,
-    'and returns value from column "Box n" (ex: "Box 1", "Box 2", etc.)
-    
-    Dim lo As ListObject
-    Set lo = FindTableByHeaders(Array("Color", "Status"), CFG_TABLE_COLORS_PREFERRED)
-    If lo Is Nothing Then
-        GetNeedFromColorsTable = 0
-        Exit Function
-    End If
-    
-    Dim idxColor As Long
-    idxColor = GetListColumnIndexByAliases(lo, CFG_COLOR_HEADERS) 'Color column
-    
-    Dim idxNeed As Long
-    idxNeed = GetListColumnIndexByAliases(lo, Array("Box " & boxNum)) 'Box n column
-    If idxColor = 0 Or idxNeed = 0 Then
-        GetNeedFromColorsTable = 0
-        Exit Function
-    End If
-    
-    If lo.DataBodyRange Is Nothing Then
-        GetNeedFromColorsTable = 0
-        Exit Function
-    End If
-    
-    Dim r As Long
-    For r = 1 To lo.DataBodyRange.Rows.Count
-        Dim tableColor As String
-        tableColor = NormalizeColor(CStr(lo.DataBodyRange.Cells(r, idxColor).Value))
-        
-        If tableColor = colorKey Then
-            If IsNumeric(lo.DataBodyRange.Cells(r, idxNeed).Value) Then
-                GetNeedFromColorsTable = CDbl(lo.DataBodyRange.Cells(r, idxNeed).Value)
-            Else
-                GetNeedFromColorsTable = 0
-            End If
-            Exit Function
-        End If
-    Next r
-    
-    GetNeedFromColorsTable = 0
-End Function
 
 '=== Fractional orders from qty and need ===
 Private Function OrdersFromQty(ByVal qty As Double, ByVal need As Double) As Double
@@ -2883,11 +2881,11 @@ Private Function GetIsOptionalByBox_Configured(ByVal maxBox As Long) As Boolean(
 
     Dim r As Long, bx As Long, boxText As String, v As Variant
     For r = 1 To lo.DataBodyRange.Rows.Count
-        boxText = CStr(lo.DataBodyRange.Cells(r, idxBox).Value)   'ex: "Box 6"
+        boxText = CStr(lo.DataBodyRange.Cells(r, idxBox).value)   'ex: "Box 6"
         bx = ParseBoxNum(boxText)                                 'your ParseBoxNum reads "Box 6" -> 6
 
         If bx >= 1 And bx <= maxBox Then
-            v = lo.DataBodyRange.Cells(r, idxIsOpt).Value
+            v = lo.DataBodyRange.Cells(r, idxIsOpt).value
             isOpt(bx) = (UCase$(Trim$(CStr(v))) = "TRUE" Or CStr(v) = "1")
         End If
     Next r
@@ -2938,3 +2936,5 @@ Private Function GetP2City(ByVal p2Map As Object, ByVal country As String, ByVal
     End If
 
 End Function
+
+
