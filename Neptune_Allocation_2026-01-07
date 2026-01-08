@@ -1120,7 +1120,11 @@ NextRow_LocalSales:
 '==================== END WEEK-BY-WEEK ENGINE =====================
 
     '=== Build second debug sheet (City x Week x Color) ===
-    Call Build_DebugSheet_CityWeekColor(outArr, outUsed, COL_ORD_BL_AVAIL, COL_ORD_BL_BACKLOG, COL_ORD_SALES_DEMAND, allocMap)
+    Call Build_DebugSheet_CityWeekColor( _
+        outArr, outUsed, _
+        COL_ORD_BL_AVAIL, COL_ORD_BL_BACKLOG, _
+        COL_ORD_SALES_AVAIL, COL_ORD_SALES_DEMAND, _
+        allocMap)
     
     '=== NEW: Override OrdersShipped_Backlog using CityWeek totals, then recompute BacklogShipped/AvailPostBL/Sales ===
     Call Apply_BacklogOverride_FromCityWeek( _
@@ -1970,6 +1974,7 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     ByVal outUsed As Long, _
     ByVal COL_ORD_BL_AVAIL As Long, _
     ByVal COL_ORD_BL_BACKLOG As Long, _
+    ByVal COL_ORD_SALES_AVAIL As Long, _
     ByVal COL_ORD_SALES_DEMAND As Long, _
     ByVal allocMap As Object)
 
@@ -2009,10 +2014,11 @@ Private Sub Build_DebugSheet_CityWeekColor( _
             k = city & "|" & colorKey & "|" & wkStartKey
 
             Dim payload As Variant
-            payload = Array( _
+           payload = Array( _
                 CDbl(outArr(r, COL_ORD_BL_AVAIL)), _
                 CDbl(outArr(r, COL_ORD_BL_BACKLOG)), _
-                CDbl(outArr(r, COL_ORD_SALES_DEMAND)) _
+                CDbl(outArr(r, COL_ORD_SALES_DEMAND)), _
+                CDbl(outArr(r, COL_ORD_SALES_AVAIL)) _
             )
 
             'First match wins
@@ -2049,7 +2055,7 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     '4 USA city cols (avail/backlog for Moreno/Dayton) +
     '7 USA flow cols (scenario + 4 flows + 2 totals) +
     '5 sales cols (one per city)
-    nCols = 3 + 6 + 13 + 4 + 7 + 5
+    nCols = 3 + 6 + 13 + 4 + 7 + 10
 
     Dim out2() As Variant
     ReDim out2(1 To nRows, 1 To nCols)
@@ -2125,14 +2131,26 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     
     colPtr = usaBaseCol + 7
     
-    'Sales columns (final 5)
+    'FINAL 10 columns (exact order requested):
+    ' Montreal_AvailStockPostBacklog_Orders, Montreal_Sales_Orders, Toronto_AvailStockPostBacklog_Orders, Toronto_Sales_Orders, ...
+    
+    Dim COL_Mon_PostBL As Long, COL_Tor_PostBL As Long, COL_Van_PostBL As Long, COL_Mor_PostBL As Long, COL_Day_PostBL As Long
     Dim COL_Mon_Sales As Long, COL_Tor_Sales As Long, COL_Van_Sales As Long, COL_Mor_Sales As Long, COL_Day_Sales As Long
     
-    COL_Mon_Sales = colPtr: out2(1, colPtr) = "Montreal_Sales_Orders": colPtr = colPtr + 1
-    COL_Tor_Sales = colPtr: out2(1, colPtr) = "Toronto_Sales_Orders":  colPtr = colPtr + 1
-    COL_Van_Sales = colPtr: out2(1, colPtr) = "Vancouver_Sales_Orders": colPtr = colPtr + 1
-    COL_Mor_Sales = colPtr: out2(1, colPtr) = "Moreno_Sales_Orders":   colPtr = colPtr + 1
-    COL_Day_Sales = colPtr: out2(1, colPtr) = "Dayton_Sales_Orders":   colPtr = colPtr + 1
+    COL_Mon_PostBL = colPtr: out2(1, colPtr) = "Montreal_AvailStockPostBacklog_Orders": colPtr = colPtr + 1
+    COL_Mon_Sales  = colPtr: out2(1, colPtr) = "Montreal_Sales_Orders":                 colPtr = colPtr + 1
+    
+    COL_Tor_PostBL = colPtr: out2(1, colPtr) = "Toronto_AvailStockPostBacklog_Orders":  colPtr = colPtr + 1
+    COL_Tor_Sales  = colPtr: out2(1, colPtr) = "Toronto_Sales_Orders":                  colPtr = colPtr + 1
+    
+    COL_Van_PostBL = colPtr: out2(1, colPtr) = "Vancouver_AvailStockPostBacklog_Orders": colPtr = colPtr + 1
+    COL_Van_Sales  = colPtr: out2(1, colPtr) = "Vancouver_Sales_Orders":                 colPtr = colPtr + 1
+    
+    COL_Mor_PostBL = colPtr: out2(1, colPtr) = "Moreno_AvailStockPostBacklog_Orders":    colPtr = colPtr + 1
+    COL_Mor_Sales  = colPtr: out2(1, colPtr) = "Moreno_Sales_Orders":                    colPtr = colPtr + 1
+    
+    COL_Day_PostBL = colPtr: out2(1, colPtr) = "Dayton_AvailStockPostBacklog_Orders":    colPtr = colPtr + 1
+    COL_Day_Sales  = colPtr: out2(1, colPtr) = "Dayton_Sales_Orders":                    colPtr = colPtr + 1
 
     '6) Write rows
     Dim keys As Variant
@@ -2168,13 +2186,15 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     kk = "Montreal" & "|" & colorKey & "|" & wkStartStr
     If MapExists(m, kk) Then
         p = MapGetVariant(m, kk, Empty)
-        out2(i, COL_Mon_Av) = CDbl(p(0))
-        out2(i, COL_Mon_BL) = CDbl(p(1))
-        out2(i, COL_Mon_Sales) = CDbl(p(2))
+        out2(i, COL_Mon_Av)     = CDbl(p(0))
+        out2(i, COL_Mon_BL)     = CDbl(p(1))
+        out2(i, COL_Mon_Sales)  = CDbl(p(2))
+        out2(i, COL_Mon_PostBL) = CDbl(p(3))
     Else
         out2(i, COL_Mon_Av) = 0
         out2(i, COL_Mon_BL) = 0
         out2(i, COL_Mon_Sales) = 0
+        out2(i, COL_Mon_PostBL) = 0
     End If
     
     '--- Toronto ---
@@ -2184,10 +2204,12 @@ Private Sub Build_DebugSheet_CityWeekColor( _
         out2(i, COL_Tor_Av) = CDbl(p(0))
         out2(i, COL_Tor_BL) = CDbl(p(1))
         out2(i, COL_Tor_Sales) = CDbl(p(2))
+        out2(i, COL_Tor_PostBL) = CDbl(p(3))
     Else
         out2(i, COL_Tor_Av) = 0
         out2(i, COL_Tor_BL) = 0
         out2(i, COL_Tor_Sales) = 0
+        out2(i, COL_Tor_PostBL) = 0
     End If
     
     '--- Vancouver ---
@@ -2197,10 +2219,12 @@ Private Sub Build_DebugSheet_CityWeekColor( _
         out2(i, COL_Van_Av) = CDbl(p(0))
         out2(i, COL_Van_BL) = CDbl(p(1))
         out2(i, COL_Van_Sales) = CDbl(p(2))
+        out2(i, COL_Van_PostBL) = CDbl(p(3))
     Else
         out2(i, COL_Van_Av) = 0
         out2(i, COL_Van_BL) = 0
         out2(i, COL_Van_Sales) = 0
+        out2(i, COL_Van_PostBL) = 0
     End If
     
     '--- Moreno ---
@@ -2210,10 +2234,12 @@ Private Sub Build_DebugSheet_CityWeekColor( _
         out2(i, COL_Mor_Av) = CDbl(p(0))
         out2(i, COL_Mor_BL) = CDbl(p(1))
         out2(i, COL_Mor_Sales) = CDbl(p(2))
+        out2(i, COL_Mor_PostBL) = CDbl(p(3))
     Else
         out2(i, COL_Mor_Av) = 0
         out2(i, COL_Mor_BL) = 0
         out2(i, COL_Mor_Sales) = 0
+        out2(i, COL_Mor_PostBL) = 0
     End If
     
     '--- Dayton ---
@@ -2223,13 +2249,14 @@ Private Sub Build_DebugSheet_CityWeekColor( _
         out2(i, COL_Day_Av) = CDbl(p(0))
         out2(i, COL_Day_BL) = CDbl(p(1))
         out2(i, COL_Day_Sales) = CDbl(p(2))
+        out2(i, COL_Day_PostBL) = CDbl(p(3))
     Else
         out2(i, COL_Day_Av) = 0
         out2(i, COL_Day_BL) = 0
         out2(i, COL_Day_Sales) = 0
+        out2(i, COL_Day_PostBL) = 0
     End If
-  
-    
+      
     '=== USA allocation + flows (Moreno/Dayton backlog shipping) ===
     Dim A_M As Double, B_M As Double, A_D As Double, B_D As Double
     A_M = CDbl(out2(i, COL_Mor_Av)) 'Moreno_AvailStock_Orders
