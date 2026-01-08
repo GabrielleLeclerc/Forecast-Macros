@@ -2654,11 +2654,76 @@ Private Sub Compute_USA_Backlog_Flows( _
     End If
 
     'From here, we only apply scenarios 2/3/4 when EXACTLY ONE city has stock.
-    'If both have stock but not enough, this macro doesn’t define sharing rules -> flag it.
+    'If both have stock but not enough to cover their own backlog, apply pooled-share allocation
+    'ONLY for this previously-UNDEFINED case.
     If M_has And D_has Then
-        scenario = "UNDEFINED_Both_Have_Stock_But_Not_Covering"
+
+        '==================== NEW: Pooled stock allocation (Undefined fix) ====================
+        '1) Allocate TOTAL stock by share
+        '2) Cap by each city's backlog
+        '3) Spill unused allocation to the other city (if unmet)
+        '4) Route shipments local-first (use local stock before cross-ship)
+
+        Dim allocM As Double, allocD As Double
+        Dim shipM As Double, shipD As Double
+        Dim leftoverM As Double, leftoverD As Double
+
+        'Allocation by share from total stock
+        allocM = SH_M * A_T
+        allocD = SH_D * A_T
+
+        'Cap by backlog
+        shipM = MinD(B_M, allocM)
+        shipD = MinD(B_D, allocD)
+
+        'Leftover from share allocations
+        leftoverM = allocM - shipM
+        leftoverD = allocD - shipD
+
+        'Spill Moreno unused share -> Dayton unmet
+        If leftoverM > EPS Then
+            If shipD + EPS < B_D Then
+                shipD = MinD(B_D, shipD + leftoverM)
+            End If
+        End If
+
+        'Spill Dayton unused share -> Moreno unmet
+        If leftoverD > EPS Then
+            If shipM + EPS < B_M Then
+                shipM = MinD(B_M, shipM + leftoverD)
+            End If
+        End If
+
+        '==================== ROUTING: local-first ====================
+        'First satisfy each destination using its local stock, then cross-ship if needed.
+
+        Dim remA_M As Double, remA_D As Double
+        Dim remShipM As Double, remShipD As Double
+
+        'Local shipments
+        M_from_M = MinD(A_M, shipM)
+        D_from_D = MinD(A_D, shipD)
+
+        remA_M = A_M - M_from_M
+        remA_D = A_D - D_from_D
+
+        remShipM = shipM - M_from_M
+        remShipD = shipD - D_from_D
+
+        'Cross shipments (only if destination still needs)
+        If remShipM > EPS Then
+            M_from_D = MinD(remA_D, remShipM)
+        End If
+
+        If remShipD > EPS Then
+            D_from_M = MinD(remA_M, remShipD)
+        End If
+
+        scenario = "8_Both_Have_Stock_But_Not_Covering_PooledShare_LocalFirst"
+
         Exit Sub
     End If
+
 
     'Exactly one has stock:
     Dim source As String
