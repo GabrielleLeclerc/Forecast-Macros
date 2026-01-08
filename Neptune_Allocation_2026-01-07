@@ -1185,28 +1185,62 @@ NextRow_LocalSales:
     '1) Clear existing data
     wsSummary.Cells.Clear
 
-    '2) Build 6-column summary array (headers + data)
-    sumCols = 6
+   '2) Build 7-column summary array (headers + data)
+    sumCols = 7
     ReDim sumArr(1 To outUsed, 1 To sumCols)
-
+    
     'Headers (exact order requested)
     sumArr(1, 1) = "Demand City"
     sumArr(1, 2) = "Country"
     sumArr(1, 3) = "Color"
     sumArr(1, 4) = "Week Start"
     sumArr(1, 5) = "Week End"
-    sumArr(1, 6) = "Total_BoxesShipped_FromDemandCity"
+    sumArr(1, 6) = "Total_OrdersShipped_FromDemandCity"
+    sumArr(1, 7) = "Total_BoxesShipped_FromDemandCity"
+
+    'Build lookup: COLOR|WeekStart -> Array(mon, tor, van, mor, day)
+    Dim ordersSrcMap As Object
+    Set ordersSrcMap = Build_TotalOrdersShipped_SourceMap()
+    
+    Dim ordersKey As String
+    Dim payload As Variant
+    Dim cityU As String
+    Dim ordersFromDemandCity As Double
 
     'Rows
     Dim rSum As Long
     For rSum = 2 To outUsed
-        sumArr(rSum, 1) = outArr(rSum, 1)                 'Demand City
-        sumArr(rSum, 2) = outArr(rSum, 2)                 'Country
-        sumArr(rSum, 3) = outArr(rSum, 3)                 'Color
-        sumArr(rSum, 4) = outArr(rSum, 4)                 'Week Start
-        sumArr(rSum, 5) = outArr(rSum, 5)                 'Week End
-        sumArr(rSum, 6) = outArr(rSum, COL_TOTAL_FROM_DEMAND) 'Total_BoxesShipped_FromDemandCity
-    Next rSum
+
+    sumArr(rSum, 1) = outArr(rSum, 1) 'Demand City
+    sumArr(rSum, 2) = outArr(rSum, 2) 'Country
+    sumArr(rSum, 3) = outArr(rSum, 3) 'Color
+    sumArr(rSum, 4) = outArr(rSum, 4) 'Week Start
+    sumArr(rSum, 5) = outArr(rSum, 5) 'Week End
+
+    '=== Total_OrdersShipped_FromDemandCity ===
+    ordersFromDemandCity = 0#
+    ordersKey = NormalizeColor(CStr(outArr(rSum, 3))) & "|" & Format$(CDate(outArr(rSum, 4)), "yyyy-mm-dd")
+
+    If MapExists(ordersSrcMap, ordersKey) Then
+        payload = MapGetVariant(ordersSrcMap, ordersKey, Empty)
+        cityU = UCase$(Trim$(CStr(outArr(rSum, 1))))
+
+        Select Case cityU
+            Case "MONTREAL":  ordersFromDemandCity = CDbl(payload(0))
+            Case "TORONTO":   ordersFromDemandCity = CDbl(payload(1))
+            Case "VANCOUVER": ordersFromDemandCity = CDbl(payload(2))
+            Case "MORENO":    ordersFromDemandCity = CDbl(payload(3))
+            Case "DAYTON":    ordersFromDemandCity = CDbl(payload(4))
+            Case Else:        ordersFromDemandCity = 0#
+        End Select
+    End If
+
+    sumArr(rSum, 6) = ordersFromDemandCity
+
+    '=== Existing: Total_BoxesShipped_FromDemandCity ===
+    sumArr(rSum, 7) = outArr(rSum, COL_TOTAL_FROM_DEMAND)
+
+Next rSum
 
     '3) Write summary to Boxes_Shipped
     wsSummary.Range("A1").Resize(outUsed, sumCols).Value = sumArr
@@ -1214,7 +1248,7 @@ NextRow_LocalSales:
     '4) Formats (match your debug date formatting)
     If outUsed >= 2 Then
         wsSummary.Range(wsSummary.Cells(2, 4), wsSummary.Cells(outUsed, 5)).NumberFormat = "yyyy-mm-dd"
-        wsSummary.Range(wsSummary.Cells(2, 6), wsSummary.Cells(outUsed, 6)).NumberFormat = "0.00"
+        wsSummary.Range(wsSummary.Cells(2, 6), wsSummary.Cells(outUsed, 7)).NumberFormat = "0.00"
     End If
 
     '=== Format only the used rows (fast) ===
@@ -2133,7 +2167,7 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     '4 USA city cols (avail/backlog for Moreno/Dayton) +
     '7 USA flow cols (scenario + 4 flows + 2 totals) +
     '5 sales cols (one per city)
-    nCols = 3 + 6 + 13 + 4 + 7 + 10 + 13 + 7
+    nCols = 3 + 6 + 13 + 4 + 7 + 10 + 13 + 7 + 5
 
     Dim out2() As Variant
     ReDim out2(1 To nRows, 1 To nCols)
@@ -2151,6 +2185,7 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     Dim COL_Mon_Av As Long, COL_Mon_BL As Long
     Dim COL_Tor_Av As Long, COL_Tor_BL As Long
     Dim COL_Van_Av As Long, COL_Van_BL As Long
+    Dim COL_TotOrd_Mon As Long, COL_TotOrd_Tor As Long, COL_TotOrd_Van As Long
     
     COL_Mon_Av = colPtr: out2(1, colPtr) = "Montreal_AvailStock_Orders": colPtr = colPtr + 1
     COL_Mon_BL = colPtr: out2(1, colPtr) = "Montreal_Orders_Backlog":   colPtr = colPtr + 1
@@ -2188,6 +2223,7 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     'USA city (avail/backlog only)
     Dim COL_Mor_Av As Long, COL_Mor_BL As Long
     Dim COL_Day_Av As Long, COL_Day_BL As Long
+    Dim COL_TotOrd_Mor As Long, COL_TotOrd_Day As Long
     
     COL_Mor_Av = colPtr: out2(1, colPtr) = "Moreno_AvailStock_Orders": colPtr = colPtr + 1
     COL_Mor_BL = colPtr: out2(1, colPtr) = "Moreno_Backlog_Orders":   colPtr = colPtr + 1
@@ -2273,7 +2309,13 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     out2(1, usaSalesBaseCol + 6) = "Total_Sales_FromDayton"
     
     colPtr = usaSalesBaseCol + 7
-    
+
+    '==================== TOTAL ORDERS SHIPPED (Backlog + Sales) ====================
+    COL_TotOrd_Mon = colPtr: out2(1, colPtr) = "Total_OrdersShipped_FromMontreal": colPtr = colPtr + 1
+    COL_TotOrd_Tor = colPtr: out2(1, colPtr) = "Total_OrdersShipped_FromToronto":  colPtr = colPtr + 1
+    COL_TotOrd_Van = colPtr: out2(1, colPtr) = "Total_OrdersShipped_FromVancouver": colPtr = colPtr + 1
+    COL_TotOrd_Mor = colPtr: out2(1, colPtr) = "Total_OrdersShipped_FromMoreno":   colPtr = colPtr + 1
+    COL_TotOrd_Day = colPtr: out2(1, colPtr) = "Total_OrdersShipped_FromDayton":   colPtr = colPtr + 1
 
     '6) Write rows
     Dim keys As Variant
@@ -2557,6 +2599,14 @@ Private Sub Build_DebugSheet_CityWeekColor( _
     out2(i, canSalesBaseCol + 10) = MonS_from_Mon + TorS_from_Mon + VanS_from_Mon ' total FROM Montreal
     out2(i, canSalesBaseCol + 11) = MonS_from_Tor + TorS_from_Tor + VanS_from_Tor ' total FROM Toronto
     out2(i, canSalesBaseCol + 12) = MonS_from_Van + TorS_from_Van + VanS_from_Van ' total FROM Vancouver
+
+    '==================== Total_OrdersShipped_From* = Total_Backlog_From* + Total_Sales_From* ====================
+    out2(i, COL_TotOrd_Mon) = CDbl(out2(i, canBaseCol + 10)) + CDbl(out2(i, canSalesBaseCol + 10))
+    out2(i, COL_TotOrd_Tor) = CDbl(out2(i, canBaseCol + 11)) + CDbl(out2(i, canSalesBaseCol + 11))
+    out2(i, COL_TotOrd_Van) = CDbl(out2(i, canBaseCol + 12)) + CDbl(out2(i, canSalesBaseCol + 12))
+    
+    out2(i, COL_TotOrd_Mor) = CDbl(out2(i, usaBaseCol + 5)) + CDbl(out2(i, usaSalesBaseCol + 5))
+    out2(i, COL_TotOrd_Day) = CDbl(out2(i, usaBaseCol + 6)) + CDbl(out2(i, usaSalesBaseCol + 6))
 
     Next keyItem
 
@@ -3381,6 +3431,87 @@ Private Sub AllocateSourceToDests( _
     remDest2 = remDest2 - alloc2
     remSource = remSource - (alloc1 + alloc2)
 End Sub
+
+'==================== NEW: Build map for Total_OrdersShipped_From* =====================
+'Reads Boxes_Shipped_DEBUG_Allocation and builds:
+'  key = COLOR|yyyy-mm-dd  -> Array(mon, tor, van, mor, day)
+Private Function Build_TotalOrdersShipped_SourceMap() As Object
+
+    Dim wsCW As Worksheet
+    On Error Resume Next
+    Set wsCW = ThisWorkbook.Worksheets("Boxes_Shipped_DEBUG_Allocation")
+    On Error GoTo 0
+
+    Dim m As Object
+    Set m = MapCreate()
+
+    If wsCW Is Nothing Then
+        Set Build_TotalOrdersShipped_SourceMap = m
+        Exit Function
+    End If
+
+    Dim lastRow As Long, lastCol As Long
+    lastRow = wsCW.Cells(wsCW.Rows.Count, 1).End(xlUp).Row
+    lastCol = wsCW.Cells(1, wsCW.Columns.Count).End(xlToLeft).Column
+    If lastRow < 2 Or lastCol < 3 Then
+        Set Build_TotalOrdersShipped_SourceMap = m
+        Exit Function
+    End If
+
+    Dim cw As Variant
+    cw = wsCW.Range(wsCW.Cells(1, 1), wsCW.Cells(lastRow, lastCol)).Value
+
+    Dim cColor As Long, cWkStart As Long
+    Dim cTotMon As Long, cTotTor As Long, cTotVan As Long
+    Dim cTotMor As Long, cTotDay As Long
+
+    cColor = FindHeaderCol_1Row(cw, "Color")
+    cWkStart = FindHeaderCol_1Row(cw, "Week Start")
+
+    cTotMon = FindHeaderCol_1Row(cw, "Total_OrdersShipped_FromMontreal")
+    cTotTor = FindHeaderCol_1Row(cw, "Total_OrdersShipped_FromToronto")
+    cTotVan = FindHeaderCol_1Row(cw, "Total_OrdersShipped_FromVancouver")
+    cTotMor = FindHeaderCol_1Row(cw, "Total_OrdersShipped_FromMoreno")
+    cTotDay = FindHeaderCol_1Row(cw, "Total_OrdersShipped_FromDayton")
+
+    'Must have Color + Week Start + at least one total column
+    If cColor = 0 Or cWkStart = 0 Then
+        Set Build_TotalOrdersShipped_SourceMap = m
+        Exit Function
+    End If
+    If cTotMon = 0 And cTotTor = 0 And cTotVan = 0 And cTotMor = 0 And cTotDay = 0 Then
+        Set Build_TotalOrdersShipped_SourceMap = m
+        Exit Function
+    End If
+
+    Dim r As Long
+    Dim colorKey As String, wkKey As String, k As String
+    Dim arr5 As Variant
+
+    For r = 2 To UBound(cw, 1)
+
+        colorKey = NormalizeColor(CStr(cw(r, cColor)))
+        If Len(colorKey) = 0 Then GoTo NextRow
+
+        If Not IsDate(cw(r, cWkStart)) Then GoTo NextRow
+        wkKey = Format$(CDate(cw(r, cWkStart)), "yyyy-mm-dd")
+
+        arr5 = Array( _
+            NzD(IIf(cTotMon > 0, cw(r, cTotMon), 0)), _
+            NzD(IIf(cTotTor > 0, cw(r, cTotTor), 0)), _
+            NzD(IIf(cTotVan > 0, cw(r, cTotVan), 0)), _
+            NzD(IIf(cTotMor > 0, cw(r, cTotMor), 0)), _
+            NzD(IIf(cTotDay > 0, cw(r, cTotDay), 0)) _
+        )
+
+        k = colorKey & "|" & wkKey
+        MapSet m, k, arr5
+
+NextRow:
+    Next r
+
+    Set Build_TotalOrdersShipped_SourceMap = m
+End Function
 
 
 
